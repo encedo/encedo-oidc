@@ -1,0 +1,7 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": ["node_modules"],
+  "exec": "node --env-file=.env src/app.js",
+  "delay": "300"
+}

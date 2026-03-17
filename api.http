@@ -1,0 +1,150 @@
+@base = http://localhost:3000
+@auth = Bearer dev-secret-change-me
+
+### Health check
+GET {{base}}/health
+
+### ══════════════════════════════════
+###  DISCOVERY & JWKS
+### ══════════════════════════════════
+
+### Discovery document
+GET {{base}}/.well-known/openid-configuration
+
+### JWKS (all keys)
+GET {{base}}/jwks.json
+
+### JWKS (filtered by kid)
+GET {{base}}/jwks.json?kid=YOUR-KID-HERE
+
+### ══════════════════════════════════
+###  USERS
+### ══════════════════════════════════
+
+### List all users
+GET {{base}}/admin/users
+Authorization: {{auth}}
+
+### Get single user
+GET {{base}}/admin/users/YOUR-SUB-HERE
+Authorization: {{auth}}
+
+### Add user
+POST {{base}}/admin/users
+Authorization: {{auth}}
+Content-Type: application/json
+
+{
+  "sub": "krzysztof",
+  "username": "krzysztof",
+  "name": "Krzysztof",
+  "email": "krzysztof@example.com",
+  "hsm_url": "https://my.ence.do",
+  "clients": ["YOUR-CLIENT-ID"]
+}
+
+### Update user
+PATCH {{base}}/admin/users/YOUR-SUB-HERE
+Authorization: {{auth}}
+Content-Type: application/json
+
+{
+  "hsm_url": "https://my.ence.do",
+  "clients": ["YOUR-CLIENT-ID"]
+}
+
+### Delete user
+DELETE {{base}}/admin/users/YOUR-SUB-HERE
+Authorization: {{auth}}
+
+### ══════════════════════════════════
+###  CLIENTS
+### ══════════════════════════════════
+
+### List all clients
+GET {{base}}/admin/clients
+Authorization: {{auth}}
+
+### Get client by ID
+GET {{base}}/admin/clients/YOUR-CLIENT-ID
+Authorization: {{auth}}
+
+### Add client — Nextcloud (client_secret)
+POST {{base}}/admin/clients
+Authorization: {{auth}}
+Content-Type: application/json
+
+{
+  "name": "Nextcloud",
+  "redirect_uris": ["http://localhost:8080/index.php/apps/user_oidc/code"],
+  "scopes": ["openid", "email", "profile"],
+  "pkce": false,
+  "id_token_ttl": 3600,
+  "access_token_ttl": 3600
+}
+
+### Add client — local RP (PKCE)
+POST {{base}}/admin/clients
+Authorization: {{auth}}
+Content-Type: application/json
+
+{
+  "name": "Dev RP",
+  "redirect_uris": ["http://localhost:9876/callback"],
+  "scopes": ["openid", "email", "profile"],
+  "pkce": true,
+  "id_token_ttl": 3600,
+  "access_token_ttl": 3600
+}
+
+### Update client
+PATCH {{base}}/admin/clients/YOUR-CLIENT-ID
+Authorization: {{auth}}
+Content-Type: application/json
+
+{
+  "redirect_uris": ["http://localhost:8080/index.php/apps/user_oidc/code"]
+}
+
+### Delete client
+DELETE {{base}}/admin/clients/YOUR-CLIENT-ID
+Authorization: {{auth}}
+
+### ══════════════════════════════════
+###  ENROLLMENT
+### ══════════════════════════════════
+
+### Validate enrollment token (otwórz enrollment.html w przeglądarce zamiast tego)
+POST {{base}}/enrollment/validate
+Content-Type: application/json
+
+{
+  "enrollment_token": "YOUR-ENROLLMENT-TOKEN"
+}
+
+### ══════════════════════════════════
+###  OIDC FLOW
+### ══════════════════════════════════
+
+### Authorize — otwiera signin.html (bez PKCE)
+GET {{base}}/authorize?response_type=code&client_id=YOUR-CLIENT-ID&redirect_uri=http://localhost:9876/callback&scope=openid+email+profile&state=random-state&nonce=random-nonce
+
+### Authorize — z PKCE S256
+### code_challenge = base64url(sha256(code_verifier))
+GET {{base}}/authorize?response_type=code&client_id=YOUR-CLIENT-ID&redirect_uri=http://localhost:9876/callback&scope=openid+email+profile&state=xyz&nonce=abc&code_challenge=YOUR-S256-CHALLENGE&code_challenge_method=S256
+
+### Token — client_secret
+POST {{base}}/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=YOUR-CODE&redirect_uri=http://localhost:9876/callback&client_id=YOUR-CLIENT-ID&client_secret=YOUR-CLIENT-SECRET
+
+### Token — PKCE
+POST {{base}}/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=YOUR-CODE&redirect_uri=http://localhost:9876/callback&client_id=YOUR-CLIENT-ID&code_verifier=YOUR-CODE-VERIFIER
+
+### UserInfo
+GET {{base}}/userinfo
+Authorization: Bearer YOUR-ACCESS-TOKEN

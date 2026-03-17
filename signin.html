@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encedo — Sign In</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0a0c0f;
+    --surface: #0f1318;
+    --panel:   #141920;
+    --rim:     #1e2730;
+    --dim:     #2a3542;
+    --muted:   #4a5a6a;
+    --soft:    #9B7FCC;
+    --text:    #D8C8F8;
+    --white:   #F2EEFF;
+    --accent:  #8040F0;
+    --accentL: #A060FF;
+    --accentD: #5C28CC;
+    --lavender:#C4A8FF;
+    --green:   #34D89A;
+    --red:     #FF4D72;
+    --amber:   #FFB020;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  body { background: var(--bg); font-family: var(--sans); color: var(--text); min-height: 100vh; }
+
+  /* ── Screens ── */
+  .screen { display: none; min-height: 100vh; }
+  .screen.visible { display: flex; }
+
+  /* ── Shell ── */
+  .shell {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 40px 20px;
+    position: relative; overflow: hidden; background: var(--bg);
+  }
+  .shell::before {
+    content: ''; position: absolute;
+    top: -120px; left: 50%; transform: translateX(-50%);
+    width: 700px; height: 500px;
+    background: radial-gradient(ellipse at center, rgba(128,64,240,.22) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .shell::after {
+    content: ''; position: absolute; bottom: -100px; right: -100px;
+    width: 400px; height: 400px;
+    background: radial-gradient(ellipse, rgba(160,96,255,.1) 0%, transparent 65%);
+    pointer-events: none;
+  }
+  .shell-grid {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(circle, rgba(128,64,240,.12) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+
+  /* ── Logo ── */
+  .logo-block { position: relative; z-index: 1; text-align: center; margin-bottom: 36px; }
+  .logo-mark { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .2em; margin-top: 4px; }
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--rim); border-radius: 16px;
+    padding: 32px 36px; width: 100%; max-width: 400px;
+    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(128,64,240,.1);
+    position: relative; z-index: 1;
+  }
+
+  /* ── RP badge ── */
+  .rp-badge {
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(128,64,240,.1); border: 1px solid rgba(128,64,240,.3);
+    border-radius: 8px; padding: 9px 14px; margin-bottom: 24px;
+  }
+  .rp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .rp-label { font-family: var(--mono); font-size: 11px; color: var(--soft); }
+
+  /* ── Fields ── */
+  .field { margin-bottom: 18px; }
+  .field-label { font-family: var(--mono); font-size: 9px; color: var(--muted);
+    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 7px; }
+  .field-input {
+    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
+    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
+    width: 100%; outline: none; transition: border-color .15s;
+  }
+  .field-input:focus { border-color: var(--accent); }
+  .field-input::placeholder { color: var(--muted); }
+
+  /* ── Buttons ── */
+  .btn { display: block; width: 100%; border: none; border-radius: 9px; padding: 13px 20px;
+    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .03em;
+    text-align: center; cursor: pointer; margin-top: 8px; transition: all .15s; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accentL), var(--accentD));
+    color: #fff; box-shadow: 0 6px 20px rgba(128,64,240,.4);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 28px rgba(128,64,240,.6); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .btn-ghost { background: transparent; border: 1px solid var(--dim); color: var(--soft); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--lavender); }
+
+  /* ── Info rows ── */
+  .info-row { display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; margin-bottom: 7px; }
+  .info-row:last-child { margin-bottom: 0; }
+  .info-key { color: var(--muted); } .info-value { color: var(--text); }
+
+  /* ── Error message ── */
+  .err-msg {
+    font-family: var(--mono); font-size: 11px; color: var(--red);
+    margin-top: 10px; min-height: 16px; text-align: center;
+  }
+
+  /* ── Pulse animation ── */
+  @keyframes pulse-ring {
+    0% { transform: scale(.7); opacity: .6; }
+    100% { transform: scale(1.55); opacity: 0; }
+  }
+  .pulse-ring { position: absolute; inset: 0; border-radius: 50%;
+    border: 1px solid var(--accent); animation: pulse-ring 2.2s ease-out infinite; }
+  .pulse-ring:nth-child(2) { animation-delay: .73s; }
+  .pulse-ring:nth-child(3) { animation-delay: 1.46s; }
+
+  /* ── Countdown ── */
+  @keyframes countdown-anim { 0%{width:100%} 100%{width:0%} }
+  .countdown-bar { height: 3px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accentL), var(--accentD));
+    animation: countdown-anim 120s linear forwards; }
+
+  /* ── Confirm row ── */
+  .btn-row { display: flex; gap: 10px; margin-top: 24px; }
+  .btn-row .btn { margin-top: 0; }
+
+  /* SIM badge */
+  .sim-badge {
+    font-family: var(--mono); font-size: 9px; color: var(--amber);
+    background: rgba(255,176,32,.08); border: 1px solid rgba(255,176,32,.25);
+    border-radius: 4px; padding: 3px 8px; display: inline-block; margin-bottom: 16px;
+  }
+
+  /* ── Key select (s-keys) ── */
+  .key-select {
+    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
+    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
+    width: 100%; outline: none; transition: border-color .15s;
+    appearance: none; cursor: pointer; margin-bottom: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5a6a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .key-select:focus { border-color: var(--accent); }
+  .key-select option { background: var(--panel); color: var(--text); }
+
+  /* ── Field hint / debug badge ── */
+  .debug-badge { font-family: var(--mono); font-size: 9px; color: var(--amber);
+    letter-spacing:.1em; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN ─────────────────────────────────────── -->
+<div class="screen visible" id="s-login">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">IDENTITY PROVIDER</div>
+    </div>
+    <div class="card">
+      <div class="rp-badge">
+        <div class="rp-dot"></div>
+        <div class="rp-label">
+          <span style="color:var(--muted)">Authorization for&nbsp;</span><span id="rp-label-login">Loading&hellip;</span>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">HSM URL</div>
+        <input class="field-input" id="hsm-url-input" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="url" list="hsm-url-list">
+        <datalist id="hsm-url-list"></datalist>
+      </div>
+      <button class="btn btn-primary" id="login-btn" onclick="doLogin()">Continue &rarr;</button>
+      <div class="err-msg" id="login-err"></div>
+      <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rim);
+        font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;">
+        requires hardware key confirmation
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── KEY SELECTION ─────────────────────────────── -->
+<div class="screen" id="s-keys">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">SELECT KEY</div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div class="field-label">Signing key</div>
+        <select class="key-select" id="key-select"></select>
+      </div>
+      <div class="err-msg" id="keys-err"></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
+        <button class="btn btn-primary" id="keys-next-btn" onclick="doSelectKey()">Next &rarr;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── CONFIRM ────────────────────────────────────── -->
+<div class="screen" id="s-confirm">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">CONFIRM LOGIN</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">
+        Sign in as <span id="confirm-name" style="color:var(--lavender)"></span>?
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;">
+        to <span id="confirm-rp" style="color:var(--text)"></span>
+      </div>
+      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;margin-bottom:4px;">
+        <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="confirm-username"></span></div>
+        <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
+        <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="confirm-keysource">Simulation</span></div>
+      </div>
+      <div class="err-msg" id="confirm-err"></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
+        <button class="btn btn-primary" id="confirm-btn" onclick="doConfirm()">Approve &rarr;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SIGNING ────────────────────────────────────── -->
+<div class="screen" id="s-signing">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">SIGNING TOKEN</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="width:72px;height:72px;border-radius:50%;
+        background:rgba(128,64,240,.15);border:1px solid rgba(160,96,255,.4);
+        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;
+        box-shadow:0 0 32px rgba(128,64,240,.3);">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--lavender)" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <div style="font-size:14px;font-weight:700;color:var(--lavender);margin-bottom:6px;" id="sign-title">Confirmed</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:24px;" id="sign-status">Generating cryptographic signature&hellip;</div>
+      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;">
+        <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="sign-username"></span></div>
+        <div class="info-row"><span class="info-key">audience</span><span class="info-value" id="sign-audience"></span></div>
+        <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
+        <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="sign-keysource">Simulation</span></div>
+      </div>
+      <button class="btn btn-ghost" id="cancel-mobile-btn" style="display:none;margin-top:16px;" onclick="doCancelMobile()">Use password instead</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── PIN ────────────────────────────────────────── -->
+<div class="screen" id="s-pin">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">AUTHENTICATION</div>
+    </div>
+    <div class="card">
+      <div class="rp-badge">
+        <div class="rp-dot"></div>
+        <div class="rp-label">
+          <span style="color:var(--muted)">Authorization for&nbsp;</span><span id="rp-label-pin">Loading&hellip;</span>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:18px;line-height:1.6;">
+        Enter your password to authenticate with the HSM.
+      </div>
+      <div class="field">
+        <div class="field-label">Password</div>
+        <input class="field-input" id="pin-input" type="password" placeholder="enter password" autocomplete="current-password">
+      </div>
+      <div class="err-msg" id="pin-err"></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" onclick="showScreen('s-login')">Back</button>
+        <button class="btn btn-primary" id="pin-btn" onclick="doSubmitPin()">Continue &rarr;</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── REJECTED ───────────────────────────────────── -->
+<div class="screen" id="s-rejected">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAXAAAACICAMAAADJcUDNAAABNVBMVEX///8AAABXNYw2J2pQMoRFLnogIB48KnBdNYxAK3QwJWRJL351dXRUVFTMzMxra2vd3dxkNYwODgx+NYyjo6M4ODZ3NYwrI1+LNIvn5+e7u7sqKigYGBadNItISEfX19eNjY3z8/PWw9lcXFxJHISWlpWurq5rAHxuNYwAAFCxpcbRzN3o3Oj37/bm4uyrNIsAAFkcAF6MAHhvAHZcDICYJIVNAHtVKoh/f39yWpwAAEZ4AH97AGunJoaee63DirZjHoQyAHe8RZOyGYKEJ4eBbKW6scyfVpq8osN0JYdrWZNrRpRGJn2opbkAADooAGuUj6yxk73bqsnMm8CUa6WsT5i3bqaOWJ3LdKuxe66Oe63Yt9GhlLqhBH+LQpJTAG9OPX6Ae5svG2dTRn1pYYs+Nm4AAC/NEEpFAAAPxUlEQVR4nO2dC3vSSBfHAypWhQAp1HIpEG6FQtBWTGjrVti1FEpZ6lrtSum72rr7/T/Ce04SyiRkQgIoW3f+jz4WMpk588vJmXvlOCYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJqb7KElctQX/GYlSNlvl3r7/4wqwS9KqzfmpBV4tcdlXh6+y3Ju9vTdc9c3JWw6/Y/oOEqV2lhPXuc72+mGWe7W5CcD3tt4A7Q81hnzpkmrv5QtO3Ng2Ad+T4NIvH69YTF+qpMqFLB9xUqk7DVz6xHEvrn/5g3n50iTWLuRmE3k3N5pce3t9WwX+Sgf+BuL4x1+uf7tiyJcjaUduhksq7xJgNwDfBOB7eyrxF7/9WmVxZQmq9eTwWm/ESRsqb+lyYwOAb68j8EMAzoGba8Rf/MbiyuLKykq4Oaqhf4dV3k0d+LoGPMu9fT0h/icjvqDarbW1/BB+OK6r/t1rlgzANzcl7jMSF4E4hhVGfCG1B2sAfAQ/7WOzyXXkbqk0AQ6RfHNL4j7pxD++YMQXUxb8GyTXahBZjrhalTvqXXZLdR249O7d5ua7E4k70aKK9OGaEV9ENY03EO/JyhDit1wD6D0deLfDZTeB+KFOPAt3vAAf/7Rqs++vFMWrE1eANwe98TX4tlIH4O31LvYONeKfIJy8RhfnfkXiV6u2+75qJHu93glvaW0JyxAv2k0AznUI4nufOQmIZ6t/XL9A4iyozKVYy+tViSu94yFX63DVXrN+VKuWwgA8y3UuL7uvrjTibz5wVSC+t7f1ggWVuXWseDXi+bbEib3BDhBX6s16uCRXuEEVovnF+itA/78x8a3XW1tbzMXnlaQ5OKjHqf3xFhJvhkEAXK7Dl7Xt9b+qOvErrvoWOuTMxefWMK/zVnoifFLW1gYjrrqvNFXgdeiwAPDuZU3UiWMn5eOW5uPXqzb+PurOwb35USWbx6bzGBgPLxQVePOiWr3YvqxxnSuN+Anc8/a1RvyadVRcqzoB7s23WthTGWHLCWNOBYGHm91mHXnXt/U4XhVrqocj8Y+rNv/+6S6i6HEFJwxrPQWutGW5CsDDG02V98b6turjhyedk70tnTiLKa7lNao3anO1/fxajROPZWhF5XC4uV/jsn9tbGjEL0/e4VSWTvw6u2r7750GD0ne2vxVfk3Zz45aAHoHQsq+hO1lVydezX6GsDImfv1h1fbfN1UHD0ni8g58pzacsoy8ZeTNjTpcRSeOaz3o4Trx13+uugL3TZXWQ5K4sl+tVdSprLzO+0KCf+ptnTg0nJyoAdeIs1bTpdoInCCe70ErCj0VlXcrnAfeI4jjMhC/BOLdy2r1fXdzQvz1qitw37QzeGgkrig4BNoH3qPWWv5Y4qR6s6QRvwAn75Yut9fXJ8T3HJUixtI8H4/HeT4Um74IMibi0yHbZepYSE+YjlHTiZBGL9IiDV7RZZuLVlwakheLkDQ9bb1bjTTghpZT6bUrVZ231Oay6jhf7nC1qx44+TrqjrgT4KF4xJ/yeUBCIteI86bqRSKROBfj4wVIJKipfKlgYSrZWCIfb+QSgpou4I/E01bp0vFCMKpmloxCXmnz9ahnIl8Kc6EZj8WlBC2lkPIXaWY51Sj/7JmZeL6NF1qKfCyJwxYMd3ph9HH48qq+YSL+ZmYJsXgQbRXgDwh+jEZ4Q4Kkx5PjGwm1RnoSVKJgWbd0JDpOqCVNFeIhc5piSs1NKxV+yhVNrhnw+JJEHpjCGnk6ktBK0wpVzZpZZTudD57pxCfIZQTeUoZDSRrKa3KWq3R6JRV4FoEbiM8EzvvBywRwtFQgF0gl1A/ROJkiKiTVSiFkSAWK6p8L0xDiKY8AT0iIplIpNRlk5wnyVmkSUTWvJLwJU0kCnmQipwpSwGVInjI/FDKrQC4YDAaiFta7VR+Bm4gr+5XqqHUkwTBUxg4iJGvXw/VOtXKJa/kG4rNCCu/z+DxCrlEoQqzk45FMMOGBwBEhkkQFXxIqFQ02MkUM4LyaLOqBLwNmb4ogvQRmBynjxUwj58NvCqY0SU8imInE9bxyAtjgM2QVAJ8OpVFaCh+SbEw936JHtT5ThOgdU6PelPVu1R88miae7+3nW1W4qnYQEXhVDpfqF6XmRslE/NA+ex4rnyM9NVb0e5I+0uYoMgxm4gYHixUzUDdP1Mgggk/BXyRCSDqSgfBBxp4CIvGT7pou5PA7MisA7ic+hiJ+AaxImYjH0dJAgShOnLLerSqtRxbEvYo3D0OgiozA622pdoTtJvwtmYm/s809hrwzphArFgTANqlbVBCiVq9zEQKtJ0Wy5MEPhYI5svONIPEpDmwTEVOadAMfHvGlCTgYFUlhaQYzQsi2YXrJwHqo0/xxvArArYgD8512T1FXOvOj43pYl5n4iW3uQahEZvrrCNbt7hP0JvzTaUA8EieihegTrJ2LdEF4B4TidJKG0ZIp4PCksDTy0WHL6mlMN9zwmglRS4OdSBo8ohHPy8rdWn44bE383We7zNPmKoyF1b9zEipwLu0DZ5rUOGP9+AzCNJYvfMqQlQVwLp0y3svDx5xVVgVaGbMFFuw+ohL3ese7J9bCFOKHtisQOWj9LYcK4IeewPgDHTg0WmTVnHgWZJyyvID4Jp5vBRwjFvlQoPdkbT0+PGGWIVaK9fv9ypdHtsS99sS7V1edDnWKFl9J6yvo4pOKUYFzvqTnjnGcfC0o4ulpYKw0eRSWwFXXvQthIt16m1Js9XV3d/fLLdA+Ozt75pp4t4vELw8PDzdrdLvMYxJdIbg0bjbtgGeIBwNd4sSsKjXAwymXCkRWFODwfCeui8+XNpKHUqgm26j85PHjJ6Cz02+PzgZ5wO6AOIw5m91mc3vj8kh1cuwavrfOP0JW0WzyJFbYAcdnJk5uKdDSjQV5WYZdU1Y04AXCRfz0Z4fXkrNMmZb08vFjJP64Vam1d86Hw9PeWR51pijKFHAF1USVLi+O3nfaldqR6uMQyI9oZtFdEmozfl/tgIuTNyFGvBRU2TwUkbyfAlwk7gezLBt8VNzGlegSyxrwJ7vqR6lWyfaR+/B4v9freYFvXpeC3ZXe/v7xcPh+Z6edrWpn2TrbestJ8fCARwhYX+G45OSltAPOTaKlo0oaWsbpa3eDcgpwMtDbdUVC5NviXCpwQP6S/FIC8JVstt1u7xCCj9lKpVoznBo80ucOaV0VHD/Tyva5Bl6wecXJ5NSZDifAiTbALivRyds2rb9vNOIvq+7vRV2WtL7KNuV+O+DuPTwD476ZJi0KnHiN7LIizHKjr7s68Ir7e1Hj3uE25fpygYPzzeykLAw8PYkVtkznA54tP1gIeH1DJd5dp1xfLnD/jwAem/QFvwNw6eCBSvzljvt7UbI2AtqmtJlYK2o77z6G/zDgIXPJtma50umNSvzmdI578aChNgLapm1ahl5KqgiKWOj7eXiDVuS/AHi7/EAjDkP8iptfiQI9mfbORVMbc9IiCs62+Yg1M4OSvu8EXFs6syrSt3rgGFNU4rs3t9++jvr9dqVSswMvYmcd+otHw/1es6mN8psdWmpcOLSqua5xuFkycEvYulYNnPt2oxN/fHNzMxg8+XL6bTg839npQ7+7Qkjvl4/ew6iot5bPN5vK3bxKnfqAArhkTlXOydDePXAhYFPkHaRVAU9jTNGIq4POM1B+MMg/e/iwd3uK2leFI0+vog061WHnZCareUHNHWJ4LhaiajwztOQYHqGXmJ41l/LdgXO3NwRxnMh6Mp6sPdOkjEWbIJfpoya7biGhH9VLMZm2GuAVzcWtiNvP1o6JN3u2tWLAzfr7ZjHiss0GcQbcQpWDp4sQVy7ta8WAT+n0ZhHiLbt5r+UCz/wI4GnD0N52tnBe4LXy0/mJy8MZtVoi8MKis4Um06izhZPJK9v5cMri4Wz1qcRnriwra7aj0+UCt1uwI5MvBJxY+IRB25JXfMb6ZiL+2ClxxaZLqNdqicD5HwE8MFmACNqvaS4AvHZbfjAP8bxdDwWV8wjWe0SMcgjc0SqL3RIbKRpwADn2kaLNqr2QdORKNNXOb+cgnh9RJ1F02exZIOUQONZy5t4EYm3aVhTg5G6hGftSFtqzLJ7vuo8q8sxVVLudHYScAnfy/HJOWlaOChw38hLDf+rOq4UiCoqHMO6SuLI/M1fs1GZmF+4UeIzucneKOFzdtQaOHjIJgtSdkZhsnn1ApBC4O+J5B8tEUSEpWPtImidTOQOuutyMCC0akBlUJN9IS+DphGB4XAHrFiGWMOwLnU+3N26JtxwEC3SFgIVpsUKAoOIYeMyTFBIztq3mKG9VupEgdwhZAedTJs/F8nxTxGM5ux66U/VVF3dDXHGSLVYhaH7F+UwuKRCNjmPg2HEQfNMHQzjygAXugM2YHrIYbwQ8gmC3IZ8TC2hswuBG6uZ+U2bFHC3SuJJ48NQd8bztGHOsGB7ACWQmQEQ+4g/gEQJiR5pz4NqRk0CjOJnYFkPxQoM8JhHHJMHIBFyMzwRT6sEqQ7QwlCmmC0HwZk/UNHws4pGL4OQ4Xajoj+Jbu/hxTe7vp+6I206iTJROgpMkA/5MMR7HM1DBQEI9FpYiTvS4AC7GtXNkgaC/kQE1/MEcngAl+2hF7dyVv6AV6Q+mkmqRft7g4UKqoCsDaQLqqarc1HAdy/P49OIa/px61Cs496ieUP/guSvieYf5psenBlE+/XRgznCyMkEZhKjyCMZZonRmfGAyievF+s+GLYy8drrPF42monhoEBMIDd7glbi+PVYSD3Pi2UCrg0bpoGaz4MP1WfUnq2TuJf7z3A1xZxEFpZ2LJZSLGOvOBaIJam9PFFLG837w9keCPkOGiaDppG2oGDAlKJrPbAc85pX9IOVkbEw/s3tn/Rx7Ci31981TF8RblD34lian4xl/IJVKBYKNiMUx+lDI5gh7OjR1tBvP5GN0yuGbHilaHZUP8UWIXlBkzq+esZzKNpiaCM2K25y314pDQTL7XwLgRv3ycxfEbRbWrCRqa8mxGb9FwEWGYiyG+VEzVK9jkaJlCsPa9myzsDibwubTwXPnxFvtpRb939TXsmPi3sGqjf0ZJIKLOyTeGq3a2J9C6OLOiDMHX4pUF3dCvDXn9mYmk4q/OyJ+9mjVhv40+uqE+NlgKSMtJpDogPjZwMWYh2mGxP4s4q0vjPcyJcbtW87dU/bfsC1Z6bJN7/DlOeO9dMVuf6cQf1JuM97fQeL5P5bEy0+WNTPJZJTI3/w+RXz35Tn7P02+m8R++aBMrkjsHgyXPDnJZJTY/1Yul3d34c9u+eDLOcP93SVKfP8c1W9TZvGZli5x/KummZiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJj+/fo/8mV+q28DeJgAAAAASUVORK5CYII=" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">ACCESS DENIED</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="width:72px;height:72px;border-radius:50%;
+        background:rgba(255,77,114,.1);border:1px solid rgba(255,77,114,.35);
+        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:8px;">Rejected</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:28px;line-height:1.8;" id="rejected-msg">
+        You cancelled the login request.
+      </div>
+      <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── ERROR ──────────────────────────────────────── -->
+<div class="screen" id="s-error">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">ERROR</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="width:72px;height:72px;border-radius:50%;
+        background:rgba(255,176,32,.1);border:1px solid rgba(255,176,32,.3);
+        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--amber);margin-bottom:8px;">Something went wrong</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;" id="error-msg">
+        An unexpected error occurred.
+      </div>
+      <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { HEM, HemError } from '/hem-sdk.js';
+
+// ─── OIDC params ──────────────────────────────────────
+const params = new URLSearchParams(window.location.search);
+const OIDC = {
+  client_id:             params.get('client_id')            || '',
+  redirect_uri:          params.get('redirect_uri')         || '',
+  response_type:         params.get('response_type')        || 'code',
+  scope:                 params.get('scope')                 || 'openid',
+  state:                 params.get('state')                 || '',
+  nonce:                 params.get('nonce')                 || '',
+  code_challenge:        params.get('code_challenge')        || '',
+  code_challenge_method: params.get('code_challenge_method') || '',
+};
+
+// ─── Session (in-memory only) ─────────────────────────
+let session = {
+  session_id:      null,
+  signing_input:   null,
+  user_name:       null,
+  user_username:   null,
+  hsm_url:         null,
+  password:        null,
+  hem:             null,   // HEM instance
+  listToken:       null,   // keymgmt:search token
+  selectedKey:     null,   // { kid, label, sub }
+  useToken:        null,
+  openSearch:      false,  // HSM allows unauthenticated search
+  hasMobileApp:    false,  // HSM has mobile-app keys (^RVhUQUlE)
+  pendingAfterPin: null,   // 'search' | 'use'
+};
+
+// Used to cancel stale async mobile-auth operations
+let currentOpId = null;
+
+// ─── localStorage helpers ─────────────────────────────
+const LS_HSM_URL  = 'encedo_oidc_hsm_url';
+
+function lsSaveHints(hsmUrl) {
+  try {
+    if (hsmUrl) localStorage.setItem(LS_HSM_URL, hsmUrl);
+    const dl    = document.getElementById('hsm-url-list');
+    const saved = localStorage.getItem(LS_HSM_URL);
+    if (saved && dl) dl.innerHTML = `<option value="${saved}">`;
+  } catch {}
+}
+
+function lsRestoreHints() {
+  try {
+    const h = localStorage.getItem(LS_HSM_URL);
+    if (h) {
+      document.getElementById('hsm-url-input').value = h;
+      const dl = document.getElementById('hsm-url-list');
+      if (dl) dl.innerHTML = `<option value="${h}">`;
+    }
+  } catch {}
+}
+
+// ─── Init ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const rpHost = new URL(OIDC.redirect_uri).hostname;
+    document.getElementById('rp-label-login').textContent = rpHost;
+    document.getElementById('rp-label-pin').textContent   = rpHost;
+    document.getElementById('confirm-rp').textContent     = rpHost;
+    document.getElementById('sign-audience').textContent  = rpHost;
+  } catch {
+    const label = OIDC.client_id || 'Unknown client';
+    document.getElementById('rp-label-login').textContent = label;
+    document.getElementById('rp-label-pin').textContent   = label;
+  }
+
+  lsRestoreHints();
+
+  document.getElementById('hsm-url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('pin-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSubmitPin();
+  });
+});
+
+// ─── Screen switching ─────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+}
+
+// ─── Step 1: Login → HSM checkin → detect capabilities → search keys ─────
+async function doLogin() {
+  const hsmUrl = document.getElementById('hsm-url-input').value.trim();
+  if (!hsmUrl) {
+    document.getElementById('login-err').textContent = 'Please enter the HSM URL.';
+    return;
+  }
+
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  document.getElementById('login-err').textContent = '';
+
+  try {
+    session.hsm_url  = hsmUrl;
+    session.password = null;
+    lsSaveHints(hsmUrl);
+
+    const hem = new HEM(hsmUrl, { debug: true });
+    session.hem = hem;
+    btn.textContent = 'Connecting to HSM…';
+    await hem.hemCheckin();
+
+    // Step A: detect mobile-app support (^RVhUQUlE pattern)
+    btn.textContent = 'Detecting HSM capabilities…';
+    try {
+      const mobileKeys = await hem.searchKeys(null, '^RVhUQUlE');
+      session.openSearch   = true;
+      session.hasMobileApp = mobileKeys.length > 0;
+      console.log('[HEM] mobile keys:', mobileKeys.length, '→ hasMobileApp:', session.hasMobileApp);
+    } catch (e) {
+      if (!e.status || e.status < 400 || e.status >= 500) throw e;
+      // 4xx → HSM requires auth for search
+      session.openSearch   = false;
+      session.hasMobileApp = false;
+      console.log('[HEM] Step A 4xx → openSearch=false');
+    }
+
+    // Step B: search OIDC keys (or delegate to PIN screen)
+    if (session.openSearch) {
+      btn.textContent = 'Searching keys…';
+      const keys = await hem.searchKeys(null, '^' + btoa('ETSOIDC'));
+      console.log('[HEM] OIDC keys:', keys);
+      if (keys.length === 0) {
+        document.getElementById('login-err').textContent =
+          'No OIDC keys found on this HSM. Please complete enrollment first.';
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        return;
+      }
+      renderKeyList(keys);
+      btn.disabled = false;
+      btn.textContent = 'Continue →';
+      if (keys.length === 1) doSelectKey();
+      else showScreen('s-keys');
+    } else {
+      // Need password before we can search
+      session.pendingAfterPin = 'search';
+      btn.disabled = false;
+      btn.textContent = 'Continue →';
+      showPinScreen();
+    }
+
+  } catch (err) {
+    console.error('[doLogin]', err);
+    document.getElementById('login-err').textContent =
+      err instanceof HemError
+        ? `HSM error (${err.code}): ${err.message}`
+        : `Error: ${err.message || 'Unknown error'}`;
+    btn.disabled = false;
+    btn.textContent = 'Continue →';
+  }
+}
+
+// ─── PIN screen helper ────────────────────────────────
+function showPinScreen() {
+  document.getElementById('pin-err').textContent = '';
+  document.getElementById('pin-input').value = '';
+  showScreen('s-pin');
+  setTimeout(() => document.getElementById('pin-input').focus(), 100);
+}
+
+// ─── Step PIN: user submitted password ───────────────
+async function doSubmitPin() {
+  const pin = document.getElementById('pin-input').value;
+  if (!pin) {
+    document.getElementById('pin-err').textContent = 'Please enter your password.';
+    return;
+  }
+
+  const btn = document.getElementById('pin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Authorizing…';
+  document.getElementById('pin-err').textContent = '';
+
+  try {
+    session.password = pin;
+
+    if (session.pendingAfterPin === 'search') {
+      // Authorize + search OIDC keys
+      const listToken = await session.hem.authorizePassword(pin, 'keymgmt:search');
+      session.listToken = listToken;
+      btn.textContent = 'Searching keys…';
+      const keys = await session.hem.searchKeys(listToken, '^' + btoa('ETSOIDC'));
+      console.log('[HEM] OIDC keys (with token):', keys);
+      if (keys.length === 0) {
+        document.getElementById('pin-err').textContent =
+          'No OIDC keys found on this HSM. Please complete enrollment first.';
+        btn.disabled = false;
+        btn.textContent = 'Continue →';
+        return;
+      }
+      renderKeyList(keys);
+      btn.disabled = false;
+      btn.textContent = 'Continue →';
+      if (keys.length === 1) doSelectKey();
+      else showScreen('s-keys');
+
+    } else if (session.pendingAfterPin === 'use') {
+      // Password obtained after mobile cancel — proceed to sign
+      btn.disabled = false;
+      btn.textContent = 'Continue →';
+      doSelectKey();
+    }
+
+  } catch (err) {
+    console.error('[doSubmitPin]', err);
+    document.getElementById('pin-err').textContent =
+      err instanceof HemError
+        ? `HSM error (${err.code}): ${err.message}`
+        : `Error: ${err.message || 'Unknown error'}`;
+    btn.disabled = false;
+    btn.textContent = 'Continue →';
+  }
+}
+
+// ─── Key list rendering ───────────────────────────────
+/** Decode key description (Uint8Array) → sub string or null */
+function extractSub(description) {
+  if (!description) return null;
+  try {
+    const text   = new TextDecoder().decode(description);
+    const PREFIX = 'ETSOIDC';
+    return text.startsWith(PREFIX) ? text.slice(PREFIX.length) : null;
+  } catch { return null; }
+}
+
+function renderKeyList(keys) {
+  const sel = document.getElementById('key-select');
+  sel.innerHTML = '';
+
+  if (keys.length === 0) {
+    const opt = document.createElement('option');
+    opt.textContent = '— no keys found —';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    session.selectedKey = null;
+    return;
+  }
+
+  keys.forEach(k => {
+    const sub = extractSub(k.description);
+    const opt = document.createElement('option');
+    opt.value         = k.kid;
+    opt.textContent   = (k.label || '(no label)') + '  ·  ' + k.kid;
+    opt.dataset.label = k.label || '';
+    opt.dataset.sub   = sub || '';
+    sel.appendChild(opt);
+  });
+
+  // Pre-select first
+  const first = keys[0];
+  session.selectedKey = { kid: first.kid, label: first.label, sub: extractSub(first.description) };
+
+  sel.addEventListener('change', () => {
+    const opt = sel.selectedOptions[0];
+    session.selectedKey = { kid: opt.value, label: opt.dataset.label, sub: opt.dataset.sub || null };
+  });
+}
+
+// ─── Step 2: Key selected → authorize keymgmt:use → sign ─────────────
+async function doSelectKey() {
+  const sel = document.getElementById('key-select');
+  if (sel.value) {
+    const opt = sel.selectedOptions[0];
+    session.selectedKey = { kid: sel.value, label: opt?.dataset.label || '', sub: opt?.dataset.sub || null };
+  }
+  if (!session.selectedKey?.kid) {
+    document.getElementById('keys-err').textContent = 'Please select a key.';
+    return;
+  }
+
+  const btn = document.getElementById('keys-next-btn');
+  btn.disabled = true;
+  btn.textContent = 'Authorizing…';
+  document.getElementById('keys-err').textContent = '';
+
+  const { kid, label } = session.selectedKey;
+  const scope = `keymgmt:use:${kid}`;
+  const opId  = Symbol();
+  currentOpId = opId;
+
+  try {
+    let useToken;
+
+    if (session.password) {
+      // Password already known — use it directly
+      useToken = await session.hem.authorizePassword(session.password, scope);
+      if (currentOpId !== opId) return;
+
+    } else if (session.hasMobileApp) {
+      // Mobile path — show waiting screen with cancel button
+      document.getElementById('sign-title').textContent     = 'Waiting for approval\u2026';
+      document.getElementById('sign-status').textContent    = 'Confirm on your mobile device';
+      document.getElementById('sign-username').textContent  = '';
+      document.getElementById('sign-keysource').textContent = `HSM \u00b7 ${label}`;
+      document.getElementById('cancel-mobile-btn').style.display = '';
+      showScreen('s-signing');
+
+      useToken = await session.hem.authorizeRemote(scope, {
+        pollInterval: 2_000, pollTimeout: 60_000,
+        onPending: () => console.debug(`[HEM] ${scope}: waiting…`),
+      });
+      if (currentOpId !== opId) return; // cancelled, ignore result
+
+      document.getElementById('cancel-mobile-btn').style.display = 'none';
+      document.getElementById('sign-title').textContent  = 'Confirmed';
+      document.getElementById('sign-status').textContent = 'Generating cryptographic signature\u2026';
+
+    } else {
+      // No mobile app, no password — ask for password
+      session.pendingAfterPin = 'use';
+      btn.disabled = false;
+      btn.textContent = 'Next →';
+      showPinScreen();
+      return;
+    }
+
+    console.log(`[HEM] keymgmt:use:${kid} token obtained ✓`);
+    await finalizeSign(useToken, kid, label);
+
+  } catch (err) {
+    if (currentOpId !== opId) return;
+    console.error('[doSelectKey]', err);
+    if (document.getElementById('s-signing').classList.contains('visible')) {
+      showError(err?.name + ': ' + (err?.message || 'unknown error'));
+    } else {
+      document.getElementById('keys-err').textContent =
+        err instanceof HemError
+          ? `HSM error (${err.code}): ${err.message}`
+          : `Error: ${err.message}`;
+      btn.disabled = false;
+      btn.textContent = 'Next →';
+    }
+  }
+}
+
+// ─── Cancel mobile auth → switch to password ──────────
+function doCancelMobile() {
+  currentOpId = null; // invalidate pending mobile operation
+  document.getElementById('cancel-mobile-btn').style.display = 'none';
+  if (session.password) {
+    // Already have password from earlier — use it
+    doSelectKey();
+  } else {
+    session.pendingAfterPin = 'use';
+    showPinScreen();
+  }
+}
+
+// ─── Finalize: backend login + HSM sign + confirm ─────
+async function finalizeSign(useToken, kid, label) {
+  // POST /authorize/login — get session_id + signing_input
+  const sub = session.selectedKey?.sub || null;
+  const loginRes = await fetch('/authorize/login', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ sub, ...OIDC }),
+  });
+  const loginData = await loginRes.json();
+  if (!loginRes.ok) throw new Error(loginData.error_description || loginData.error || 'Login failed');
+
+  document.getElementById('sign-title').textContent     = 'Confirmed';
+  document.getElementById('sign-status').textContent    = 'Generating cryptographic signature\u2026';
+  document.getElementById('sign-username').textContent  = loginData.user_username;
+  document.getElementById('sign-keysource').textContent = `HSM \u00b7 ${label}`;
+  if (!document.getElementById('s-signing').classList.contains('visible')) showScreen('s-signing');
+
+  // Sign via HSM
+  const sigBytes  = await session.hem.exdsaSign(useToken, kid, loginData.signing_input);
+  const signature = bytesToBase64url(sigBytes);
+  console.log('[HEM] exdsaSign ✓ signature:', signature.slice(0, 20) + '\u2026');
+
+  // POST /authorize/confirm
+  const confirmRes = await fetch('/authorize/confirm', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ session_id: loginData.session_id, signature }),
+  });
+  const confirmData = await confirmRes.json();
+  if (!confirmRes.ok) {
+    showError(confirmData.error_description || confirmData.error || 'Signature verification failed.');
+    return;
+  }
+
+  // Countdown 5→1 before redirect
+  const statusEl = document.getElementById('sign-status');
+  let count = 5;
+  statusEl.textContent = `Redirecting in ${count}\u2026`;
+  await new Promise(resolve => {
+    const iv = setInterval(() => {
+      count--;
+      if (count <= 0) { clearInterval(iv); resolve(); }
+      else statusEl.textContent = `Redirecting in ${count}\u2026`;
+    }, 1000);
+  });
+  window.location.href = confirmData.redirect_url;
+}
+
+// ─── Cancel ───────────────────────────────────────────
+function doCancel() {
+  document.getElementById('rejected-msg').textContent = 'You cancelled the login request.';
+  showScreen('s-rejected');
+  session = { session_id: null, signing_input: null,
+    user_name: null, user_username: null, hsm_url: null, password: null,
+    hem: null, listToken: null, selectedKey: null, useToken: null };
+}
+
+// ─── Confirm + Sign ───────────────────────────────────
+async function doConfirm() {
+  const btn = document.getElementById('confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing…';
+  document.getElementById('confirm-err').textContent = '';
+
+  document.getElementById('sign-username').textContent  = session.user_username;
+  document.getElementById('sign-keysource').textContent = session.selectedKey
+    ? `HSM · ${session.selectedKey.label}` : 'HSM';
+  showScreen('s-signing');
+
+  try {
+    // Sign via HSM
+    const sigBytes  = await session.hem.exdsaSign(
+      session.useToken, session.selectedKey.kid, session.signing_input
+    );
+    const signature = bytesToBase64url(sigBytes);
+    console.log('[HEM] exdsaSign ✓ signature:', signature.slice(0, 20) + '…');
+
+    // POST to backend — complete OIDC flow
+    const res = await fetch('/authorize/confirm', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ session_id: session.session_id, signature }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(data.error_description || data.error || 'Signature verification failed.');
+      return;
+    }
+
+    // Countdown 5→1 before redirect
+    const statusEl = document.getElementById('sign-status');
+    let count = 5;
+    statusEl.textContent = `Redirecting in ${count}…`;
+    await new Promise(resolve => {
+      const iv = setInterval(() => {
+        count--;
+        if (count <= 0) { clearInterval(iv); resolve(); }
+        else statusEl.textContent = `Redirecting in ${count}…`;
+      }, 1000);
+    });
+    window.location.href = data.redirect_url;
+
+  } catch (err) {
+    console.error('[doConfirm]', err);
+    showError(err?.name + ': ' + (err?.message || 'unknown error'));
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('s-error');
+}
+
+function bytesToBase64url(bytes) {
+  let b = '';
+  for (const byte of bytes) b += String.fromCharCode(byte);
+  return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+// Expose to onclick handlers
+window.doLogin        = doLogin;
+window.doSelectKey    = doSelectKey;
+window.doSubmitPin    = doSubmitPin;
+window.doCancelMobile = doCancelMobile;
+window.doCancel       = doCancel;
+window.doConfirm      = doConfirm;
+window.showScreen     = showScreen;
+</script>
+</body>
+</html>

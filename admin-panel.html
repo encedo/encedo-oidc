@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encedo OIDC — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#0a0c0f; --surface:#0f1318; --panel:#141920; --rim:#1e2730;
+  --dim:#2a3542; --muted:#4a5a6a; --soft:#9B7FCC; --text:#D8C8F8;
+  --white:#F2EEFF; --accent:#8040F0; --accentL:#A060FF; --accentD:#5C28CC;
+  --lavender:#C4A8FF; --green:#34D89A; --red:#FF4D72; --amber:#FFB020;
+  --mono:'IBM Plex Mono',monospace; --sans:'Syne',sans-serif;
+}
+html.light{
+  --bg:#F5F3FF; --surface:#FFFFFF; --panel:#EDE8FC; --rim:#D4C8F5;
+  --dim:#BEB0EC; --muted:#7B6BA0; --soft:#6230C0; --text:#2D1E5E;
+  --white:#0F082A; --accent:#7C35F0; --accentL:#9050F8; --accentD:#5C28CC;
+  --lavender:#5020B0; --green:#0D9E6A; --red:#D42050; --amber:#C07010;
+}
+
+body{background:var(--bg);font-family:var(--sans);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+
+/* ── nav ── */
+#nav{background:var(--surface);border-bottom:1px solid var(--rim);padding:12px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+.nav-logo{height:28px;border-radius:6px;padding:3px 8px;background:#fff}
+.nav-sep{width:1px;height:20px;background:var(--rim)}
+.nav-badge{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.nav-btn{background:transparent;border:1px solid var(--rim);border-radius:5px;padding:5px 12px;font-family:var(--mono);font-size:10px;color:var(--soft);cursor:pointer;transition:all .15s}
+.nav-btn:hover{border-color:var(--accentL);color:var(--accentL)}
+
+/* ── layout ── */
+.admin-layout{flex:1;display:flex;min-height:0}
+.admin-sidebar{width:210px;background:var(--surface);border-right:1px solid var(--rim);padding:24px 0;flex-shrink:0;display:flex;flex-direction:column}
+.admin-nav-section{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em;padding:0 20px;margin:18px 0 6px}
+.admin-nav-item{padding:9px 20px;font-family:var(--mono);font-size:11px;color:var(--soft);cursor:pointer;border-left:2px solid transparent;display:flex;align-items:center;gap:9px;transition:all .1s;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left}
+.admin-nav-item:hover{color:var(--lavender)}
+.admin-nav-item.active{color:var(--lavender);background:rgba(128,64,240,.1);border-left-color:var(--accent)}
+.admin-nav-item.disabled{opacity:.35;cursor:default;pointer-events:none}
+.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--rim)}
+.config-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;margin-bottom:4px;margin-top:8px}
+.config-input{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 9px;outline:none;transition:border-color .15s}
+.config-input:focus{border-color:var(--accent)}
+.status-line{display:flex;align-items:center;gap:7px;margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:blink 2.5s ease-in-out infinite}
+.status-dot.red{background:var(--red);animation:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── main ── */
+.admin-main{flex:1;padding:36px 40px;overflow-y:auto;background:var(--bg);position:relative}
+.admin-main-grid{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle,rgba(128,64,240,.1) 1px,transparent 1px);background-size:30px 30px}
+html.light .admin-main-grid{background-image:radial-gradient(circle,rgba(124,53,240,.06) 1px,transparent 1px)}
+.admin-main-glow{position:absolute;top:-80px;right:-100px;width:600px;height:500px;pointer-events:none;background:radial-gradient(ellipse at 70% 20%,rgba(128,64,240,.2) 0%,transparent 60%)}
+html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(124,53,240,.08) 0%,transparent 60%)}
+.admin-main-inner{position:relative;z-index:1}
+.page{display:none}.page.active{display:block}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:28px}
+.page-title{font-size:22px;font-weight:800;color:var(--white);letter-spacing:-.02em;margin-bottom:3px}
+.page-sub{font-family:var(--mono);font-size:10px;color:var(--muted)}
+
+/* ── buttons ── */
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;padding:8px 16px}
+.btn-primary{background:linear-gradient(135deg,var(--accentL),var(--accentD));color:#fff;border:none;box-shadow:0 4px 16px rgba(128,64,240,.35)}
+.btn-primary:hover{box-shadow:0 6px 22px rgba(128,64,240,.55);transform:translateY(-1px)}
+.btn-ghost{background:transparent;border:1px solid var(--dim);color:var(--soft)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--lavender)}
+.btn-danger{background:transparent;border:1px solid rgba(255,77,114,.25);color:var(--red)}
+.btn-danger:hover{background:rgba(255,77,114,.08)}
+.btn-xs{padding:4px 10px;font-size:10px}
+
+/* ── table ── */
+.table{background:var(--surface);border:1px solid var(--rim);border-radius:12px;overflow:hidden}
+.table-head{display:grid;padding:10px 20px;border-bottom:1px solid var(--rim);background:rgba(128,64,240,.06)}
+.table-head-cell{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
+.table-row{display:grid;padding:13px 20px;align-items:center;transition:background .1s}
+.table-row:not(:last-child){border-bottom:1px solid var(--rim)}
+.table-row:hover{background:rgba(128,64,240,.05)}
+.cell-name{font-weight:700;color:var(--white);font-size:13px}
+.cell-mono{font-family:var(--mono);font-size:11px;color:var(--lavender);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell-muted{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.cell-actions{display:flex;gap:6px;justify-content:flex-end}
+
+/* ── client cards ── */
+.client-card{background:var(--surface);border:1px solid var(--rim);border-radius:12px;padding:18px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;transition:border-color .12s}
+.client-card:hover{border-color:var(--dim)}
+.client-card-body{flex:1;min-width:0}
+.client-card-name{font-size:15px;font-weight:700;color:var(--white);margin-bottom:5px}
+.client-card-meta{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.client-card-meta span{color:var(--soft)}
+.client-card-actions{display:flex;gap:6px;flex-shrink:0}
+
+/* ── info panel ── */
+.info-panel{background:var(--surface);border:1px solid var(--rim);border-radius:12px;padding:18px 22px;margin-top:20px}
+.section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:12px}
+.info-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-bottom:7px}
+.info-row:last-child{margin-bottom:0}
+.info-key{color:var(--muted)}.info-value{color:var(--text)}
+.divider{height:1px;background:var(--rim);margin:14px 0}
+
+/* ── misc ── */
+.spinner{width:15px;height:15px;border:2px solid var(--dim);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.empty-icon{font-size:28px;margin-bottom:10px;opacity:.3}
+.loading-row{text-align:center;padding:36px}
+
+/* ── modal ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(5px);z-index:200;align-items:center;justify-content:center;padding:24px}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--dim);border-radius:16px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(128,64,240,.1);animation:modalIn .18s ease}
+.modal-wide{width:540px}
+@keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
+.modal-title{font-size:15px;font-weight:800;color:var(--white)}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;border-radius:4px;transition:color .1s}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:22px 24px}
+.modal-footer{padding:14px 24px;border-top:1px solid var(--rim);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--surface)}
+
+/* ── form ── */
+.field{margin-bottom:14px}
+.field-label{display:block;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:6px}
+.field-input,.field-textarea{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 13px;outline:none;transition:border-color .15s}
+.field-input:focus,.field-textarea:focus{border-color:var(--accent)}
+.field-input:disabled{opacity:.45;cursor:not-allowed}
+.field-textarea{resize:vertical;min-height:76px}
+.field-hint{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* ── kid badge ── */
+.kid-empty{opacity:.45;font-style:italic}
+
+/* ── secret box ── */
+.secret-box{background:rgba(128,64,240,.07);border:1px solid rgba(128,64,240,.22);border-radius:10px;padding:14px 16px;margin-top:12px}
+.secret-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.secret-val{font-family:var(--mono);font-size:12px;color:var(--lavender);word-break:break-all;line-height:1.6}
+.secret-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
+
+/* ── clients checklist ── */
+.clients-list{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:4px 12px;max-height:160px;overflow-y:auto}
+.client-check{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--rim)}
+.client-check:last-child{border-bottom:none}
+.client-check input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;flex-shrink:0}
+.client-check-name{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--white)}
+.client-check-id{font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── toasts ── */
+#toasts{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface);border:1px solid var(--dim);border-radius:10px;padding:10px 14px;min-width:230px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.4);animation:toastIn .2s ease;color:var(--text)}
+.toast.ok{border-color:rgba(52,216,154,.3)}.toast.err{border-color:rgba(255,77,114,.3)}
+@keyframes toastIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+
+/* ── scope tags ── */
+.scope-tag {
+  background: var(--panel); border: 1px solid var(--dim); border-radius: 7px;
+  padding: 7px 14px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  cursor: pointer; transition: all .12s; user-select: none;
+}
+.scope-tag.on {
+  background: rgba(128,64,240,.2); border-color: var(--accent); color: var(--lavender);
+}
+/* ── pkce toggle ── */
+.pkce-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: rgba(128,64,240,.06); border: 1px solid rgba(128,64,240,.18);
+  border-radius: 8px; cursor: pointer; transition: all .12s; user-select: none;
+}
+.pkce-row:hover { background: rgba(128,64,240,.1); }
+.pkce-row.on { background: rgba(128,64,240,.12); border-color: rgba(128,64,240,.4); }
+.pkce-check {
+  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+  background: var(--dim); border: 1px solid var(--muted);
+  display: flex; align-items: center; justify-content: center; transition: all .12s;
+}
+.pkce-row.on .pkce-check {
+  background: linear-gradient(135deg, var(--accentL), var(--accentD));
+  border-color: var(--accentD);
+}
+/* ── enrollment link box ── */
+.enroll-box{background:rgba(52,216,154,.06);border:1px solid rgba(52,216,154,.25);border-radius:10px;padding:14px 16px;margin-top:12px}
+.enroll-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.enroll-url{font-family:var(--mono);font-size:11px;color:var(--green);word-break:break-all;line-height:1.6}
+.enroll-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
+
+/* ── client_id / secret display in view modal ── */
+.id-badge {
+  background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
+  padding: 10px 13px; font-family: var(--mono); font-size: 12px;
+  color: var(--lavender); letter-spacing: .04em; word-break: break-all;
+}
+.secret-dots {
+  background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
+  padding: 10px 13px; font-family: var(--mono); font-size: 15px;
+  color: var(--muted); letter-spacing: .12em; flex: 1;
+}
+/* ── card detail line ── */
+.client-card-scopes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+.scope-pill {
+  background: rgba(128,64,240,.12); border: 1px solid rgba(128,64,240,.25);
+  border-radius: 4px; padding: 2px 8px;
+  font-family: var(--mono); font-size: 9px; color: var(--soft); letter-spacing: .04em;
+}
+
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<div id="nav">
+  <img class="nav-logo" src="data:image/png;base64,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" alt="Encedo">
+  <div class="nav-sep"></div>
+  <span class="nav-badge">ADMIN PANEL</span>
+  <div class="nav-right">
+    <button class="nav-btn" onclick="toggleTheme()">
+      <span id="theme-icon">☀</span>&nbsp;<span id="theme-label">Light</span>
+    </button>
+  </div>
+</div>
+
+<!-- LAYOUT -->
+<div class="admin-layout">
+
+  <!-- SIDEBAR -->
+  <div class="admin-sidebar">
+    <div class="admin-nav-section">MANAGEMENT</div>
+    <button class="admin-nav-item active" onclick="showPage('users',this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Users
+    </button>
+    <button class="admin-nav-item" onclick="showPage('clients',this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      Clients
+    </button>
+    <div class="admin-nav-section">SYSTEM</div>
+    <button class="admin-nav-item disabled">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Audit log
+    </button>
+    <div class="sidebar-footer">
+      <div class="config-label">API BASE</div>
+      <input class="config-input" id="api-base" value="http://localhost:3000" oninput="checkHealth()">
+      <div class="config-label">ADMIN SECRET</div>
+      <input class="config-input" id="api-secret" type="password" value="dev-secret-change-me" oninput="checkHealth()">
+      <div class="status-line">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">connecting…</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="admin-main">
+    <div class="admin-main-grid"></div>
+    <div class="admin-main-glow"></div>
+    <div class="admin-main-inner">
+
+      <!-- PAGE: USERS -->
+      <div class="page active" id="page-users">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Users</div>
+            <div class="page-sub" id="users-sub">loading…</div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+        </div>
+        <div class="table">
+          <div class="table-head" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
+            <div class="table-head-cell">USERNAME</div>
+            <div class="table-head-cell">FULL NAME</div>
+            <div class="table-head-cell">EMAIL</div>
+            <div class="table-head-cell">HSM URL</div>
+            <div class="table-head-cell">CREATED</div>
+            <div class="table-head-cell" style="text-align:right">ACTIONS</div>
+          </div>
+          <div id="users-body">
+            <div class="loading-row"><span class="spinner"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: CLIENTS -->
+      <div class="page" id="page-clients">
+        <div class="page-head">
+          <div>
+            <div class="page-title">Clients</div>
+            <div class="page-sub" id="clients-sub">loading…</div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
+        </div>
+        <div id="clients-body">
+          <div class="loading-row"><span class="spinner"></span></div>
+        </div>
+        <div class="info-panel" id="jwks-panel" style="display:none">
+          <div class="section-label">JWKS ENDPOINT</div>
+          <div class="info-row">
+            <span class="info-key">GET</span>
+            <span class="info-value" id="jwks-url"></span>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;gap:24px;">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">?kid= supported</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">Cache-Control: max-age=86400</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ MODALS ════════════════════ -->
+
+<!-- ADD USER -->
+<div class="overlay" id="modal-add-user">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add user</div>
+      <button class="modal-close" onclick="closeModal('modal-add-user')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Username (nick)</label>
+        <input class="field-input" id="u-username" placeholder="e.g. krzysztof" autocomplete="off">
+        <div class="field-hint">Unique login &#183; becomes OIDC preferred_username</div>
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label class="field-label">First name</label>
+          <input class="field-input" id="u-firstname" placeholder="Jan">
+        </div>
+        <div class="field">
+          <label class="field-label">Last name</label>
+          <input class="field-input" id="u-lastname" placeholder="Kowalski">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Email</label>
+        <input class="field-input" id="u-email" type="email" placeholder="jan@example.com">
+      </div>
+      <div class="field">
+        <label class="field-label">HSM URL</label>
+        <input class="field-input" id="u-hsm" placeholder="http://192.168.7.1">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT USER -->
+<div class="overlay" id="modal-edit-user">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div class="modal-title">Edit user</div>
+      <button class="modal-close" onclick="closeModal('modal-edit-user')">&#215;</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- identity -->
+      <div class="section-label">Identity</div>
+      <div class="field">
+        <label class="field-label">SUB (UUID)</label>
+        <div class="id-badge" id="eu-sub" style="font-size:11px;letter-spacing:.04em">—</div>
+        <div class="field-hint">Auto-generated &#183; immutable &#183; used in all OIDC tokens</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Username (nick)</label>
+        <input class="field-input" id="eu-username">
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label class="field-label">First name</label>
+          <input class="field-input" id="eu-firstname">
+        </div>
+        <div class="field">
+          <label class="field-label">Last name</label>
+          <input class="field-input" id="eu-lastname">
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">Email</label>
+        <input class="field-input" id="eu-email" type="email">
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- hardware -->
+      <div class="section-label">Hardware</div>
+      <div class="field">
+        <label class="field-label">HSM URL</label>
+        <input class="field-input" id="eu-hsm">
+      </div>
+      <div class="field">
+        <label class="field-label">KID</label>
+        <div class="id-badge" id="eu-kid" style="font-size:11px;letter-spacing:.05em">—</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Public key (Ed25519)</label>
+        <div class="id-badge" id="eu-pubkey-preview" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</div>
+        <div class="field-hint">Key type: <span style="color:var(--green)" id="eu-key-type">EdDSA</span></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- clients -->
+      <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
+      <div class="clients-list" id="eu-clients-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading…</div>
+      </div>
+      <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to</div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditUser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- USER CREATED (enrollment link) -->
+<div class="overlay" id="modal-user-created">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">User created</div>
+      <button class="modal-close" onclick="closeModal('modal-user-created')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Username</label>
+        <div class="id-badge" id="nu-username"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">SUB (UUID)</label>
+        <div class="id-badge" id="nu-sub" style="font-size:11px"></div>
+      </div>
+      <div class="enroll-box">
+        <div class="enroll-box-label">Enrollment link (24h)</div>
+        <div class="enroll-url" id="nu-enroll-url"></div>
+        <div class="enroll-warn">&#9888; Send to user &#8212; link expires in 24 hours</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-user-created')">Close</button>
+      <button class="btn btn-ghost" onclick="copyText('nu-enroll-url');closeModal('modal-user-created')">&#128203; Copy &amp; Close</button>
+      <button class="btn btn-primary" onclick="window.open(document.getElementById('nu-enroll-url').textContent,'_blank')">&#8599; Open</button>
+    </div>
+  </div>
+</div>
+
+<!-- ENROLLMENT LINK -->
+<div class="overlay" id="modal-enrollment">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Enrollment link</div>
+      <button class="modal-close" onclick="closeModal('modal-enrollment')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="enroll-box">
+        <div class="enroll-box-label">Enrollment link (24h)</div>
+        <div class="enroll-url" id="enroll-url"></div>
+        <div class="enroll-warn">&#9888; Send to user &#8212; link expires in 24 hours</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-enrollment')">Close</button>
+      <button class="btn btn-ghost" onclick="copyText('enroll-url');closeModal('modal-enrollment')">&#128203; Copy &amp; Close</button>
+      <button class="btn btn-primary" onclick="window.open(document.getElementById('enroll-url').textContent,'_blank')">&#8599; Open</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CLIENT -->
+<div class="overlay" id="modal-add-client">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div class="modal-title">Add client</div>
+      <button class="modal-close" onclick="closeModal('modal-add-client')">&#215;</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="section-label">Client identity</div>
+      <div class="field">
+        <label class="field-label">Application name</label>
+        <input class="field-input" id="c-name" placeholder="e.g. Nextcloud" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="field-label">Redirect URIs</label>
+        <textarea class="field-textarea" id="c-uris" placeholder="https://cloud.example.com/apps/user_oidc/code&#10;http://localhost:8080/callback"></textarea>
+        <div class="field-hint">One URI per line &#183; HTTPS required (localhost http allowed)</div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="c-scopes">
+        <div class="scope-tag on" data-scope="openid">openid</div>
+        <div class="scope-tag on" data-scope="profile">profile</div>
+        <div class="scope-tag on" data-scope="email">email</div>
+        <div class="scope-tag" data-scope="groups">groups</div>
+      </div>
+      <div class="field-hint" style="margin-top:8px">Click to toggle &#183; <span style="color:var(--soft)">openid</span> always required</div>
+
+      <div class="divider"></div>
+      <div class="section-label">Token settings</div>
+      <div class="two-col">
+        <div class="field">
+          <label class="field-label">ID token TTL (s)</label>
+          <input class="field-input" id="c-id-ttl" type="number" value="3600" min="60">
+        </div>
+        <div class="field">
+          <label class="field-label">Access token TTL (s)</label>
+          <input class="field-input" id="c-at-ttl" type="number" value="3600" min="60">
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label">PKCE</div>
+      <div class="pkce-row on" id="c-pkce" onclick="togglePkce('c-pkce')">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Require PKCE (S256)</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-client')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddClient()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT CLIENT -->
+<div class="overlay" id="modal-edit-client">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div class="modal-title">Edit client</div>
+      <button class="modal-close" onclick="closeModal('modal-edit-client')">&#215;</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="section-label">Client identity</div>
+      <div class="field">
+        <label class="field-label">Client ID</label>
+        <div class="id-badge" id="ec-id-display">—</div>
+        <div class="field-hint">Auto-generated &#183; immutable</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Application name</label>
+        <input class="field-input" id="ec-name">
+      </div>
+      <div class="field">
+        <label class="field-label">Client secret</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div class="secret-dots">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</div>
+          <button class="btn btn-ghost btn-xs" style="white-space:nowrap" onclick="doRotateFromEdit()">&#8635; Generate</button>
+        </div>
+        <div class="field-hint">Rotate to generate a new secret &#183; old secret invalidated immediately</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Redirect URIs</label>
+        <textarea class="field-textarea" id="ec-uris"></textarea>
+        <div class="field-hint">One URI per line</div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="ec-scopes">
+        <div class="scope-tag on" data-scope="openid">openid</div>
+        <div class="scope-tag on" data-scope="profile">profile</div>
+        <div class="scope-tag on" data-scope="email">email</div>
+        <div class="scope-tag" data-scope="groups">groups</div>
+      </div>
+      <div class="field-hint" style="margin-top:8px">Click to toggle &#183; <span style="color:var(--soft)">openid</span> always required</div>
+
+      <div class="divider"></div>
+      <div class="section-label">Token settings</div>
+      <div class="two-col">
+        <div class="field">
+          <label class="field-label">ID token TTL (s)</label>
+          <input class="field-input" id="ec-id-ttl" type="number" min="60">
+        </div>
+        <div class="field">
+          <label class="field-label">Access token TTL (s)</label>
+          <input class="field-input" id="ec-at-ttl" type="number" min="60">
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-label">PKCE</div>
+      <div class="pkce-row" id="ec-pkce" onclick="togglePkce('ec-pkce')">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Require PKCE (S256)</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
+        </div>
+      </div>
+
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-client')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditClient()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CLIENT CREATED (secret reveal) -->
+<div class="overlay" id="modal-client-created">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Client created</div>
+      <button class="modal-close" onclick="closeModal('modal-client-created')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Client ID</label>
+        <div class="field-input" id="rc-id" style="user-select:all;opacity:.7"></div>
+      </div>
+      <div class="secret-box">
+        <div class="secret-box-label">Client Secret</div>
+        <div class="secret-val" id="rc-secret"></div>
+        <div class="secret-warn">&#9888; Copy now &#8212; will not be shown again</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="copyText('rc-secret')">&#128203; Copy secret</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-client-created')">Done</button>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- SECRET ROTATED -->
+<div class="overlay" id="modal-secret-rotated">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Secret rotated</div>
+      <button class="modal-close" onclick="closeModal('modal-secret-rotated')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Client ID</label>
+        <div class="id-badge" id="rr-id"></div>
+      </div>
+      <div class="secret-box">
+        <div class="secret-box-label">New Client Secret</div>
+        <div class="secret-val" id="rr-secret"></div>
+        <div class="secret-warn">&#9888; Copy now &#8212; will not be shown again</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="copyText('rr-secret')">&#128203; Copy secret</button>
+      <button class="btn btn-primary" onclick="closeModal('modal-secret-rotated')">Done</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+/* ── scope / pkce helpers ── */
+function togglePkce(id) {
+  document.getElementById(id).classList.toggle('on');
+}
+
+function getScopesFrom(containerId) {
+  return [...document.querySelectorAll(`#${containerId} .scope-tag.on`)]
+    .map(el => el.dataset.scope);
+}
+
+function setScopesIn(containerId, active) {
+  document.querySelectorAll(`#${containerId} .scope-tag`).forEach(el => {
+    el.classList.toggle('on', active.includes(el.dataset.scope));
+  });
+}
+
+function initScopeTags(containerId) {
+  document.querySelectorAll(`#${containerId} .scope-tag`).forEach(el => {
+    el.onclick = () => {
+      if (el.dataset.scope === 'openid') return; // always required
+      el.classList.toggle('on');
+    };
+  });
+}
+
+/* ── state ── */
+let _usersCache = [];
+let _clientsCache = [];
+let _editClientId = null;
+let _rotateId = null;
+
+/* ── helpers ── */
+const $ = id => document.getElementById(id);
+const base = () => $('api-base').value.replace(/\/$/, '');
+const secret = () => $('api-secret').value;
+const hdrs = () => ({'Content-Type':'application/json','Authorization':`Bearer ${secret()}`});
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+async function api(path, opts = {}) {
+  const res = await fetch(base() + path, {
+    ...opts,
+    headers: {...hdrs(), ...(opts.headers || {})},
+  });
+  const body = res.status === 204 ? null : await res.json();
+  if (!res.ok) throw new Error(body?.detail || body?.error || `HTTP ${res.status}`);
+  return body;
+}
+
+function fmt(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString('pl-PL', {day:'2-digit',month:'2-digit',year:'numeric'})
+       + ' ' + d.toLocaleTimeString('pl-PL', {hour:'2-digit',minute:'2-digit'});
+}
+
+function toast(msg, type = 'ok') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span>${type==='ok'?'✓':'✗'}</span><span>${msg}</span>`;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+function copyText(id) {
+  navigator.clipboard.writeText($(id).textContent);
+  toast('Copied to clipboard');
+}
+
+function toggleTheme() {
+  const light = document.documentElement.classList.toggle('light');
+  $('theme-icon').textContent = light ? '🌙' : '☀';
+  $('theme-label').textContent = light ? 'Dark' : 'Light';
+}
+
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.admin-nav-item').forEach(b => b.classList.remove('active'));
+  $('page-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'users')   loadUsers();
+  if (name === 'clients') loadClients();
+}
+
+function openModal(id)  { $(id).classList.add('open'); }
+function closeModal(id) { $(id).classList.remove('open'); }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape')
+    document.querySelectorAll('.overlay.open').forEach(o => o.classList.remove('open'));
+});
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+});
+
+/* ── health ── */
+async function checkHealth() {
+  const dot = $('status-dot'), txt = $('status-text');
+  try {
+    const r = await fetch(base() + '/health');
+    if (r.ok) { dot.className = 'status-dot'; txt.textContent = new URL(base()).host; }
+    else throw 0;
+  } catch { dot.className = 'status-dot red'; txt.textContent = 'unreachable'; }
+}
+
+/* ════════════════════ USERS ════════════════════ */
+
+async function loadUsers() {
+  const b = $('users-body');
+  b.innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
+  try {
+    const users = await api('/admin/users');
+    _usersCache = users;
+    $('users-sub').textContent = users.length + ' registered user' + (users.length !== 1 ? 's' : '');
+    if (!users.length) {
+      b.innerHTML = '<div class="empty"><div class="empty-icon">👤</div>No users yet</div>';
+      return;
+    }
+    b.innerHTML = users.map((u, i) => `
+      <div class="table-row" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
+        <div class="cell-name">${esc(u.username || u.sub)}</div>
+        <div class="cell-mono" style="color:var(--text)">${esc(u.name || '–')}</div>
+        <div class="cell-mono">${esc(u.email || '–')}</div>
+        <div class="cell-mono" style="font-size:10px">${esc(u.hsm_url)}</div>
+        <div class="cell-muted">${fmt(u.created_at)}</div>
+        <div class="cell-actions">
+          ${u.enrollment_token && !u.enrolled_at ? `<button class="btn btn-xs" style="background:rgba(52,216,154,.12);border:1px solid rgba(52,216,154,.3);color:var(--green)" onclick="openEnrollment('${esc(u.enrollment_token)}')">Enrollment</button>` : ''}
+          <button class="btn btn-ghost btn-xs" onclick="openEditUser(${i})">Edit</button>
+          <button class="btn btn-danger btn-xs" onclick="delUser('${esc(u.sub)}','${esc(u.username)}')">Delete</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    b.innerHTML = `<div style="padding:16px 20px;font-family:var(--mono);font-size:11px;color:var(--red)">${e.message}</div>`;
+  }
+}
+
+/* ADD */
+function openAddUser() {
+  ['u-username','u-firstname','u-lastname','u-email'].forEach(id => $(id).value = '');
+  $('u-hsm').value = 'https://my.ence.do';
+  openModal('modal-add-user');
+  setTimeout(() => $('u-username').focus(), 60);
+}
+
+async function submitAddUser() {
+  const username  = $('u-username').value.trim();
+  const firstname = $('u-firstname').value.trim();
+  const lastname  = $('u-lastname').value.trim();
+  const name      = [firstname, lastname].filter(Boolean).join(' ');
+  const email     = $('u-email').value.trim();
+  const hsm_url   = $('u-hsm').value.trim();
+
+  if (!username)  return toast('Username required', 'err');
+  if (!firstname) return toast('First name required', 'err');
+  if (!lastname)  return toast('Last name required', 'err');
+  if (!email)     return toast('Email required', 'err');
+  if (!hsm_url)   return toast('HSM URL required', 'err');
+
+  try {
+    const user = await api('/admin/users', {method:'POST', body:JSON.stringify({username, name, email, hsm_url})});
+    closeModal('modal-add-user');
+
+    const { enrollment_url } = user;
+
+    $('nu-username').textContent   = user.username;
+    $('nu-sub').textContent        = user.sub;
+    $('nu-enroll-url').textContent = enrollment_url;
+    openModal('modal-user-created');
+
+    loadUsers();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* EDIT */
+async function openEditUser(idx) {
+  const u = _usersCache[idx];
+  const parts = (u.name || '').split(' ');
+  $('eu-sub').textContent       = u.sub;
+  $('eu-username').value        = u.username || '';
+  $('eu-firstname').value       = parts[0] || '';
+  $('eu-lastname').value        = parts.slice(1).join(' ') || '';
+  $('eu-email').value           = u.email || '';
+  $('eu-hsm').value             = u.hsm_url || '';
+  $('eu-kid').textContent       = u.kid || '—';
+  $('eu-key-type').textContent  = u.key_type || 'EdDSA';
+  $('eu-pubkey-preview').textContent = u.pubkey
+    ? btoa(u.pubkey.match(/../g).map(h=>String.fromCharCode(parseInt(h,16))).join(''))
+    : '—';
+  openModal('modal-edit-user');
+  setTimeout(() => $('eu-username').focus(), 60);
+  await _renderClientsChecklist(u.clients || []);
+}
+
+async function _renderClientsChecklist(selectedIds) {
+  const wrap = $('eu-clients-list');
+  wrap.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading…</div>';
+  try {
+    _clientsCache = await api('/admin/clients');
+    if (!_clientsCache.length) {
+      wrap.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">No clients defined yet</div>';
+      return;
+    }
+    wrap.innerHTML = _clientsCache.map(c => `
+      <label class="client-check">
+        <input type="checkbox" data-cid="${esc(c.client_id)}" ${selectedIds.includes(c.client_id) ? 'checked' : ''}>
+        <span class="client-check-name">${esc(c.name)}</span>
+        <span class="client-check-id">${esc(c.client_id)}</span>
+      </label>`).join('');
+  } catch (e) {
+    wrap.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--red);padding:10px 0">${e.message}</div>`;
+  }
+}
+
+async function submitEditUser() {
+  const sub       = $('eu-sub').textContent.trim();
+  const firstname = $('eu-firstname').value.trim();
+  const lastname  = $('eu-lastname').value.trim();
+  const updates = {
+    username : $('eu-username').value.trim(),
+    name     : [firstname, lastname].filter(Boolean).join(' '),
+    email    : $('eu-email').value.trim(),
+    hsm_url  : $('eu-hsm').value.trim(),
+    clients  : [...document.querySelectorAll('#eu-clients-list input:checked')].map(el => el.dataset.cid),
+  };
+  if (!updates.username) return toast('Username required', 'err');
+  if (!updates.hsm_url)  return toast('HSM URL required', 'err');
+  try {
+    await api(`/admin/users/${sub}`, {method:'PATCH', body:JSON.stringify(updates)});
+    closeModal('modal-edit-user');
+    toast('User updated');
+    loadUsers();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function openEnrollment(token) {
+  const url = base() + '/enrollment?token=' + encodeURIComponent(token);
+  document.getElementById('enroll-url').textContent = url;
+  document.getElementById('modal-enrollment').classList.add('active');
+}
+
+async function delUser(sub, username) {
+  if (!confirm(`Delete user "${username || sub}"?`)) return;
+  try {
+    await api(`/admin/users/${sub}`, {method:'DELETE'});
+    toast(`User "${username || sub}" deleted`);
+    loadUsers();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ════════════════════ CLIENTS ════════════════════ */
+
+async function loadClients() {
+  const b = $('clients-body');
+  b.innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
+  try {
+    const cls = await api('/admin/clients');
+    _clientsCache = cls;
+    $('clients-sub').textContent = cls.length + ' relying part' + (cls.length !== 1 ? 'ies' : 'y');
+    $('jwks-panel').style.display = cls.length ? 'block' : 'none';
+    $('jwks-url').textContent = base() + '/jwks.json';
+    if (!cls.length) {
+      b.innerHTML = '<div class="empty"><div class="empty-icon">🔗</div>No clients yet</div>';
+      return;
+    }
+    b.innerHTML = cls.map((c,ci) => {
+      const urimeta = (c.redirect_uris || []).map(u => u.replace(/^https?:\/\//, '')).join(' · ');
+      const scopePills = (c.scopes || ['openid']).map(s =>
+        `<span class="scope-pill">${esc(s)}</span>`).join('');
+      return `<div class="client-card">
+        <div class="client-card-body">
+          <div class="client-card-name">${esc(c.name)}</div>
+          <div class="client-card-meta">id: <span>${esc(c.client_id)}</span> &nbsp;·&nbsp; ${esc(urimeta)}</div>
+          <div class="client-card-scopes">${scopePills}</div>
+        </div>
+        <div class="client-card-actions">
+          <button class="btn btn-ghost btn-xs" onclick="openEditClient(${ci})">Edit</button>
+          <button class="btn btn-danger btn-xs" onclick="delClient('${esc(c.client_id)}','${esc(c.name)}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    b.innerHTML = `<div style="font-family:var(--mono);font-size:11px;color:var(--red);padding:16px">${e.message}</div>`;
+  }
+}
+
+function openAddClient() {
+  $('c-name').value = ''; $('c-uris').value = '';
+  $('c-id-ttl').value = 3600; $('c-at-ttl').value = 3600;
+  setScopesIn('c-scopes', ['openid','profile','email']);
+  $('c-pkce').classList.add('on');
+  initScopeTags('c-scopes');
+  openModal('modal-add-client');
+  setTimeout(() => $('c-name').focus(), 60);
+}
+
+async function submitAddClient() {
+  const name   = $('c-name').value.trim();
+  const uris   = $('c-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const scopes = getScopesFrom('c-scopes');
+  const pkce   = $('c-pkce').classList.contains('on');
+  const id_token_ttl     = parseInt($('c-id-ttl').value) || 3600;
+  const access_token_ttl = parseInt($('c-at-ttl').value) || 3600;
+  if (!name)        return toast('Name required', 'err');
+  if (!uris.length) return toast('At least one redirect URI required', 'err');
+  try {
+    const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
+      name, redirect_uris:uris, scopes, pkce, id_token_ttl, access_token_ttl
+    })});
+    closeModal('modal-add-client');
+    $('rc-id').textContent = c.client_id;
+    $('rc-secret').textContent = c.client_secret;
+    openModal('modal-client-created');
+    loadClients();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function openEditClient(idx) {
+  const c = _clientsCache[idx];
+  _editClientId = c.client_id;
+  $('ec-id-display').textContent = c.client_id;
+  $('ec-name').value = c.name || '';
+  $('ec-uris').value = (c.redirect_uris || []).join('\n');
+  $('ec-id-ttl').value = c.id_token_ttl || 3600;
+  $('ec-at-ttl').value = c.access_token_ttl || 3600;
+  setScopesIn('ec-scopes', c.scopes || ['openid','profile','email']);
+  if (c.pkce !== false) $('ec-pkce').classList.add('on');
+  else $('ec-pkce').classList.remove('on');
+  initScopeTags('ec-scopes');
+  openModal('modal-edit-client');
+  setTimeout(() => $('ec-name').focus(), 60);
+}
+
+async function submitEditClient() {
+  const name   = $('ec-name').value.trim();
+  const uris   = $('ec-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const scopes = getScopesFrom('ec-scopes');
+  const pkce   = $('ec-pkce').classList.contains('on');
+  const id_token_ttl     = parseInt($('ec-id-ttl').value) || 3600;
+  const access_token_ttl = parseInt($('ec-at-ttl').value) || 3600;
+  if (!name)        return toast('Name required', 'err');
+  if (!uris.length) return toast('At least one redirect URI required', 'err');
+  try {
+    await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
+      name, redirect_uris:uris, scopes, pkce, id_token_ttl, access_token_ttl
+    })});
+    closeModal('modal-edit-client');
+    toast('Client updated');
+    loadClients();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doRotateFromEdit() {
+  if (!_editClientId) return;
+  if (!confirm('Generate new client_secret? Old secret stops working immediately.')) return;
+  try {
+    const d = await api(`/admin/clients/${_editClientId}/rotate-secret`, {method:'POST'});
+    closeModal('modal-edit-client');
+    $('rr-id').textContent     = d.client_id;
+    $('rr-secret').textContent = d.client_secret;
+    openModal('modal-secret-rotated');
+    toast('Secret rotated');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function delClient(id, name) {
+  if (!confirm(`Delete client "${name}"?`)) return;
+  try {
+    await api(`/admin/clients/${id}`, {method:'DELETE'});
+    toast(`Client "${name}" deleted`);
+    loadClients();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ── boot ── */
+checkHealth();
+loadUsers();
+</script>
+</body>
+</html>

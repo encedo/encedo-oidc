@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encedo — HSM Enrollment</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #0a0c0f;
+    --surface: #0f1318;
+    --panel:   #141920;
+    --rim:     #1e2730;
+    --dim:     #2a3542;
+    --muted:   #4a5a6a;
+    --soft:    #9B7FCC;
+    --text:    #D8C8F8;
+    --white:   #F2EEFF;
+    --accent:  #8040F0;
+    --accentL: #A060FF;
+    --accentD: #5C28CC;
+    --lavender:#C4A8FF;
+    --green:   #34D89A;
+    --red:     #FF4D72;
+    --amber:   #FFB020;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  body { background: var(--bg); font-family: var(--sans); color: var(--text); min-height: 100vh; }
+
+  .screen { display: none; min-height: 100vh; }
+  .screen.visible { display: flex; }
+
+  .shell {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 40px 20px;
+    position: relative; overflow: hidden; background: var(--bg);
+  }
+  .shell::before {
+    content: ''; position: absolute;
+    top: -120px; left: 50%; transform: translateX(-50%);
+    width: 700px; height: 500px;
+    background: radial-gradient(ellipse at center, rgba(128,64,240,.22) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .shell::after {
+    content: ''; position: absolute; bottom: -100px; right: -100px;
+    width: 400px; height: 400px;
+    background: radial-gradient(ellipse, rgba(52,216,154,.08) 0%, transparent 65%);
+    pointer-events: none;
+  }
+  .shell-grid {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image: radial-gradient(circle, rgba(128,64,240,.12) 1px, transparent 1px);
+    background-size: 30px 30px;
+  }
+
+  .logo-block { position: relative; z-index: 1; text-align: center; margin-bottom: 36px; }
+  .logo-mark { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .2em; margin-top: 4px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--rim); border-radius: 16px;
+    padding: 32px 36px; width: 100%; max-width: 420px;
+    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(128,64,240,.1);
+    position: relative; z-index: 1;
+  }
+
+  .field { margin-bottom: 18px; }
+  .field-label { font-family: var(--mono); font-size: 9px; color: var(--muted);
+    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 7px; }
+  .field-input {
+    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
+    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
+    width: 100%; outline: none; transition: border-color .15s;
+  }
+  .field-input:focus { border-color: var(--accent); }
+  .field-input::placeholder { color: var(--muted); }
+  .field-input[readonly] {
+    opacity: .65; cursor: default; color: var(--lavender);
+  }
+  .field-hint { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+
+  .btn { display: block; width: 100%; border: none; border-radius: 9px; padding: 13px 20px;
+    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .03em;
+    text-align: center; cursor: pointer; margin-top: 8px; transition: all .15s; }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accentL), var(--accentD));
+    color: #fff; box-shadow: 0 6px 20px rgba(128,64,240,.4);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 28px rgba(128,64,240,.6); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+  .divider { height: 1px; background: var(--rim); margin: 22px 0; }
+
+  .err-msg {
+    font-family: var(--mono); font-size: 11px; color: var(--red);
+    margin-top: 10px; min-height: 16px; text-align: center;
+  }
+
+  .identity-box {
+    background: rgba(128,64,240,.07); border: 1px solid rgba(128,64,240,.22);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 22px;
+  }
+  .identity-row { display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 11px; margin-bottom: 7px; gap: 12px; }
+  .identity-row:last-child { margin-bottom: 0; }
+  .identity-key { color: var(--muted); flex-shrink: 0; }
+  .identity-val { color: var(--lavender); text-align: right; white-space: nowrap;
+    font-size: 10px; }
+
+  .step-label {
+    font-family: var(--mono); font-size: 9px; color: var(--muted);
+    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 16px;
+  }
+
+  /* success screen */
+  .success-icon {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(52,216,154,.12); border: 1px solid rgba(52,216,154,.4);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px; box-shadow: 0 0 32px rgba(52,216,154,.2);
+  }
+
+  /* error screen */
+  .error-icon {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(255,176,32,.1); border: 1px solid rgba(255,176,32,.3);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── LOADING ─────────────────────────────────────── -->
+<div class="screen visible" id="s-loading">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">HSM ENROLLMENT</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">Validating enrollment link&hellip;</div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── FORM ────────────────────────────────────────── -->
+<div class="screen" id="s-form">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">HSM ENROLLMENT</div>
+    </div>
+    <div class="card">
+      <div class="step-label">Step 1 of 2 &mdash; Link your hardware key</div>
+
+      <div class="identity-box">
+        <div class="identity-row">
+          <span class="identity-key">username</span>
+          <span class="identity-val" id="f-username">&hellip;</span>
+        </div>
+        <div class="identity-row">
+          <span class="identity-key">sub</span>
+          <span class="identity-val" id="f-sub">&hellip;</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">Encedo HSM URL</div>
+        <input class="field-input" id="f-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do">
+        <div class="field-hint">PPA (USB) &rarr; https://my.ence.do &nbsp;&#183;&nbsp; EPA (LAN) &rarr; custom IP/hostname</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="field">
+        <div class="field-label">HSM password <span style="color:var(--muted);font-weight:400">(optional)</span></div>
+        <input class="field-input" id="f-password" type="password" placeholder="Leave empty if not set">
+        <div class="field-hint">If your HSM requires a password for key access &mdash; leave empty to handle in next step</div>
+      </div>
+
+      <button class="btn btn-primary" id="submit-btn" onclick="doSubmit()">Link HSM &rarr;</button>
+      <div class="err-msg" id="form-err"></div>
+
+      <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rim);
+        font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;">
+        this link is valid for 24 hours &nbsp;&#183;&nbsp; one-time use
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SUCCESS ──────────────────────────────────────── -->
+<div class="screen" id="s-success">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">ENROLLMENT COMPLETE</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="success-icon">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:8px;">HSM linked successfully</div>
+      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;">
+        <div class="identity-row"><span class="identity-key">username</span><span class="identity-val" id="s-username"></span></div>
+        <div class="identity-row"><span class="identity-key">hsm url</span><span class="identity-val" id="s-hsm"></span></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:20px;width:100%" onclick="window.close()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── ERROR ────────────────────────────────────────── -->
+<div class="screen" id="s-error">
+  <div class="shell">
+    <div class="shell-grid"></div>
+    <div class="logo-block">
+      <div class="logo-mark">
+        <img src="data:image/png;base64,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" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+      </div>
+      <div class="logo-sub">ERROR</div>
+    </div>
+    <div class="card" style="text-align:center;">
+      <div class="error-icon">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--amber);margin-bottom:8px;">Enrollment failed</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;line-height:1.8;" id="error-msg">
+        This link may be expired or invalid.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { HEM, HemError } from '/hem-sdk.js';
+
+// Read token from URL fragment (#token=…) — fragment is never sent to the server,
+// so it won't appear in access logs or Referer headers.
+const params = new URLSearchParams(window.location.hash.slice(1));
+const token  = params.get('token') || '';
+
+let userData = { sub: '', username: '' };
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
+  document.getElementById(id).classList.add('visible');
+}
+
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('s-error');
+}
+
+// ─── On load: validate token ──────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  if (!token) return showError('No enrollment token provided.');
+
+  try {
+    const res  = await fetch('/enrollment/validate?token=' + encodeURIComponent(token));
+    const data = await res.json();
+
+    if (!res.ok) {
+      showError(data.error === 'invalid_or_expired_token'
+        ? 'This enrollment link has expired or was already used.'
+        : data.error || 'Invalid link.');
+      return;
+    }
+
+    userData = data;
+    document.getElementById('f-username').textContent = data.username;
+    document.getElementById('f-sub').textContent      = data.sub;
+    if (data.hsm_url) document.getElementById('f-hsm-url').value = data.hsm_url;
+    // challenge stored for use during submit — must be signed with the new key
+    userData.challenge = data.challenge;
+    showScreen('s-form');
+
+  } catch {
+    showError('Network error — make sure you are connected.');
+  }
+});
+
+// ─── Submit ───────────────────────────────────────────────────
+async function doSubmit() {
+  const hsm_url     = document.getElementById('f-hsm-url').value.trim();
+  const password    = document.getElementById('f-password').value;
+  const username    = document.getElementById('f-username').textContent.trim();
+  const sub         = document.getElementById('f-sub').textContent.trim();
+  const enrollToken = new URLSearchParams(location.hash.slice(1)).get('token');
+  const formErr     = document.getElementById('form-err');
+  const btn         = document.getElementById('submit-btn');
+
+  if (!hsm_url) {
+    formErr.textContent = 'Please enter the Encedo HSM URL.';
+    return;
+  }
+
+  btn.disabled = true;
+  formErr.textContent = '';
+
+  const hem = new HEM(hsm_url);
+
+  // Helper: authorize for a given scope (password or mobile)
+  async function authorize(scope, label) {
+    if (password) {
+      btn.textContent = label;
+      return hem.authorizePassword(password, scope);
+    } else {
+      btn.textContent = label + ' (confirm on mobile…)';
+      return hem.authorizeRemote(scope, {
+        pollInterval: 2_000,
+        pollTimeout:  60_000,
+        onPending: () => console.debug(`[HEM] ${scope}: still waiting…`),
+      });
+    }
+  }
+
+  try {
+    // ── Step 0: checkin ───────────────────────────────────────────
+    btn.textContent = 'Connecting to HSM…';
+    await hem.hemCheckin();
+
+    // ── Step 1: authorize keymgmt:gen ────────────────────────────
+    const genToken = await authorize('keymgmt:gen', 'Authorizing key generation…');
+    console.log('[HEM] genToken ok, scope=keymgmt:gen');
+
+    // ── Step 2: create key pair ───────────────────────────────────
+    btn.textContent = 'Creating key…';
+    const label    = `Encedo OIDC - ${username}`.slice(0, 32);
+    const descrB64 = btoa(`ETSOIDC${sub}`);            // max 64 chars as base64
+    const created  = await hem.createKeyPair(genToken, label, 'ED25519', descrB64);
+    const kid      = created.kid;
+    // For asymmetric keys, HSM derives kid = SHA-1(public key bytes) — same as OIDC kid.
+    // No separate derivation needed; backend will verify kid === SHA1(pubkey).
+    if (!kid) throw new Error('No kid in createKeyPair response');
+    console.log('[HEM] createKeyPair → kid:', kid);
+
+    // ── Step 3: authorize keymgmt:use:<kid> ──────────────────────
+    const useToken = await authorize(`keymgmt:use:${kid}`, 'Authorizing key access…');
+    console.log(`[HEM] useToken ok, scope=keymgmt:use:${kid}`);
+
+    // ── Step 4: fetch public key ──────────────────────────────────
+    btn.textContent = 'Fetching public key…';
+    const keyInfo = await hem.getPubKey(useToken, kid);
+    if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
+    // HSM returns pubkey as standard base64 — backend expects raw 32-byte hex
+    const pubkeyBytes = Uint8Array.from(atob(keyInfo.pubkey), c => c.charCodeAt(0));
+    const pubkey      = Array.from(pubkeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    console.log('[HEM] getKey →', { kid, type: keyInfo.type });
+
+    // ── Step 5: sign the challenge — key-possession proof ─────────
+    // Backend issued a challenge at /enrollment/validate.
+    // Signing it proves we hold the private key, not just the public key.
+    // HSM returns standard base64 — convert to base64url for backend.
+    btn.textContent = 'Signing challenge…';
+    const challenge  = userData.challenge;
+    if (!challenge) throw new Error('No challenge received from server — call validate first');
+    // exdsaSign returns Uint8Array (raw bytes) — convert to base64url for backend
+    const sigBytes  = await hem.exdsaSign(useToken, kid, challenge);
+    const signature = btoa(String.fromCharCode(...sigBytes))
+                        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    console.log('[HEM] challenge signed, sig length:', signature.length);
+
+    // ── Step 6: HSM attestation — hardware origin proof ───────────
+    // Any valid token accepted (scope irrelevant) — useToken qualifies.
+    // Returns { genuine, ... } where genuine is device attestation blob.
+    // Backend will validate genuine via api.encedo.com (TODO).
+    // Failure is non-fatal: enrollment proceeds, hw_attested = false.
+    btn.textContent = 'Fetching attestation…';
+    let genuine = null;
+    try {
+      const attData = await hem.getAttestation(useToken);
+      genuine = attData.genuine ?? null;
+      console.log('[HEM] attestation ok, genuine present:', !!genuine);
+    } catch (e) {
+      console.warn('[HEM] attestation failed (non-fatal):', e.message);
+    }
+
+    // ── Step 7: submit to backend ─────────────────────────────────
+    btn.textContent = 'Saving…';
+    const res  = await fetch('/enrollment/submit', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, signature, genuine }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      formErr.textContent =
+        data.error === 'invalid_or_expired_token'
+          ? 'Link has expired — request a new one from your administrator.'
+          : data.error || 'Submission failed.';
+      btn.disabled = false;
+      btn.textContent = 'Link HSM →';
+      return;
+    }
+
+    document.getElementById('s-username').textContent = data.username;
+    document.getElementById('s-hsm').textContent      = hsm_url;
+    showScreen('s-success');
+
+  } catch (err) {
+    console.error('[HEM] enrollment failed:', err);
+    formErr.textContent = err instanceof HemError
+      ? `HSM error (${err.code}): ${err.message}`
+      : `Error: ${err.message}`;
+    btn.disabled = false;
+    btn.textContent = 'Link HSM →';
+  }
+}
+
+window.doSubmit = doSubmit;
+</script>
+</body>
+</html>
