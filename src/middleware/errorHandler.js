@@ -1,9 +1,8 @@
 /**
- * Centralny handler błędów Express.
- * Używaj: next(err) w route handlerach.
+ * Central Express error handler. Use: next(err) in route handlers.
  */
-// eslint-disable-next-line no-unused-vars
-export function errorHandler(err, req, res, next) {
+// Express requires exactly 4 params to recognise this as an error handler.
+export function errorHandler(err, _req, res, _next) {
   const status = err.status ?? 500;
   const message = err.message ?? 'internal_server_error';
 

@@ -110,16 +110,37 @@ Content-Type: application/json
 DELETE {{base}}/admin/clients/YOUR-CLIENT-ID
 Authorization: {{auth}}
 
+### Rotate client secret
+POST {{base}}/admin/clients/YOUR-CLIENT-ID/rotate-secret
+Authorization: {{auth}}
+
 ### ══════════════════════════════════
 ###  ENROLLMENT
 ### ══════════════════════════════════
 
-### Validate enrollment token (otwórz enrollment.html w przeglądarce zamiast tego)
-POST {{base}}/enrollment/validate
+### Generate enrollment token for user
+POST {{base}}/admin/users/YOUR-SUB-HERE/enrollment
+Authorization: {{auth}}
+
+### ══════════════════════════════════
+###  ENROLLMENT
+### ══════════════════════════════════
+
+### Validate enrollment token — get challenge (open enrollment.html in browser instead)
+GET {{base}}/enrollment/validate?token=YOUR-ENROLLMENT-TOKEN
+
+### Submit enrollment — register HSM key
+POST {{base}}/enrollment/submit
 Content-Type: application/json
 
 {
-  "enrollment_token": "YOUR-ENROLLMENT-TOKEN"
+  "token": "YOUR-ENROLLMENT-TOKEN",
+  "hsm_url": "https://my.ence.do",
+  "kid": "YOUR-KID-HEX",
+  "pubkey": "YOUR-PUBKEY-64HEX",
+  "signature": "YOUR-SIGNATURE-BASE64URL",
+  "genuine": "BASE64-GENUINE-FROM-HSM",
+  "crt": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
 }
 
 ### ══════════════════════════════════
@@ -148,3 +169,18 @@ grant_type=authorization_code&code=YOUR-CODE&redirect_uri=http://localhost:9876/
 ### UserInfo
 GET {{base}}/userinfo
 Authorization: Bearer YOUR-ACCESS-TOKEN
+
+### Logout (RP-initiated)
+GET {{base}}/logout?id_token_hint=YOUR-ID-TOKEN&post_logout_redirect_uri=http://localhost:9876/&state=random-state
+
+### ══════════════════════════════════
+###  AUDIT LOG
+### ══════════════════════════════════
+
+### Audit log (last 20 events)
+GET {{base}}/admin/audit-log
+Authorization: {{auth}}
+
+### Audit log — pagination + filter by sub
+GET {{base}}/admin/audit-log?limit=50&offset=0&sub=YOUR-SUB-HERE
+Authorization: {{auth}}

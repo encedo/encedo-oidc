@@ -9,11 +9,11 @@ import { validate, vState, vNonce, vCodeChallenge, vCodeVerifier, vSignature } f
 
 const router = Router();
 
-// ─── Paths ────────────────────────────────────────────────────
+// --- Paths ----------------------------------------------------
 const __dirname   = dirname(fileURLToPath(import.meta.url));
 const TRUSTED_APP = resolve(__dirname, '../../signin.html');
 
-// ─── Helpers ──────────────────────────────────────────────────
+// --- Helpers --------------------------------------------------
 
 const b64url    = buf => Buffer.from(buf).toString('base64url');
 const b64urlStr = str => Buffer.from(str).toString('base64url');
@@ -27,6 +27,10 @@ function verifyEdDSA(pubkeyHex, signingInput, signatureB64url) {
   return verify(null, Buffer.from(signingInput), publicKey, sigBuf);
 }
 
+// --- JWKS in-memory cache (60s TTL) ---------------------------
+let jwksCache = null; // { keys: [...], expiresAt: ms }
+export function invalidateJwksCache() { jwksCache = null; }
+
 /** Fetch all users from Redis (used by /jwks.json). */
 async function getAllUsers() {
   const subs = await redis.sMembers('users');
@@ -39,17 +43,15 @@ async function getAllUsers() {
     .map(r => ({ ...r, clients: JSON.parse(r.clients ?? '[]') }));
 }
 
-/** Find a single user by username. Returns raw Redis hash or null. */
+/** Find a single user by username via O(1) index. Returns raw Redis hash or null. */
 async function findUserByUsername(username) {
-  const subs = await redis.sMembers('users');
-  for (const sub of subs) {
-    const u = await redis.hGetAll(`user:${sub}`);
-    if (u?.username === username) return u;
-  }
-  return null;
+  const sub = await redis.hGet('username_index', username);
+  if (!sub) return null;
+  const u = await redis.hGetAll(`user:${sub}`);
+  return u?.sub ? u : null;
 }
 
-// ─── 1. GET /.well-known/openid-configuration ─────────────────
+// --- 1. GET /.well-known/openid-configuration -----------------
 export function discoveryHandler(_req, res) {
   const issuer = process.env.ISSUER;
   res.json({
@@ -58,33 +60,40 @@ export function discoveryHandler(_req, res) {
     token_endpoint:                         `${issuer}/token`,
     userinfo_endpoint:                      `${issuer}/userinfo`,
     jwks_uri:                               `${issuer}/jwks.json`,
+    end_session_endpoint:                   `${issuer}/logout`,
     scopes_supported:                       ['openid', 'email', 'profile'],
     response_types_supported:               ['code'],
     subject_types_supported:               ['public'],
     id_token_signing_alg_values_supported:  ['EdDSA'],
     userinfo_signing_alg_values_supported:  ['none'],
-    token_endpoint_auth_methods_supported:  ['client_secret_post', 'none'],
+    token_endpoint_auth_methods_supported:  ['client_secret_basic', 'client_secret_post', 'none'],
     code_challenge_methods_supported:       ['S256'],
     claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'nonce',
                        'name', 'email', 'preferred_username'],
   });
 }
 
-// ─── 2. GET /jwks.json ────────────────────────────────────────
+// --- 2. GET /jwks.json ----------------------------------------
 router.get('/jwks.json', async (req, res, next) => {
   try {
-    const users = await getAllUsers();
-    let keys = users
-      .filter(u => u.pubkey && u.kid)
-      .map(u => ({
-        kty: 'OKP',
-        crv: 'Ed25519',
-        x:   b64url(Buffer.from(u.pubkey, 'hex')),
-        kid: u.kid,
-        alg: 'EdDSA',
-        use: 'sig',
-      }));
+    if (!jwksCache || Date.now() > jwksCache.expiresAt) {
+      const users = await getAllUsers();
+      jwksCache = {
+        keys: users
+          .filter(u => u.pubkey && u.kid)
+          .map(u => ({
+            kty: 'OKP',
+            crv: 'Ed25519',
+            x:   b64url(Buffer.from(u.pubkey, 'hex')),
+            kid: u.kid,
+            alg: 'EdDSA',
+            use: 'sig',
+          })),
+        expiresAt: Date.now() + 60_000,
+      };
+    }
 
+    let keys = jwksCache.keys;
     if (req.query.kid) keys = keys.filter(k => k.kid === req.query.kid);
 
     // 1h cache, stale-while-revalidate for smooth key rotation
@@ -93,7 +102,7 @@ router.get('/jwks.json', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 3. GET /authorize — validate params, serve Trusted App ───
+// --- 3. GET /authorize -- validate params, serve Trusted App ---
 router.get('/authorize', async (req, res, next) => {
   try {
     const {
@@ -143,7 +152,7 @@ router.get('/authorize', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── 4. POST /authorize/login ─────────────────────────────────
+// --- 4. POST /authorize/login ---------------------------------
 router.post('/authorize/login',
   rateLimit({ prefix: 'login', max: 20, window: 60,
     keyFn: req => req.body?.client_id ?? req.ip }),
@@ -194,7 +203,7 @@ router.post('/authorize/login',
         return res.status(400).json({ error: 'invalid_request', error_description: 'missing sub or username' });
       }
 
-      // Find user — prefer direct sub lookup, fallback to username scan
+      // Find user -- prefer direct sub lookup, fallback to username scan
       let user;
       if (subParam?.trim()) {
         const raw = await redis.hGetAll(`user:${subParam.trim()}`);
@@ -203,7 +212,7 @@ router.post('/authorize/login',
         user = await findUserByUsername(username.trim());
       }
 
-      // Unified error — do not reveal whether user exists, is unauthorized, or incomplete
+      // Unified error -- do not reveal whether user exists, is unauthorized, or incomplete
       if (!user || !JSON.parse(user.clients ?? '[]').includes(client_id) || !user.pubkey || !user.kid) {
         await logSecurity(SEC.LOGIN_FAIL, {
           client_id,
@@ -224,6 +233,7 @@ router.post('/authorize/login',
         aud:                client_id,
         iat:                now,
         exp:                now + idTokenTtl,
+        auth_time:          now,
         jti:                randomBytes(16).toString('base64url'),
         ...(nonce ? { nonce } : {}),
         email:              user.email,
@@ -233,7 +243,7 @@ router.post('/authorize/login',
 
       const signing_input = `${b64urlStr(JSON.stringify(header))}.${b64urlStr(JSON.stringify(payload))}`;
 
-      // Create pending session — kid anchored here, cannot be changed by frontend
+      // Create pending session -- kid anchored here, cannot be changed by frontend
       const session_id = randomBytes(32).toString('base64url');
       await redis.set(`pending:${session_id}`, JSON.stringify({
         sub:            user.sub,
@@ -247,21 +257,22 @@ router.post('/authorize/login',
         signing_input,
       }), { EX: 120 });
 
-      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, client_id, ip: req.ip });
-      console.log(`[OIDC] Login initiated: user=${user.username} client=${client_id} session=${session_id.slice(0, 8)}…`);
+      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, username: user.username, client_id, ip: req.ip });
+      console.log(`[OIDC] Login initiated: client=${client_id} session=${session_id.slice(0, 8)}...`);
 
       res.json({
         session_id,
         signing_input,
         user_name:     user.name,
         user_username: user.username,
+        client_name:   clientRaw.name || client_id,
       });
 
     } catch (err) { next(err); }
   }
 );
 
-// ─── 5. POST /authorize/confirm ───────────────────────────────
+// --- 5. POST /authorize/confirm -------------------------------
 router.post('/authorize/confirm',
   rateLimit({ prefix: 'confirm', max: 10, window: 60 }),
   async (req, res, next) => {
@@ -291,11 +302,11 @@ router.post('/authorize/confirm',
       // Verify kid: session kid must match user's current kid
       if (userRaw.kid !== pending.kid) {
         console.warn(`[OIDC] kid mismatch for sub=${pending.sub}`);
-        await logSecurity(SEC.SIG_FAIL, { sub: pending.sub, reason: 'kid_mismatch', ip: req.ip });
+        await logSecurity(SEC.SIG_FAIL, { sub: pending.sub, username: userRaw.username, reason: 'kid_mismatch', ip: req.ip });
         return res.status(400).json({ error: 'invalid_session', error_description: 'key mismatch' });
       }
 
-      // Verify Ed25519 signature — pubkey always from Redis, never from frontend
+      // Verify Ed25519 signature -- pubkey always from Redis, never from frontend
       let valid = false;
       try {
         valid = verifyEdDSA(userRaw.pubkey, pending.signing_input, signature);
@@ -305,14 +316,14 @@ router.post('/authorize/confirm',
 
       if (!valid) {
         console.warn(`[OIDC] Signature verification failed for sub=${pending.sub}`);
-        await logSecurity(SEC.SIG_FAIL, { sub: pending.sub, reason: 'bad_signature', client_id: pending.client_id, ip: req.ip });
+        await logSecurity(SEC.SIG_FAIL, { sub: pending.sub, username: userRaw.username, reason: 'bad_signature', client_id: pending.client_id, ip: req.ip });
         return res.status(400).json({ error: 'invalid_signature' });
       }
 
       // Assemble final signed JWT
       const id_token = `${pending.signing_input}.${signature}`;
 
-      // Emit auth code — id_token stored here, /token just retrieves it
+      // Emit auth code -- id_token stored here, /token just retrieves it
       const code = randomBytes(32).toString('base64url');
       await redis.set(`code:${code}`, JSON.stringify({
         sub:            pending.sub,
@@ -324,22 +335,9 @@ router.post('/authorize/confirm',
         id_token,
       }), { EX: 60 });
 
-      await logSecurity(SEC.SIG_OK, { sub: pending.sub, client_id: pending.client_id });
+      await logSecurity(SEC.SIG_OK, { sub: pending.sub, username: userRaw.username, client_id: pending.client_id, ip: req.ip });
 
-      // Decode JWT payload for logging
-      const [jwtHeader, jwtPayload] = pending.signing_input.split('.');
-      const decodedHeader  = JSON.parse(Buffer.from(jwtHeader,  'base64url').toString());
-      const decodedPayload = JSON.parse(Buffer.from(jwtPayload, 'base64url').toString());
-
-      console.log('\n[OIDC] ─── Auth Confirmed ───────────────────────');
-      console.log('  sub      :', pending.sub);
-      console.log('  client   :', pending.client_id);
-      console.log('  scope    :', pending.scope);
-      console.log('  code     :', code);
-      console.log('  JWT header  :', JSON.stringify(decodedHeader));
-      console.log('  JWT payload :', JSON.stringify(decodedPayload, null, 2).replace(/^/gm, '    ').trim());
-      console.log('  id_token :', id_token.slice(0, 60) + '…');
-      console.log('─────────────────────────────────────────────────\n');
+      console.log(`[OIDC] Auth confirmed: client=${pending.client_id} session=${session_id.slice(0, 8)}...`);
 
       const location = new URL(pending.redirect_uri);
       location.searchParams.set('code', code);
@@ -351,15 +349,26 @@ router.post('/authorize/confirm',
   }
 );
 
-// ─── 6. POST /token ───────────────────────────────────────────
+// --- 6. POST /token -------------------------------------------
 router.post('/token',
   rateLimit({ prefix: 'token', max: 20, window: 60 }),
   async (req, res, next) => {
     try {
-      const {
+      let {
         grant_type, code, redirect_uri,
         client_id, client_secret, code_verifier,
       } = req.body;
+
+      // M6: also accept client credentials via HTTP Basic Auth (RFC 6749 s.2.3.1)
+      const basicHeader = req.headers['authorization'];
+      if (basicHeader?.startsWith('Basic ')) {
+        const decoded = Buffer.from(basicHeader.slice(6), 'base64').toString();
+        const colon   = decoded.indexOf(':');
+        if (colon > 0) {
+          client_id     = decoded.slice(0, colon);
+          client_secret = decoded.slice(colon + 1);
+        }
+      }
 
       if (grant_type !== 'authorization_code') {
         return res.status(400).json({ error: 'unsupported_grant_type' });
@@ -429,19 +438,21 @@ router.post('/token',
         scope:     codeData.scope,
       }), { EX: accessTokenTtl });
 
-      // Track active tokens per user — enables revocation on user delete
-      await redis.sAdd(`user_tokens:${codeData.sub}`, accessKey);
-      await redis.expire(`user_tokens:${codeData.sub}`, accessTokenTtl + 60);
+      // Track active tokens per user -- enables revocation on user delete.
+      // SET TTL must never shrink: if an older token has a longer lifetime,
+      // a new login with a shorter TTL must not cut off the SET before that token expires.
+      const setKey = `user_tokens:${codeData.sub}`;
+      await redis.sAdd(setKey, accessKey);
+      const currentTtl = await redis.ttl(setKey);
+      const newTtl = accessTokenTtl + 60;
+      if (currentTtl < 0 || newTtl > currentTtl) {
+        await redis.expire(setKey, newTtl);
+      }
 
-      await logSecurity(SEC.TOKEN_ISSUED, { sub: codeData.sub, client_id, ip: req.ip });
+      const tokenUsername = await redis.hGet(`user:${codeData.sub}`, 'username');
+      await logSecurity(SEC.TOKEN_ISSUED, { sub: codeData.sub, username: tokenUsername ?? undefined, client_id, ip: req.ip });
 
-      console.log('\n[OIDC] ─── Token Issued ─────────────────────────');
-      console.log('  sub          :', codeData.sub);
-      console.log('  client       :', client_id);
-      console.log('  access_token :', accessToken.slice(0, 16) + '…');
-      console.log('  id_token     :', id_token.slice(0, 60) + '…');
-      console.log('  expires_in   :', accessTokenTtl + 's');
-      console.log('─────────────────────────────────────────────────\n');
+      console.log(`[OIDC] Token issued: client=${client_id} expires_in=${accessTokenTtl}s`);
 
       res.json({
         access_token: accessToken,
@@ -455,14 +466,19 @@ router.post('/token',
   }
 );
 
-// ─── 7. GET /userinfo ─────────────────────────────────────────
-router.get('/userinfo', async (req, res, next) => {
+// --- 7. GET|POST /userinfo ------------------------------------
+// RFC 6750: token via Authorization header (GET/POST) or body param (POST only)
+async function userinfoHandler(req, res, next) {
   try {
     const authHeader = req.headers['authorization'] ?? '';
-    if (!authHeader.startsWith('Bearer ')) {
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : req.body?.access_token ?? null;   // POST body fallback (RFC 6750 s.2.2)
+
+    if (!token) {
+      res.setHeader('WWW-Authenticate', 'Bearer');
       return res.status(401).json({ error: 'invalid_token' });
     }
-    const token = authHeader.slice(7);
 
     const sessionRaw = await redis.get(`access:${token}`);
     if (!sessionRaw) {
@@ -483,9 +499,90 @@ router.get('/userinfo', async (req, res, next) => {
     });
 
   } catch (err) { next(err); }
-});
+}
 
-// ─── Internal helpers ─────────────────────────────────────────
+router.get('/userinfo',  userinfoHandler);
+router.post('/userinfo', userinfoHandler);
+
+// --- 8. GET /logout (RP-initiated logout) ---------------------
+router.get('/logout',
+  rateLimit({ prefix: 'logout', max: 20, window: 60 }),
+  async (req, res, next) => {
+    const { id_token_hint, post_logout_redirect_uri, state } = req.query;
+
+    function finish() {
+      if (post_logout_redirect_uri) {
+        try {
+          const url = new URL(post_logout_redirect_uri);
+          if (state) url.searchParams.set('state', state);
+          return res.redirect(url.toString());
+        } catch {
+          return res.status(400).json({ error: 'invalid_request', error_description: 'invalid post_logout_redirect_uri' });
+        }
+      }
+      res.json({ logged_out: true });
+    }
+
+    if (!id_token_hint) return finish();
+
+    try {
+      // Decode JWT hint (header.payload.signature)
+      const parts = id_token_hint.split('.');
+      if (parts.length !== 3) return finish();
+
+      let payload;
+      try {
+        payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+      } catch { return finish(); }
+
+      const sub = payload?.sub;
+      if (!sub) return finish();
+
+      // Verify issuer -- reject tokens from foreign OIDC providers
+      const issuerCheck = process.env.ISSUER ?? '';
+      if (issuerCheck && payload.iss !== issuerCheck) {
+        await logSecurity(SEC.LOGOUT, { result: 'wrong_issuer', ip: req.ip });
+        return finish();
+      }
+
+      // Load user
+      const userRaw = await redis.hGetAll(`user:${sub}`);
+      if (!userRaw?.pubkey) {
+        await logSecurity(SEC.LOGOUT, { sub, result: 'user_not_found', ip: req.ip });
+        return finish();
+      }
+
+      // Verify JWT signature -- prevents one user from logging out another
+      let valid = false;
+      try {
+        valid = verifyEdDSA(userRaw.pubkey, `${parts[0]}.${parts[1]}`, parts[2]);
+      } catch { valid = false; }
+
+      if (!valid) {
+        await logSecurity(SEC.LOGOUT, { sub, result: 'invalid_signature', ip: req.ip });
+        return finish(); // redirect anyway -- logout is fail-safe direction
+      }
+
+      // Revoke all active access tokens
+      const tokenKeys = await redis.sMembers(`user_tokens:${sub}`);
+      if (tokenKeys.length > 0) {
+        const pipeline = redis.multi();
+        for (const k of tokenKeys) pipeline.del(k);
+        pipeline.del(`user_tokens:${sub}`);
+        await pipeline.exec();
+      }
+
+      await logSecurity(SEC.LOGOUT, {
+        sub, username: userRaw.username, result: 'ok', revokedTokens: tokenKeys.length, ip: req.ip,
+      });
+      console.log(`[OIDC] Logout: revoked=${tokenKeys.length} tokens`);
+      finish();
+
+    } catch (err) { next(err); }
+  }
+);
+
+// --- Internal helpers -----------------------------------------
 
 import { timingSafeEqual } from 'crypto';
 

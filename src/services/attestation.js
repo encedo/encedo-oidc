@@ -1,22 +1,57 @@
 /**
  * HSM Attestation Validation
  *
- * TODO: implementacja jutro
- * POST https://api.encedo.com/... { genuine }
- * 200 → valid, dodatkowe dane w JSON
- * 400 → niewazny genuine
+ * Flow:
+ *  1. Frontend: GET {hsm_url}/api/system/config/attestation -> genuine blob
+ *  2. Frontend sends genuine to backend via POST /enrollment/submit
+ *  3. Backend: POST https://api.encedo.com/attest with the genuine blob (1:1 forward)
+ *  4. { result: "ok" } -> hw_attested = true
  */
 
-// TODO: const BROKER_URL = (process.env.ENCEDO_BROKER_URL || 'https://api.encedo.com').replace(/\/+$/, '');
+const ATTEST_URL = 'https://api.encedo.com/attest';
 
-export async function validateAttestation(genuine) {
-  if (typeof genuine !== 'string' || genuine.length === 0) {
-    return { hw_attested: 'false' };
+export async function validateAttestation(genuine, crt) {
+  if (genuine == null || genuine === '') {
+    console.warn('[Attestation] No genuine blob -- skipping api.encedo.com/attest');
+    return { hw_attested: 'false', reason: 'no_genuine' };
   }
 
-  // TODO: POST ${BROKER_URL}/... { genuine }
-  // 200 → hw_attested: 'true'
-  // 400 → hw_attested: 'false'
+  const payload = { genuine, ...(crt ? { crt } : {}) };
+  // Verbose logging is intentional -- attestation failures are hard to diagnose
+  // in production without the full request/response pair.
+  console.log('[Attestation] -> POST', ATTEST_URL);
+  console.log('[Attestation]   body:', JSON.stringify(payload));
 
-  return { hw_attested: 'true' };
+  try {
+    const res = await fetch(ATTEST_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+      signal:  AbortSignal.timeout(10_000),
+    });
+
+    let data = null;
+    try { data = await res.json(); } catch { /* non-JSON body */ }
+
+    console.log(`[Attestation] <- HTTP ${res.status}:`, JSON.stringify(data));
+
+    if (res.ok && data?.result === 'ok') {
+      // Validate genuine blob timestamp (Unix seconds, UTC) -- prevents replay of old attestations.
+      // /checkin synchronises clocks -- allow +/-5s skew, reject if older than 15s.
+      const ts  = data.timestamp;
+      const now = Math.floor(Date.now() / 1000);
+      if (typeof ts === 'number') {
+        if (ts > now + 5)  return { hw_attested: 'false', reason: 'timestamp_future' };
+        if (now - ts > 15) return { hw_attested: 'false', reason: 'timestamp_expired' };
+      }
+      return { hw_attested: 'true', crt: crt ?? undefined };
+    }
+
+    const reason = data?.error ?? data?.reason ?? `http_${res.status}`;
+    return { hw_attested: 'false', reason };
+
+  } catch (err) {
+    console.error('[Attestation] Request failed:', err.message);
+    return { hw_attested: 'false', reason: 'network_error' };
+  }
 }

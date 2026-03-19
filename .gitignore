@@ -1,10 +1,10 @@
 node_modules/
 
-# Sekrety
+# Secrets
 .env
 .env.local
 
-# Logi
+# Logs
 *.log
 npm-debug.log*
 

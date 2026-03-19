@@ -1,39 +1,45 @@
-# Encedo OIDC Provider — instrukcje dla Claude Code
+# Encedo OIDC Provider — Claude Code Instructions
 
-## Referencja SDK
-Dokumentacja HEM SDK: `~/develop/sdk-php/HEM.php`
-Czytaj tylko gdy potrzebujesz znać API HSM.
+## SDK Reference
+HEM SDK documentation: `~/develop/sdk-php/HEM.php`
+Read only when you need to know the HSM API.
 
 ---
 
-## Status projektu — Faza 4 GOTOWA
+## Project Status — Complete
 
 ### Backend (`src/`) — 100%
-- ✅ `GET /authorize` — walidacja OIDC params, serwuje `signin.html`
-- ✅ `POST /authorize/login` — lookup usera (po `sub` lub `username`), buduje `signing_input`, sesja Redis TTL 120s
-- ✅ `POST /authorize/confirm` — weryfikacja Ed25519, składa JWT, emituje code
-- ✅ `POST /token` — PKCE S256, zwraca pre-signed `id_token` + `access_token`
-- ✅ `GET /userinfo` — Bearer token
-- ✅ `GET /jwks.json` + `?kid=` filtr
-- ✅ `GET /.well-known/openid-configuration`
-- ✅ Admin API: CRUD users + clients
-- ✅ `privkey` usunięty z Redis schema i z odpowiedzi `/authorize/login`
+- `GET /authorize` — OIDC param validation, serves `signin.html`
+- `POST /authorize/login` — user lookup (by `sub` or `username`), builds `signing_input`, Redis session TTL 120s
+- `POST /authorize/confirm` — Ed25519 verify, assembles JWT, emits code
+- `POST /token` — PKCE S256, returns pre-signed `id_token` + `access_token`
+- `GET/POST /userinfo` — Bearer token
+- `GET /jwks.json` — with 60s in-process cache, invalidated on enrollment
+- `GET /.well-known/openid-configuration`
+- `GET /logout` — RP-initiated logout with Ed25519 signature verification + issuer check
+- Admin API: full CRUD users + clients
+- Enrollment: challenge-response + hardware attestation via api.encedo.com
+- Security log: Redis ZSET + stderr dual-write
+- Audit log in admin panel: pagination, filtering
 
-### Trusted App (`signin.html`) — 100%
-- ✅ Ekran Login — tylko HSM URL (bez pola username, bez pola hasła)
-- ✅ Krok A: `searchKeys(null, '^RVhUQUlE')` — wykrycie trybu mobilnego
-- ✅ Krok B: `searchKeys(token?, '^ETSOIDC...')` — wyszukanie kluczy OIDC
-- ✅ Auto-wybór przy jednym kluczu (skip s-keys)
-- ✅ Ekran s-keys — lista kluczy, wybór
-- ✅ Ekran s-signing — spinner, "Waiting for approval…" + przycisk "Use password instead"
-- ✅ Ekran s-pin — fallback z hasłem (4xx z HSM lub anulowanie mobilnego)
-- ✅ `doCancelMobile()` — anuluje mobilny polling (`currentOpId = null`), przechodzi do hasła
-- ✅ `finalizeSign()` — wspólna logika: `/authorize/login` → HSM sign → `/authorize/confirm` → countdown 5s → redirect
-- ✅ Countdown 5→1 przed przekierowaniem do RP
+### Trusted App (`signin.js`) — 100%
+- Login screen — HSM URL only (no username/password fields)
+- Step A: `searchKeys(null, '^RVhUQUlE')` — mobile mode detection
+- Step B: `searchKeys(token?, '^ETSOIDC...')` — find OIDC keys
+- Auto-select when single key (skip s-keys)
+- s-keys screen — key list, selection
+- s-signing screen — spinner, "Waiting for approval…" + "Use passphrase instead" button
+- s-pin screen — passphrase fallback (4xx from HSM or mobile cancel)
+- `doCancelMobile()` — cancels mobile polling (`currentOpId = null`), switches to passphrase
+- `finalizeSign()` — shared logic: `/authorize/login` → HSM sign → `/authorize/confirm` → 5s countdown → redirect
+- 5→1 countdown before RP redirect
 
-### enrollment.html — 100%
-- ✅ pubkey konwertowany base64 → hex przed wysłaniem do backendu
-- ✅ description: `btoa('ETSOIDC' + sub)` (bez client_id)
+### enrollment.js — 100%
+- pubkey converted base64 → hex before sending to backend
+- description: `btoa('ETSOIDC' + sub)`
+- Fetches attestation `{genuine, crt}` from HSM, sends to backend
+- Backend validates via `POST api.encedo.com/attest`
+- `hsm_crt` stored in Redis for audit
 
 ---
 
@@ -42,73 +48,81 @@ Czytaj tylko gdy potrzebujesz znać API HSM.
 ```
 Node.js v22 ESM
 Express 4
-Redis (node-redis v4) — jedyna baza
-crypto (built-in) — Ed25519 verify przez SPKI DER reconstruction
-zero zewnętrznych deps krypto
+Redis (node-redis v4) — sole database
+crypto (built-in) — Ed25519 verify via SPKI DER reconstruction
+No external crypto dependencies
 ```
 
-## Struktura projektu
+## File Structure
 
 ```
 encedo-oidc/
 ├── src/
 │   ├── app.js
-│   ├── routes/oidc.js          ← wszystkie endpointy OIDC
-│   ├── routes/enrollment.js
-│   ├── routes/adminUsers.js
-│   ├── routes/adminClients.js
-│   ├── middleware/auth.js
-│   ├── middleware/errorHandler.js
-│   └── services/redis.js
-├── signin.html            ← Trusted App SPA (produkcja)
-├── enrollment.html             ← rejestracja kluczy HSM
+│   ├── routes/
+│   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache
+│   │   ├── enrollment.js       ← HSM key enrollment
+│   │   ├── adminUsers.js       ← CRUD + audit log
+│   │   └── adminClients.js
+│   ├── middleware/
+│   │   ├── auth.js             ← requireAdminAuth + requireAdminNetwork
+│   │   ├── rateLimit.js
+│   │   ├── validate.js         ← all input validators
+│   │   └── errorHandler.js
+│   └── services/
+│       ├── redis.js
+│       ├── securityLog.js      ← dual-write: stderr + Redis ZSET
+│       └── attestation.js      ← HSM attestation via api.encedo.com
+├── signin.js                   ← Trusted App logic
+├── signin.html                 ← Trusted App shell
+├── enrollment.js               ← Enrollment flow logic
+├── enrollment.html
+├── admin-panel.js
 ├── admin-panel.html
-├── hem-sdk.js                  ← Encedo HEM JavaScript SDK
-├── rp-server.mjs               ← test RP (port 9876)
-└── test-phase3.sh
+└── hem-sdk.js                  ← Encedo HEM JavaScript SDK
 ```
 
 ---
 
-## Kluczowe decyzje architektoniczne
+## Key Architecture Decisions
 
 ### signing_input
-Backend buduje pełny `signing_input = base64url(header).base64url(payload)`.
-Frontend tylko podpisuje — nie buduje JWT.
+Backend builds `signing_input = base64url(header).base64url(payload)`.
+Frontend only signs — does not build JWT.
 
-### Weryfikacja Ed25519 w backendzie
+### Ed25519 verification in backend
 ```javascript
-// pubkey z Redis: hex-encoded raw 32-byte public key
+// pubkey from Redis: hex-encoded raw 32-byte public key
 const SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 const pubkeyDer   = Buffer.concat([SPKI_PREFIX, Buffer.from(pubkeyHex, 'hex')]);
 const publicKey   = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
 verify(null, Buffer.from(signing_input), publicKey, Buffer.from(signature, 'base64url'));
 ```
 
-### exdsaSign w hem-sdk.js
+### exdsaSign in hem-sdk.js
 ```javascript
-// msg = base64 of UTF-8 bytes of signing_input — musi być tak, nie zmieniać
+// msg = base64 of UTF-8 bytes of signing_input — must be this way, do not change
 body.msg = toB64(strToBytes(msg));
-// HSM zwraca standard base64 → konwertuj do base64url dla JWT
+// HSM returns standard base64 → convert to base64url for JWT
 ```
 
 ### pubkey encoding
-- HSM zwraca pubkey jako **standard base64**
-- Backend przechowuje jako **hex** (32 bajty raw)
-- Enrollment.html konwertuje: `atob(keyInfo.pubkey)` → bytes → hex
+- HSM returns pubkey as **standard base64**
+- Backend stores as **hex** (32 raw bytes)
+- enrollment.js converts: `atob(keyInfo.pubkey)` → bytes → hex
 
 ### Key description format
 ```javascript
-// Przy enrollmencie:
+// At enrollment:
 description = btoa('ETSOIDC' + sub)
-// Przy wyszukiwaniu OIDC kluczy:
+// Searching OIDC keys:
 searchKeys(token, '^' + btoa('ETSOIDC'))
-// Przy wykrywaniu mobilki:
+// Mobile detection:
 searchKeys(null, '^RVhUQUlE')
 ```
 
 ### Sub-based user lookup
-Backend `/authorize/login` akceptuje `sub` (direct Redis lookup) lub `username` (scan):
+Backend `/authorize/login` accepts `sub` (direct Redis lookup) or `username` (O(1) via `username_index` hash):
 ```javascript
 if (subParam?.trim()) {
   const raw = await redis.hGetAll(`user:${subParam.trim()}`);
@@ -118,72 +132,89 @@ if (subParam?.trim()) {
 }
 ```
 
-### hem-sdk.js — obsługa błędów HTTP
-`#req` łapie JSON.parse errors (pusta odpowiedź 401):
+### hem-sdk.js — HTTP error handling
+`#req` catches JSON.parse errors (empty 401 response):
 ```javascript
 try { data = await res.json(); } catch { data = null; }
-// potem normalnie: if (!res.ok) throw new HemError(...)
+// then: if (!res.ok) throw new HemError(...)
 ```
-Bez tego 401 z pustym body rzuca SyntaxError zamiast HemError — trusted-app nie rozpoznaje go jako 4xx.
+Without this, a 401 with empty body throws SyntaxError instead of HemError — trusted app doesn't recognise it as 4xx.
 
 ### Mobile cancel — currentOpId
 ```javascript
 let currentOpId = null;
-// przed authorizeRemote:
+// before authorizeRemote:
 const opId = Symbol();
 currentOpId = opId;
-// po powrocie:
-if (currentOpId !== opId) return; // anulowane
+// after return:
+if (currentOpId !== opId) return; // cancelled
 // doCancelMobile():
-currentOpId = null;  // polling działa dalej w tle, ale wynik ignorowany
+currentOpId = null;  // polling continues in background but result is ignored
+```
+
+### JWKS cache
+Module-level `jwksCache` variable in `oidc.js`, 60s TTL. Invalidated immediately after successful enrollment via `invalidateJwksCache()` exported from `oidc.js`.
+
+### Attestation validation
+`src/services/attestation.js` POSTs `{genuine, crt}` to `https://api.encedo.com/attest`.
+Checks: `result === 'ok'`, timestamp not in future (±5s), not older than 15s.
+`crt` (X.509 PEM) stored as `hsm_crt` in Redis. Debug logging active (intended — useful in production for tracing).
+
+---
+
+## Redis Schema
+
+```
+user:{sub}        Hash { sub, username, name, email, hsm_url,
+                        kid, pubkey, hw_attested, hsm_crt,
+                        clients (JSON array), enrollment_token,
+                        enrolled_at, created_at, updated_at }
+
+username_index    Hash { username → sub }
+
+users             Set  { sub, ... }
+
+client:{id}       Hash { client_id, client_secret, name,
+                        redirect_uris, scopes, pkce,
+                        id_token_ttl, access_token_ttl, created_at }
+
+pending:{sid}     JSON TTL 120s
+code:{code}       JSON TTL 60s
+access:{token}    JSON TTL = access_token_ttl
+
+user_tokens:{sub} Set  { access:{token}, ... }
+enrollment:{tok}  JSON TTL 24h → 30min after validate
+enroll_lock:{sub} String TTL 30s  (NX lock)
+security:log      ZSet score=ms  value=JSON  (cap 20 000)
+security:events   Pub/Sub channel
 ```
 
 ---
 
-## Redis schema
-
-```
-user:{sub} → Hash {
-  sub, username, name, email, hsm_url,
-  kid,     ← ID klucza w HSM
-  pubkey,  ← hex raw 32-byte Ed25519 public key
-  clients, ← JSON array client_ids
-  created_at
-}
-// UWAGA: privkey USUNIĘTY (był tylko w Fazie 3 SIM)
-
-client:{client_id} → Hash { ... }
-pending:{session_id} → JSON TTL 120s { ... }
-code:{code} → JSON TTL 60s { ... }
-access:{token} → JSON TTL 3600s { ... }
-```
-
----
-
-## Trusted App — flow szczegółowy
+## Trusted App — Detailed Flow
 
 ```
 doLogin()
   → hemCheckin()
-  → Krok A: searchKeys(null, '^RVhUQUlE')
-      sukces → session.openSearch=true, session.hasMobileApp=(keys.length>0)
-      4xx    → session.openSearch=false → showPinScreen() [pendingAfterPin='search']
-  → Krok B (tylko gdy openSearch):
+  → Step A: searchKeys(null, '^RVhUQUlE')
+      ok  → session.openSearch=true, session.hasMobileApp=(keys.length>0)
+      4xx → session.openSearch=false → showPinScreen() [pendingAfterPin='search']
+  → Step B (only if openSearch):
       searchKeys(null, '^ETSOIDC...')
-      zero kluczy → błąd
-      jeden klucz → doSelectKey()
-      wiele kluczy → showScreen('s-keys')
+      zero keys → error
+      one key   → doSelectKey()
+      many keys → showScreen('s-keys')
 
-doSubmitPin()             ← user podał hasło
+doSubmitPin()             ← user entered passphrase
   pendingAfterPin='search':
     authorizePassword → searchKeys → renderKeyList → doSelectKey()
   pendingAfterPin='use':
-    session.password=pin → doSelectKey()
+    session.password=passphrase → doSelectKey()
 
 doSelectKey()
   session.password → authorizePassword(scope) → finalizeSign()
-  session.hasMobileApp → showScreen('s-signing') z cancel btn
-                       → authorizeRemote(scope) → if cancelled → ignoruj
+  session.hasMobileApp → showScreen('s-signing') with cancel btn
+                       → authorizeRemote(scope) → if cancelled → ignore
                        → finalizeSign()
   else → showPinScreen() [pendingAfterPin='use']
 
@@ -204,18 +235,32 @@ finalizeSign(useToken, kid, label)
 ## HSM API (Encedo HEM)
 
 ```
-POST {hsm_url}/api/checkin             ← hemCheckin()
-POST {hsm_url}/api/keymgmt/search      ← searchKeys(token, pattern)
-POST {hsm_url}/api/authorize-key-op    ← authorizePassword(pwd, scope) / authorizeRemote(scope)
-POST {hsm_url}/api/sign                ← exdsaSign(token, kid, msg)
+POST {hsm_url}/api/checkin                ← hemCheckin()
+POST {hsm_url}/api/keymgmt/search         ← searchKeys(token, pattern)
+POST {hsm_url}/api/authorize-key-op       ← authorizePassword(pwd, scope) / authorizeRemote(scope)
+POST {hsm_url}/api/sign                   ← exdsaSign(token, kid, msg)
+GET  {hsm_url}/api/system/config/attestation ← getAttestation(token)
 ```
 
 ---
 
-## Znane kwestie
+## Security State
 
-1. Nextcloud wymaga `allow_local_remote_servers = true` i `allow_insecure_http = 1` dla dev
+All critical and high severity issues resolved. See `SECURITY.md` for full model.
+
+Open (accepted or delegated):
+- `GET /authorize` rate limit → nginx `limit_req`
+- id_token not revocable → OIDC spec limitation, configure short TTL
+- Admin panel browser logout button → missing, low priority
+- Redis TLS → ops configuration (`rediss://`)
+
+---
+
+## Known Issues / Notes
+
+1. Nextcloud requires `allow_local_remote_servers = true` and `allow_insecure_http = 1` for dev
 2. Nextcloud `redirect_uri`: `http://localhost:8080/index.php/apps/user_oidc/code`
-3. JWKS cache w Nextcloud nie uwzględnia `kid` — patch opisany w `nextcloud-jwks-kid-patch.md`
-4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ wymagane (enrollment.html używa Web Crypto)
-5. HEM SDK `searchKeys` bez tokena — domyślna konfiguracja HSM pozwala na otwarty search; 4xx = wymaga auth
+3. JWKS cache in Nextcloud ignores `kid` — patch described in `nextcloud-jwks-kid-patch.md`
+4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
+5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
+6. Attestation debug logging is intentional — useful in production for tracing enrollment issues

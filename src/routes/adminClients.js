@@ -6,7 +6,7 @@ import { validate, vRequired, vTtl } from '../middleware/validate.js';
 
 const router = Router();
 
-// ─── Helpers ──────────────────────────────────────────────────
+// --- Helpers --------------------------------------------------
 const ALLOWED_SCOPES = ['openid', 'profile', 'email', 'groups'];
 
 function generateClientSecret() { return randomBytes(32).toString('base64url'); }
@@ -36,7 +36,7 @@ function deserialize(raw) {
   };
 }
 
-// ─── GET /admin/clients ───────────────────────────────────────
+// --- GET /admin/clients ---------------------------------------
 router.get('/', async (_req, res, next) => {
   try {
     const ids = await redis.sMembers('clients');
@@ -53,7 +53,7 @@ router.get('/', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── GET /admin/clients/:id ───────────────────────────────────
+// --- GET /admin/clients/:id -----------------------------------
 router.get('/:id', async (req, res, next) => {
   try {
     const raw = await redis.hGetAll(`client:${req.params.id}`);
@@ -64,7 +64,7 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── POST /admin/clients ──────────────────────────────────────
+// --- POST /admin/clients --------------------------------------
 router.post('/', async (req, res, next) => {
   try {
     const {
@@ -115,12 +115,12 @@ router.post('/', async (req, res, next) => {
 
     await logSecurity(SEC.ADMIN_CLIENT_CREATE, { client_id, name, ip: req.ip });
     console.log(`[Admin] Client created: ${client_id} (${name})`);
-    // return with secret — only time it's visible
+    // return with secret -- only time it's visible
     res.status(201).json({ ...deserialize(record), client_secret });
   } catch (err) { next(err); }
 });
 
-// ─── PATCH /admin/clients/:id ─────────────────────────────────
+// --- PATCH /admin/clients/:id ---------------------------------
 router.patch('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -170,13 +170,13 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'no_valid_fields' });
 
     await redis.hSet(`client:${id}`, updates);
-    await logSecurity(SEC.ADMIN_CLIENT_CREATE, { client_id: id, fields: Object.keys(updates), ip: req.ip });
+    await logSecurity(SEC.ADMIN_CLIENT_PATCH, { client_id: id, fields: Object.keys(updates), ip: req.ip });
     const { client_secret, ...safe } = deserialize(await redis.hGetAll(`client:${id}`));
     res.json(safe);
   } catch (err) { next(err); }
 });
 
-// ─── POST /admin/clients/:id/rotate-secret ────────────────────
+// --- POST /admin/clients/:id/rotate-secret --------------------
 router.post('/:id/rotate-secret', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -192,7 +192,7 @@ router.post('/:id/rotate-secret', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── DELETE /admin/clients/:id ────────────────────────────────
+// --- DELETE /admin/clients/:id --------------------------------
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;

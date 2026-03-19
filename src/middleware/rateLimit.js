@@ -1,5 +1,5 @@
 /**
- * Redis-based rate limiter — works across multiple server instances.
+ * Redis-based rate limiter -- works across multiple server instances.
  *
  * Usage:
  *   import { rateLimit } from './middleware/rateLimit.js';
@@ -10,10 +10,10 @@ import { logSecurity, SEC } from '../services/securityLog.js';
 
 /**
  * @param {object}   opts
- * @param {string}   opts.prefix   — Redis key namespace (e.g. 'login')
- * @param {number}   opts.max      — max requests per window
- * @param {number}   opts.window   — window duration in seconds
- * @param {function} [opts.keyFn]  — (req) → string; default: client IP
+ * @param {string}   opts.prefix   -- Redis key namespace (e.g. 'login')
+ * @param {number}   opts.max      -- max requests per window
+ * @param {number}   opts.window   -- window duration in seconds
+ * @param {function} [opts.keyFn]  -- (req) -> string; default: client IP
  */
 export function rateLimit({ prefix, max, window: windowSec, keyFn }) {
   return async (req, res, next) => {
@@ -35,7 +35,7 @@ export function rateLimit({ prefix, max, window: windowSec, keyFn }) {
           error_description: `Rate limit exceeded. Retry after ${windowSec}s.` });
       }
     } catch {
-      // Fail open — Redis outage must not block authentication
+      // Fail open -- Redis outage must not block authentication
     }
 
     next();

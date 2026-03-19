@@ -12,7 +12,7 @@ export function requireAdminAuth(req, res, next) {
 
   const secret = process.env.ADMIN_SECRET;
   if (!secret) {
-    console.error('[Auth] ADMIN_SECRET is not set — refusing all admin requests');
+    console.error('[Auth] ADMIN_SECRET is not set -- refusing all admin requests');
     return res.status(500).json({ error: 'server_misconfigured' });
   }
 
@@ -20,7 +20,7 @@ export function requireAdminAuth(req, res, next) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  // Timing-safe comparison — prevents secret length/value leakage via timing
+  // Timing-safe comparison -- prevents secret length/value leakage via timing
   let valid = false;
   try {
     const a = Buffer.from(token,  'utf8');
@@ -44,15 +44,16 @@ export function requireAdminAuth(req, res, next) {
 /**
  * Middleware: Restrict admin endpoints to allowed IPs.
  * Set ADMIN_ALLOWED_IPS=127.0.0.1,::1,10.0.0.0/8 (comma-separated, CIDR optional).
- * If ADMIN_ALLOWED_IPS is not set, allows all IPs (useful behind VPN/firewall that
- * handles network-level restriction — set env var to add defence-in-depth).
+ * Default (when not set): localhost only (127.0.0.1 and ::1).
  */
 export function requireAdminNetwork(req, res, next) {
-  const allowedEnv = process.env.ADMIN_ALLOWED_IPS;
-  if (!allowedEnv) return next(); // Not configured — trust network layer
+  const allowedEnv = process.env.ADMIN_ALLOWED_IPS ?? '127.0.0.1,::1';
 
   const allowed = allowedEnv.split(',').map(s => s.trim()).filter(Boolean);
-  const clientIp = req.ip ?? '';
+  // Normalise IPv6: strip IPv4-mapped prefix, collapse full-zero loopback form
+  const clientIp = (req.ip ?? '')
+    .replace(/^::ffff:/, '')
+    .replace(/^0*:0*:0*:0*:0*:0*:0*:1$/, '::1');
 
   const ok = allowed.some(entry => ipMatches(clientIp, entry));
   if (!ok) {

@@ -1,9 +1,9 @@
 /**
- * Input validators — centralised, reusable.
+ * Input validators -- centralised, reusable.
  * Each function returns null (valid) or a string (error message).
  */
 
-// ─── Primitives ────────────────────────────────────────────────
+// --- Primitives ------------------------------------------------
 
 /** Non-empty string, optional max length. */
 export function vRequired(value, label, maxLen = 256) {
@@ -12,7 +12,7 @@ export function vRequired(value, label, maxLen = 256) {
   return null;
 }
 
-/** Optional string — only validates if present. */
+/** Optional string -- only validates if present. */
 export function vOptional(value, label, maxLen = 256) {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'string') return `${label} must be a string`;
@@ -20,10 +20,10 @@ export function vOptional(value, label, maxLen = 256) {
   return null;
 }
 
-// ─── Domain validators ─────────────────────────────────────────
+// --- Domain validators -----------------------------------------
 
 /**
- * RFC 5322 — simplified but catches obvious garbage.
+ * RFC 5322 -- simplified but catches obvious garbage.
  * Full RFC 5322 is overkill; this covers 99.9% of real addresses.
  */
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,24}$/;
@@ -36,9 +36,9 @@ export function vEmail(value, label = 'email') {
 
 /**
  * HTTP/HTTPS URL validator.
- * @param {boolean} httpsOnly      — if true, rejects plain http (except localhost)
- * @param {boolean} allowLocalhost — allow localhost / 127.0.0.1
- * Note: private IP ranges (RFC1918) are intentionally allowed — HSM devices (PPA) are
+ * @param {boolean} httpsOnly      -- if true, rejects plain http (except localhost)
+ * @param {boolean} allowLocalhost -- allow localhost / 127.0.0.1
+ * Note: private IP ranges (RFC1918) are intentionally allowed -- HSM devices (PPA) are
  * typically on a local network (e.g. 192.168.7.1 / my.ence.do). Use httpsOnly to enforce TLS.
  */
 export function vUrl(value, label = 'url', { httpsOnly = false, allowLocalhost = true } = {}) {
@@ -58,43 +58,44 @@ export function vUrl(value, label = 'url', { httpsOnly = false, allowLocalhost =
   return null;
 }
 
-/** Username: alphanumeric + limited special chars, 2–64 chars. */
+/** Username: alphanumeric + limited special chars, 2-64 chars. */
 const USERNAME_RE = /^[a-zA-Z0-9._@-]{2,64}$/;
 export function vUsername(value, label = 'username') {
   const base = vRequired(value, label, 64);
   if (base) return base;
   if (!USERNAME_RE.test(value.trim())) {
-    return `${label} may only contain letters, digits, '.', '_', '@', '-' (2–64 chars)`;
+    return `${label} may only contain letters, digits, '.', '_', '@', '-' (2-64 chars)`;
   }
   return null;
 }
 
-/** Display name: printable chars, 0–128. */
+/** Display name: printable chars, 0-128. */
 export function vDisplayName(value, label = 'name') {
   return vOptional(value, label, 128);
 }
 
 /**
- * PKCE code_challenge — RFC 7636 §4.2:
- *   BASE64URL(SHA-256(ASCII(code_verifier))) = 43 base64url chars.
+ * PKCE code_challenge -- RFC 7636 s.4.2:
+ *   BASE64URL(SHA-256(ASCII(code_verifier))) -- 43-128 base64url chars.
+ *   S256 produces exactly 43, but RFC allows up to 128 for forward compatibility.
  */
-const CHALLENGE_RE = /^[A-Za-z0-9\-._~]{43}$/;
+const CHALLENGE_RE = /^[A-Za-z0-9\-._~]{43,128}$/;
 export function vCodeChallenge(value, label = 'code_challenge') {
-  if (!value) return null; // optional — enforced per-client upstream
+  if (!value) return null; // optional -- enforced per-client upstream
   if (typeof value !== 'string') return `${label} must be a string`;
-  if (!CHALLENGE_RE.test(value)) return `${label} must be 43 base64url characters (S256)`;
+  if (!CHALLENGE_RE.test(value)) return `${label} must be 43-128 base64url characters (S256)`;
   return null;
 }
 
 /**
- * PKCE code_verifier — RFC 7636 §4.1: 43–128 unreserved chars.
+ * PKCE code_verifier -- RFC 7636 s.4.1: 43-128 unreserved chars.
  */
 const VERIFIER_RE = /^[A-Za-z0-9\-._~]{43,128}$/;
 export function vCodeVerifier(value, label = 'code_verifier') {
   if (!value) return null;
   if (typeof value !== 'string') return `${label} must be a string`;
   if (!VERIFIER_RE.test(value)) {
-    return `${label} must be 43–128 unreserved characters (RFC 7636)`;
+    return `${label} must be 43-128 unreserved characters (RFC 7636)`;
   }
   return null;
 }
@@ -109,7 +110,7 @@ export function vNonce(value, label = 'nonce') {
   return vOptional(value, label, 256);
 }
 
-/** Ed25519 signature in base64url: 64 bytes → ~86 base64url chars. */
+/** Ed25519 signature in base64url: 64 bytes -> ~86 base64url chars. */
 const SIG_RE = /^[A-Za-z0-9\-_]{86}={0,2}$/;
 export function vSignature(value, label = 'signature') {
   const base = vRequired(value, label, 90);
@@ -118,7 +119,7 @@ export function vSignature(value, label = 'signature') {
   return null;
 }
 
-/** Token TTL in seconds: 60 – 86400 (1 min – 24 h). */
+/** Token TTL in seconds: 60 - 86400 (1 min - 24 h). */
 export function vTtl(value, label, { min = 60, max = 86400 } = {}) {
   const n = parseInt(value, 10);
   if (isNaN(n) || n < min || n > max) {
@@ -136,7 +137,7 @@ export function vUuid(value, label = 'id') {
   return null;
 }
 
-// ─── Batch helper ──────────────────────────────────────────────
+// --- Batch helper ----------------------------------------------
 
 /**
  * Run multiple validators; returns first error or null.
