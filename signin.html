@@ -2,407 +2,470 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
 <title>Encedo -- Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html,body,div,span,h1,h2,h3,h4,p,a,form,label,legend,fieldset,input,button,select,
+  article,aside,footer,header,nav,section {
+    margin:0; padding:0; border:0; font-size:100%; vertical-align:top; outline:0;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+  ::-webkit-scrollbar-thumb:window-inactive { background: rgba(0,0,0,.1); }
 
   :root {
-    --bg:      #0a0c0f;
-    --surface: #0f1318;
-    --panel:   #141920;
-    --rim:     #1e2730;
-    --dim:     #2a3542;
-    --muted:   #4a5a6a;
-    --soft:    #9B7FCC;
-    --text:    #D8C8F8;
-    --white:   #F2EEFF;
-    --accent:  #8040F0;
-    --accentL: #A060FF;
-    --accentD: #5C28CC;
-    --lavender:#C4A8FF;
-    --green:   #34D89A;
-    --red:     #FF4D72;
-    --amber:   #FFB020;
-    --mono: 'IBM Plex Mono', monospace;
-    --sans: 'Syne', sans-serif;
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --border:  #ccc;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --green:   #2ecc71;
+    --red:     #e74c3c;
+    --amber:   #f39c12;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
   }
 
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-  body { background: var(--bg); font-family: var(--sans); color: var(--text); min-height: 100vh; }
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+    overflow-x: hidden;
+  }
 
   /* -- Screens -- */
-  .screen { display: none; min-height: 100vh; }
-  .screen.visible { display: flex; }
-
-  /* -- Shell -- */
-  .shell {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; padding: 40px 20px;
-    position: relative; overflow: hidden; background: var(--bg);
-  }
-  .shell::before {
-    content: ''; position: absolute;
-    top: -120px; left: 50%; transform: translateX(-50%);
-    width: 700px; height: 500px;
-    background: radial-gradient(ellipse at center, rgba(128,64,240,.22) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  .shell::after {
-    content: ''; position: absolute; bottom: -100px; right: -100px;
-    width: 400px; height: 400px;
-    background: radial-gradient(ellipse, rgba(160,96,255,.1) 0%, transparent 65%);
-    pointer-events: none;
-  }
-  .shell-grid {
-    position: absolute; inset: 0; pointer-events: none;
-    background-image: radial-gradient(circle, rgba(128,64,240,.12) 1px, transparent 1px);
-    background-size: 30px 30px;
-  }
-
-  /* -- Logo -- */
-  .logo-block { position: relative; z-index: 1; text-align: center; margin-bottom: 36px; }
-  .logo-mark { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .2em; margin-top: 4px; }
+  .screen { display: none; width: 100%; max-width: 480px; }
+  .screen.visible { display: block; }
 
   /* -- Card -- */
   .card {
-    background: var(--surface); border: 1px solid var(--rim); border-radius: 16px;
-    padding: 32px 36px; width: 100%; max-width: 400px;
-    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(128,64,240,.1);
-    position: relative; z-index: 1;
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 36px 40px 40px;
+  }
+
+  /* -- Logo -- */
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px;
+    letter-spacing: .2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 10px;
   }
 
   /* -- RP badge -- */
   .rp-badge {
-    display: flex; align-items: center; gap: 10px;
-    background: rgba(128,64,240,.1); border: 1px solid rgba(128,64,240,.3);
-    border-radius: 8px; padding: 9px 14px; margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    background: rgba(110,53,140,.06);
+    border: 1px solid rgba(110,53,140,.2);
+    border-radius: 10px;
+    padding: 9px 14px;
+    margin-bottom: 22px;
+    font-size: 13px;
+    color: var(--muted);
   }
-  .rp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-  .rp-label { font-family: var(--mono); font-size: 11px; color: var(--soft); }
+  .rp-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .rp-label strong { color: var(--purple); font-weight: 600; }
 
   /* -- Fields -- */
-  .field { margin-bottom: 18px; }
-  .field-label { font-family: var(--mono); font-size: 9px; color: var(--muted);
-    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 7px; }
-  .field-input {
-    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
-    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
-    width: 100%; outline: none; transition: border-color .15s;
+  .field { margin-bottom: 16px; }
+  .field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 7px;
   }
-  .field-input:focus { border-color: var(--accent); }
-  .field-input::placeholder { color: var(--muted); }
+  .field-input {
+    display: block;
+    width: 100%;
+    padding: 13px 16px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--white);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(110,53,140,.12);
+  }
+  .field-input::placeholder { color: #aaa; }
+
+  /* -- Key select -- */
+  .key-select {
+    display: block;
+    width: 100%;
+    padding: 13px 36px 13px 16px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--white);
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    transition: border-color .15s;
+    margin-bottom: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+  }
+  .key-select:focus { border-color: var(--purple); }
 
   /* -- Buttons -- */
-  .btn { display: block; width: 100%; border: none; border-radius: 9px; padding: 13px 20px;
-    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .03em;
-    text-align: center; cursor: pointer; margin-top: 8px; transition: all .15s; }
-  .btn-primary {
-    background: linear-gradient(135deg, var(--accentL), var(--accentD));
-    color: #fff; box-shadow: 0 6px 20px rgba(128,64,240,.4);
+  .btn {
+    display: inline-block;
+    padding: 14px 28px;
+    border: none;
+    border-radius: 22px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    cursor: pointer;
+    transition: background .3s, box-shadow .3s, transform .15s;
+    text-align: center;
+    line-height: 1;
   }
-  .btn-primary:hover { box-shadow: 0 8px 28px rgba(128,64,240,.6); transform: translateY(-1px); }
-  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-  .btn-ghost { background: transparent; border: 1px solid var(--dim); color: var(--soft); }
-  .btn-ghost:hover { border-color: var(--accent); color: var(--lavender); }
+  .btn-full { display: block; width: 100%; margin-top: 6px; }
 
-  /* -- Info rows -- */
-  .info-row { display: flex; justify-content: space-between;
-    font-family: var(--mono); font-size: 10px; margin-bottom: 7px; }
+  @keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%;
+    animation: gradient-shift 3s ease infinite;
+    color: var(--white);
+    box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
+
+  /* -- Button row -- */
+  .btn-row { display: flex; gap: 10px; margin-top: 22px; }
+  .btn-row .btn { flex: 1; }
+
+  /* -- Info box -- */
+  .info-box {
+    background: #f9f7fc;
+    border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 4px;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 7px;
+  }
   .info-row:last-child { margin-bottom: 0; }
-  .info-key { color: var(--muted); } .info-value { color: var(--text); }
+  .info-key { color: var(--muted); }
+  .info-value { color: var(--text); font-weight: 600; }
+
+  /* -- Headline / subheading -- */
+  .card-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 5px;
+    text-align: center;
+  }
+  .card-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .card-sub strong { color: var(--purple); font-weight: 600; }
+
+  /* -- Icon circle -- */
+  .icon-circle {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 22px;
+  }
+  .icon-circle-ok   { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35);  }
+  .icon-circle-err  { background: rgba(231,76,60,.1);   border: 1px solid rgba(231,76,60,.35);   }
+  .icon-circle-warn { background: rgba(243,156,18,.1);  border: 1px solid rgba(243,156,18,.35);  }
+  .icon-circle-spin { background: rgba(110,53,140,.08); border: 1px solid rgba(110,53,140,.25);  }
 
   /* -- Error message -- */
   .err-msg {
-    font-family: var(--mono); font-size: 11px; color: var(--red);
-    margin-top: 10px; min-height: 16px; text-align: center;
+    font-size: 12px;
+    color: var(--red);
+    min-height: 18px;
+    margin-top: 8px;
+    text-align: center;
   }
 
-  /* -- Pulse animation -- */
-  @keyframes pulse-ring {
-    0% { transform: scale(.7); opacity: .6; }
-    100% { transform: scale(1.55); opacity: 0; }
+  /* -- Divider hint -- */
+  .hint-row {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: .05em;
   }
-  .pulse-ring { position: absolute; inset: 0; border-radius: 50%;
-    border: 1px solid var(--accent); animation: pulse-ring 2.2s ease-out infinite; }
-  .pulse-ring:nth-child(2) { animation-delay: .73s; }
-  .pulse-ring:nth-child(3) { animation-delay: 1.46s; }
 
-  /* -- Countdown -- */
+  /* -- Countdown bar -- */
   @keyframes countdown-anim { 0%{width:100%} 100%{width:0%} }
-  .countdown-bar { height: 3px; border-radius: 2px;
-    background: linear-gradient(90deg, var(--accentL), var(--accentD));
-    animation: countdown-anim 120s linear forwards; }
+  .countdown-bar {
+    height: 3px; border-radius: 2px; margin-top: 16px;
+    background: linear-gradient(90deg, var(--purple), var(--navy));
+    animation: countdown-anim 120s linear forwards;
+  }
 
-  /* -- Confirm row -- */
-  .btn-row { display: flex; gap: 10px; margin-top: 24px; }
-  .btn-row .btn { margin-top: 0; }
-
-  /* SIM badge */
+  /* -- SIM badge -- */
   .sim-badge {
-    font-family: var(--mono); font-size: 9px; color: var(--amber);
-    background: rgba(255,176,32,.08); border: 1px solid rgba(255,176,32,.25);
-    border-radius: 4px; padding: 3px 8px; display: inline-block; margin-bottom: 16px;
+    font-size: 10px;
+    color: var(--amber);
+    background: rgba(243,156,18,.08);
+    border: 1px solid rgba(243,156,18,.3);
+    border-radius: 6px;
+    padding: 3px 10px;
+    display: inline-block;
+    margin-bottom: 14px;
   }
 
-  /* -- Key select (s-keys) -- */
-  .key-select {
-    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
-    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
-    width: 100%; outline: none; transition: border-color .15s;
-    appearance: none; cursor: pointer; margin-bottom: 16px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5a6a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 14px center;
-    padding-right: 36px;
+  @media (max-width: 520px) {
+    .card { padding: 28px 22px 30px; border-radius: 22px; }
   }
-  .key-select:focus { border-color: var(--accent); }
-  .key-select option { background: var(--panel); color: var(--text); }
-
-  /* -- Field hint / debug badge -- */
-  .debug-badge { font-family: var(--mono); font-size: 9px; color: var(--amber);
-    letter-spacing:.1em; margin-left: 6px; }
+  @media (max-width: 360px) {
+    body { font-size: 14px; padding: 16px 10px; }
+    .card { padding: 22px 16px 24px; }
+    .btn { font-size: 14px; padding: 13px 20px; }
+  }
 </style>
 </head>
 <body>
 
 <!-- --- LOGIN --------------------------------------- -->
 <div class="screen visible" id="s-login">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">IDENTITY PROVIDER</div>
-    </div>
-    <div class="card">
-      <div class="rp-badge">
-        <div class="rp-dot"></div>
-        <div class="rp-label">
-          <span style="color:var(--muted)">Authorization for&nbsp;</span><span id="rp-label-login">Loading&hellip;</span>
-        </div>
-      </div>
-      <div class="field">
-        <div class="field-label">HSM URL</div>
-        <input class="field-input" id="hsm-url-input" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="url" list="hsm-url-list">
-        <datalist id="hsm-url-list"></datalist>
-      </div>
-      <button class="btn btn-primary" id="login-btn" onclick="doLogin()">Continue &rarr;</button>
-      <div class="err-msg" id="login-err"></div>
-      <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rim);
-        font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;">
-        requires hardware key confirmation
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Identity Provider</div>
+  </div>
+  <div class="card">
+    <div class="rp-badge">
+      <div class="rp-dot"></div>
+      <div class="rp-label">
+        Authorization for&nbsp;<strong id="rp-label-login">Loading&hellip;</strong>
       </div>
     </div>
+    <div class="field">
+      <label class="field-label" for="hsm-url-input">HSM URL</label>
+      <input class="field-input" id="hsm-url-input" type="url"
+        placeholder="https://my.ence.do" value="https://my.ence.do"
+        autocomplete="url" list="hsm-url-list">
+      <datalist id="hsm-url-list"></datalist>
+    </div>
+    <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Continue &rarr;</button>
+    <div class="err-msg" id="login-err"></div>
+    <div class="hint-row">requires hardware key confirmation</div>
   </div>
 </div>
 
 <!-- --- KEY SELECTION ------------------------------- -->
 <div class="screen" id="s-keys">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">SELECT KEY</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Select Key</div>
+  </div>
+  <div class="card">
+    <div class="field">
+      <label class="field-label" for="key-select">Signing key</label>
+      <select class="key-select" id="key-select"></select>
     </div>
-    <div class="card">
-      <div class="field">
-        <div class="field-label">Signing key</div>
-        <select class="key-select" id="key-select"></select>
-      </div>
-      <div class="err-msg" id="keys-err"></div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
-        <button class="btn btn-primary" id="keys-next-btn" onclick="doSelectKey()">Next &rarr;</button>
-      </div>
+    <div class="err-msg" id="keys-err"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
+      <button class="btn btn-primary" id="keys-next-btn" onclick="doSelectKey()">Next &rarr;</button>
     </div>
   </div>
 </div>
 
 <!-- --- CONFIRM -------------------------------------- -->
 <div class="screen" id="s-confirm">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">CONFIRM LOGIN</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Confirm Login</div>
+  </div>
+  <div class="card">
+    <p class="card-title">Sign in as <span id="confirm-name" style="color:var(--purple)"></span>?</p>
+    <p class="card-sub">to&nbsp;<strong id="confirm-rp"></strong></p>
+    <div class="info-box">
+      <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="confirm-username"></span></div>
+      <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
+      <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="confirm-keysource">Simulation</span></div>
     </div>
-    <div class="card" style="text-align:center;">
-      <div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:6px;">
-        Sign in as <span id="confirm-name" style="color:var(--lavender)"></span>?
-      </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;">
-        to <span id="confirm-rp" style="color:var(--text)"></span>
-      </div>
-      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;margin-bottom:4px;">
-        <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="confirm-username"></span></div>
-        <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
-        <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="confirm-keysource">Simulation</span></div>
-      </div>
-      <div class="err-msg" id="confirm-err"></div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
-        <button class="btn btn-primary" id="confirm-btn" onclick="doConfirm()">Approve &rarr;</button>
-      </div>
+    <div class="err-msg" id="confirm-err"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
+      <button class="btn btn-primary" id="confirm-btn" onclick="doConfirm()">Approve &rarr;</button>
     </div>
   </div>
 </div>
 
 <!-- --- TOKEN CONFIRM -------------------------------- -->
 <div class="screen" id="s-token-confirm">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">CONFIRM SIGN-IN</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Confirm Sign-In</div>
+  </div>
+  <div class="card">
+    <p class="card-title">Sign in as <span id="tc-username" style="color:var(--purple)"></span>?</p>
+    <p class="card-sub">to&nbsp;<strong id="tc-audience"></strong></p>
+    <div class="info-box">
+      <div class="info-row"><span class="info-key">issuer</span><span class="info-value" id="tc-iss"></span></div>
+      <div class="info-row"><span class="info-key">issued at</span><span class="info-value" id="tc-iat"></span></div>
+      <div class="info-row"><span class="info-key">expires</span><span class="info-value" id="tc-exp"></span></div>
+      <div id="tc-extra"></div>
     </div>
-    <div class="card" style="text-align:center;">
-      <div style="font-size:15px;font-weight:700;color:var(--white);margin-bottom:4px;">
-        Sign in as <span id="tc-username" style="color:var(--lavender)"></span>?
-      </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;">
-        to <span id="tc-audience" style="color:var(--text)"></span>
-      </div>
-      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;margin-bottom:4px;">
-        <div class="info-row"><span class="info-key">issuer</span><span class="info-value" id="tc-iss"></span></div>
-        <div class="info-row"><span class="info-key">issued at</span><span class="info-value" id="tc-iat"></span></div>
-        <div class="info-row"><span class="info-key">expires</span><span class="info-value" id="tc-exp"></span></div>
-        <div id="tc-extra"></div>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
-        <button class="btn btn-primary" id="tc-approve-btn" onclick="doApproveSign()">Approve &rarr;</button>
-      </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
+      <button class="btn btn-primary" id="tc-approve-btn" onclick="doApproveSign()">Approve &rarr;</button>
     </div>
   </div>
 </div>
 
 <!-- --- SIGNING -------------------------------------- -->
 <div class="screen" id="s-signing">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">SIGNING TOKEN</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Signing Token</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none"
+           stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
     </div>
-    <div class="card" style="text-align:center;">
-      <div style="width:72px;height:72px;border-radius:50%;
-        background:rgba(128,64,240,.15);border:1px solid rgba(160,96,255,.4);
-        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;
-        box-shadow:0 0 32px rgba(128,64,240,.3);">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--lavender)" stroke-width="2.5">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-      </div>
-      <div style="font-size:14px;font-weight:700;color:var(--lavender);margin-bottom:6px;" id="sign-title">Confirmed</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:24px;" id="sign-status">Generating cryptographic signature&hellip;</div>
-      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;">
-        <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="sign-username"></span></div>
-        <div class="info-row"><span class="info-key">audience</span><span class="info-value" id="sign-audience"></span></div>
-        <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
-        <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="sign-keysource">Simulation</span></div>
-      </div>
-      <button class="btn btn-ghost" id="cancel-mobile-btn" style="display:none;margin-top:16px;" onclick="doCancelMobile()">Use passphrase instead</button>
-      <button class="btn btn-ghost" id="cancel-redirect-btn" style="display:none;margin-top:8px;" onclick="doCancelRedirect()">Cancel</button>
+    <p class="card-title" id="sign-title">Confirmed</p>
+    <p class="card-sub" id="sign-status">Generating cryptographic signature&hellip;</p>
+    <div class="info-box" style="text-align:left;">
+      <div class="info-row"><span class="info-key">identity</span><span class="info-value" id="sign-username"></span></div>
+      <div class="info-row"><span class="info-key">audience</span><span class="info-value" id="sign-audience"></span></div>
+      <div class="info-row"><span class="info-key">algorithm</span><span class="info-value">EdDSA / Ed25519</span></div>
+      <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="sign-keysource">Simulation</span></div>
     </div>
+    <button class="btn btn-ghost btn-full" id="cancel-mobile-btn"
+            style="display:none;margin-top:14px;" onclick="doCancelMobile()">Use passphrase instead</button>
+    <button class="btn btn-ghost btn-full" id="cancel-redirect-btn"
+            style="display:none;margin-top:8px;" onclick="doCancelRedirect()">Cancel</button>
   </div>
 </div>
 
 <!-- --- PASSPHRASE ----------------------------------- -->
 <div class="screen" id="s-pin">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Authentication</div>
+  </div>
+  <div class="card">
+    <div class="rp-badge">
+      <div class="rp-dot"></div>
+      <div class="rp-label">
+        Authorization for&nbsp;<strong id="rp-label-pin">Loading&hellip;</strong>
       </div>
-      <div class="logo-sub">AUTHENTICATION</div>
     </div>
-    <div class="card">
-      <div class="rp-badge">
-        <div class="rp-dot"></div>
-        <div class="rp-label">
-          <span style="color:var(--muted)">Authorization for&nbsp;</span><span id="rp-label-pin">Loading&hellip;</span>
-        </div>
-      </div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:18px;line-height:1.6;">
-        Enter your passphrase to authenticate with the HSM.
-      </div>
-      <div class="field">
-        <div class="field-label">Passphrase</div>
-        <input class="field-input" id="pin-input" type="password" placeholder="enter passphrase" autocomplete="current-password">
-      </div>
-      <div class="err-msg" id="pin-err"></div>
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="showScreen('s-login')">Back</button>
-        <button class="btn btn-primary" id="pin-btn" onclick="doSubmitPin()">Continue &rarr;</button>
-      </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.6;">
+      Enter your passphrase to authenticate with the HSM.
+    </p>
+    <div class="field">
+      <label class="field-label" for="pin-input">Passphrase</label>
+      <input class="field-input" id="pin-input" type="password"
+        placeholder="enter passphrase" autocomplete="current-password">
+    </div>
+    <div class="err-msg" id="pin-err"></div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="showScreen('s-login')">Back</button>
+      <button class="btn btn-primary" id="pin-btn" onclick="doSubmitPin()">Continue &rarr;</button>
     </div>
   </div>
 </div>
 
 <!-- --- REJECTED ------------------------------------- -->
 <div class="screen" id="s-rejected">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">ACCESS DENIED</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Access Denied</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-err">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+           stroke="#e74c3c" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
     </div>
-    <div class="card" style="text-align:center;">
-      <div style="width:72px;height:72px;border-radius:50%;
-        background:rgba(255,77,114,.1);border:1px solid rgba(255,77,114,.35);
-        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.5">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </div>
-      <div style="font-size:15px;font-weight:700;color:var(--red);margin-bottom:8px;">Rejected</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:28px;line-height:1.8;" id="rejected-msg">
-        You cancelled the login request.
-      </div>
-      <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
-    </div>
+    <p class="card-title" style="color:var(--red);">Rejected</p>
+    <p class="card-sub" id="rejected-msg">You cancelled the login request.</p>
+    <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
   </div>
 </div>
 
 <!-- --- ERROR ---------------------------------------- -->
 <div class="screen" id="s-error">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">ERROR</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Error</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-warn">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+           stroke="#f39c12" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
     </div>
-    <div class="card" style="text-align:center;">
-      <div style="width:72px;height:72px;border-radius:50%;
-        background:rgba(255,176,32,.1);border:1px solid rgba(255,176,32,.3);
-        display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-      </div>
-      <div style="font-size:15px;font-weight:700;color:var(--amber);margin-bottom:8px;">Something went wrong</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;" id="error-msg">
-        An unexpected error occurred.
-      </div>
-      <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
-    </div>
+    <p class="card-title" style="color:var(--amber);">Something went wrong</p>
+    <p class="card-sub" id="error-msg">An unexpected error occurred.</p>
+    <button class="btn btn-ghost" onclick="showScreen('s-login')">Try again</button>
   </div>
 </div>
 

@@ -2,135 +2,175 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
 <title>Encedo -- HSM Enrollment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+
   :root {
-    --bg:      #0a0c0f;
-    --surface: #0f1318;
-    --panel:   #141920;
-    --rim:     #1e2730;
-    --dim:     #2a3542;
-    --muted:   #4a5a6a;
-    --soft:    #9B7FCC;
-    --text:    #D8C8F8;
-    --white:   #F2EEFF;
-    --accent:  #8040F0;
-    --accentL: #A060FF;
-    --accentD: #5C28CC;
-    --lavender:#C4A8FF;
-    --green:   #34D89A;
-    --red:     #FF4D72;
-    --amber:   #FFB020;
-    --mono: 'IBM Plex Mono', monospace;
-    --sans: 'Syne', sans-serif;
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --border:  #ccc;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --panel:   #f8f6fc;
+    --green:   #2ecc71;
+    --red:     #e74c3c;
+    --amber:   #f39c12;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
   }
 
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-  body { background: var(--bg); font-family: var(--sans); color: var(--text); min-height: 100vh; }
-
-  .screen { display: none; min-height: 100vh; }
-  .screen.visible { display: flex; }
-
-  .shell {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; padding: 40px 20px;
-    position: relative; overflow: hidden; background: var(--bg);
-  }
-  .shell::before {
-    content: ''; position: absolute;
-    top: -120px; left: 50%; transform: translateX(-50%);
-    width: 700px; height: 500px;
-    background: radial-gradient(ellipse at center, rgba(128,64,240,.22) 0%, transparent 70%);
-    pointer-events: none;
-  }
-  .shell::after {
-    content: ''; position: absolute; bottom: -100px; right: -100px;
-    width: 400px; height: 400px;
-    background: radial-gradient(ellipse, rgba(52,216,154,.08) 0%, transparent 65%);
-    pointer-events: none;
-  }
-  .shell-grid {
-    position: absolute; inset: 0; pointer-events: none;
-    background-image: radial-gradient(circle, rgba(128,64,240,.12) 1px, transparent 1px);
-    background-size: 30px 30px;
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+    overflow-x: hidden;
   }
 
-  .logo-block { position: relative; z-index: 1; text-align: center; margin-bottom: 36px; }
-  .logo-mark { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .logo-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .2em; margin-top: 4px; }
+  .screen { display: none; width: 100%; max-width: 480px; }
+  .screen.visible { display: block; }
 
+  /* -- Card -- */
   .card {
-    background: var(--surface); border: 1px solid var(--rim); border-radius: 16px;
-    padding: 32px 36px; width: 100%; max-width: 420px;
-    box-shadow: 0 32px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(128,64,240,.1);
-    position: relative; z-index: 1;
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 36px 40px 40px;
   }
 
-  .field { margin-bottom: 18px; }
-  .field-label { font-family: var(--mono); font-size: 9px; color: var(--muted);
-    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 7px; }
-  .field-input {
-    background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
-    padding: 11px 14px; font-family: var(--mono); font-size: 13px; color: var(--text);
-    width: 100%; outline: none; transition: border-color .15s;
-  }
-  .field-input:focus { border-color: var(--accent); }
-  .field-input::placeholder { color: var(--muted); }
-  .field-input[readonly] {
-    opacity: .65; cursor: default; color: var(--lavender);
-  }
-  .field-hint { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
-
-  .btn { display: block; width: 100%; border: none; border-radius: 9px; padding: 13px 20px;
-    font-family: var(--sans); font-size: 13px; font-weight: 700; letter-spacing: .03em;
-    text-align: center; cursor: pointer; margin-top: 8px; transition: all .15s; }
-  .btn-primary {
-    background: linear-gradient(135deg, var(--accentL), var(--accentD));
-    color: #fff; box-shadow: 0 6px 20px rgba(128,64,240,.4);
-  }
-  .btn-primary:hover { box-shadow: 0 8px 28px rgba(128,64,240,.6); transform: translateY(-1px); }
-  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-
-  .divider { height: 1px; background: var(--rim); margin: 22px 0; }
-
-  .err-msg {
-    font-family: var(--mono); font-size: 11px; color: var(--red);
-    margin-top: 10px; min-height: 16px; text-align: center;
+  /* -- Logo -- */
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase; margin-top: 10px;
   }
 
+  /* -- Step label -- */
+  .step-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 18px;
+  }
+
+  /* -- Identity box -- */
   .identity-box {
-    background: rgba(128,64,240,.07); border: 1px solid rgba(128,64,240,.22);
-    border-radius: 10px; padding: 14px 16px; margin-bottom: 22px;
+    background: var(--panel);
+    border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 22px;
   }
-  .identity-row { display: flex; justify-content: space-between; align-items: baseline;
-    font-family: var(--mono); font-size: 11px; margin-bottom: 7px; gap: 12px; }
+  .identity-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; margin-bottom: 7px; gap: 12px;
+  }
   .identity-row:last-child { margin-bottom: 0; }
   .identity-key { color: var(--muted); flex-shrink: 0; }
-  .identity-val { color: var(--lavender); text-align: right; white-space: nowrap;
-    font-size: 10px; }
+  .identity-val { color: var(--purple); font-weight: 600; text-align: right; white-space: nowrap; font-size: 11px; }
 
-  .step-label {
-    font-family: var(--mono); font-size: 9px; color: var(--muted);
-    letter-spacing: .2em; text-transform: uppercase; margin-bottom: 16px;
+  /* -- Fields -- */
+  .field { margin-bottom: 16px; }
+  .field-label {
+    display: block; font-size: 11px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 7px;
+  }
+  .field-input {
+    display: block; width: 100%;
+    padding: 13px 16px; border: 1px solid var(--border);
+    border-radius: 20px; font-family: 'Inter', sans-serif;
+    font-size: 15px; color: var(--text); background: var(--white);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .field-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(110,53,140,.12);
+  }
+  .field-input::placeholder { color: #aaa; }
+  .field-hint {
+    font-size: 11px; color: var(--muted);
+    margin-top: 6px; line-height: 1.5;
   }
 
-  /* success screen */
-  .success-icon {
+  /* -- Divider -- */
+  .divider { height: 1px; background: #eee; margin: 20px 0; }
+
+  /* -- Buttons -- */
+  @keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .btn {
+    display: inline-block; padding: 14px 28px;
+    border: none; border-radius: 22px;
+    font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: .03em; cursor: pointer;
+    transition: box-shadow .3s, transform .15s; text-align: center; line-height: 1;
+  }
+  .btn-full { display: block; width: 100%; margin-top: 6px; }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%;
+    animation: gradient-shift 3s ease infinite;
+    color: var(--white);
+    box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
+
+  /* -- Error -- */
+  .err-msg {
+    font-size: 12px; color: var(--red);
+    min-height: 18px; margin-top: 8px; text-align: center;
+  }
+
+  /* -- Hint row -- */
+  .hint-row {
+    margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee;
+    font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .05em;
+  }
+
+  /* -- Icon circle -- */
+  .icon-circle {
     width: 72px; height: 72px; border-radius: 50%;
-    background: rgba(52,216,154,.12); border: 1px solid rgba(52,216,154,.4);
     display: flex; align-items: center; justify-content: center;
-    margin: 0 auto 24px; box-shadow: 0 0 32px rgba(52,216,154,.2);
+    margin: 0 auto 22px;
+  }
+  .icon-circle-ok   { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35); }
+  .icon-circle-warn { background: rgba(243,156,18,.1);  border: 1px solid rgba(243,156,18,.35); }
+
+  /* -- Success info -- */
+  .success-info {
+    background: var(--panel); border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px; padding: 14px 16px; text-align: left;
   }
 
-  /* error screen */
-  .error-icon {
-    width: 72px; height: 72px; border-radius: 50%;
-    background: rgba(255,176,32,.1); border: 1px solid rgba(255,176,32,.3);
-    display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;
+  /* -- Loading -- */
+  .loading-text {
+    text-align: center; font-size: 13px; color: var(--muted); padding: 8px 0;
+  }
+
+  @media (max-width: 520px) {
+    .card { padding: 28px 22px 30px; border-radius: 22px; }
+  }
+  @media (max-width: 360px) {
+    body { font-size: 14px; padding: 16px 10px; }
+    .card { padding: 22px 16px 24px; }
   }
 </style>
 </head>
@@ -138,117 +178,104 @@
 
 <!-- --- LOADING --------------------------------------- -->
 <div class="screen visible" id="s-loading">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">HSM ENROLLMENT</div>
-    </div>
-    <div class="card" style="text-align:center;">
-      <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">Validating enrollment link&hellip;</div>
-    </div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">HSM Enrollment</div>
+  </div>
+  <div class="card">
+    <p class="loading-text">Validating enrollment link&hellip;</p>
   </div>
 </div>
 
 <!-- --- FORM ------------------------------------------ -->
 <div class="screen" id="s-form">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">HSM Enrollment</div>
+  </div>
+  <div class="card">
+    <div class="step-label">Step 1 of 2 &mdash; Link your hardware key</div>
+
+    <div class="identity-box">
+      <div class="identity-row">
+        <span class="identity-key">username</span>
+        <span class="identity-val" id="f-username">&hellip;</span>
       </div>
-      <div class="logo-sub">HSM ENROLLMENT</div>
-    </div>
-    <div class="card">
-      <div class="step-label">Step 1 of 2 &mdash; Link your hardware key</div>
-
-      <div class="identity-box">
-        <div class="identity-row">
-          <span class="identity-key">username</span>
-          <span class="identity-val" id="f-username">&hellip;</span>
-        </div>
-        <div class="identity-row">
-          <span class="identity-key">sub</span>
-          <span class="identity-val" id="f-sub">&hellip;</span>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-label">Encedo HSM URL</div>
-        <input class="field-input" id="f-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do">
-        <div class="field-hint">PPA (USB) &rarr; https://my.ence.do &nbsp;&#183;&nbsp; EPA (LAN) &rarr; custom IP/hostname</div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="field">
-        <div class="field-label">HSM passphrase <span style="color:var(--muted);font-weight:400">(optional)</span></div>
-        <input class="field-input" id="f-password" type="password" placeholder="Leave empty if not set">
-        <div class="field-hint">If your HSM requires a passphrase for key access &mdash; leave empty to handle in next step</div>
-      </div>
-
-      <button class="btn btn-primary" id="submit-btn" onclick="doSubmit()">Link HSM &rarr;</button>
-      <div class="err-msg" id="form-err"></div>
-
-      <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--rim);
-        font-family:var(--mono);font-size:10px;color:var(--muted);text-align:center;letter-spacing:.06em;">
-        this link is valid for 24 hours &nbsp;&#183;&nbsp; one-time use
+      <div class="identity-row">
+        <span class="identity-key">sub</span>
+        <span class="identity-val" id="f-sub">&hellip;</span>
       </div>
     </div>
+
+    <div class="field">
+      <label class="field-label" for="f-hsm-url">Encedo HSM URL</label>
+      <input class="field-input" id="f-hsm-url" type="url"
+        placeholder="https://my.ence.do" value="https://my.ence.do">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field">
+      <label class="field-label" for="f-password">
+        HSM passphrase <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span>
+      </label>
+      <input class="field-input" id="f-password" type="password"
+        placeholder="Leave empty if not set">
+    </div>
+
+    <button class="btn btn-primary btn-full" id="submit-btn" onclick="doSubmit()">Link HSM &rarr;</button>
+    <div class="err-msg" id="form-err"></div>
+    <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
   </div>
 </div>
 
 <!-- --- SUCCESS ---------------------------------------- -->
 <div class="screen" id="s-success">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">ENROLLMENT COMPLETE</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Enrollment Complete</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
     </div>
-    <div class="card" style="text-align:center;">
-      <div class="success-icon">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
+    <p style="font-size:16px;font-weight:700;color:#2ecc71;margin-bottom:18px;">HSM linked successfully</p>
+    <div class="success-info">
+      <div class="identity-row">
+        <span class="identity-key">username</span>
+        <span class="identity-val" id="s-username"></span>
       </div>
-      <div style="font-size:15px;font-weight:700;color:var(--green);margin-bottom:8px;">HSM linked successfully</div>
-      <div style="background:var(--panel);border:1px solid var(--rim);border-radius:10px;padding:14px 16px;text-align:left;">
-        <div class="identity-row"><span class="identity-key">username</span><span class="identity-val" id="s-username"></span></div>
-        <div class="identity-row"><span class="identity-key">hsm url</span><span class="identity-val" id="s-hsm"></span></div>
+      <div class="identity-row" style="margin-bottom:0">
+        <span class="identity-key">hsm url</span>
+        <span class="identity-val" id="s-hsm"></span>
       </div>
-      <button class="btn btn-primary" style="margin-top:20px;width:100%" onclick="window.close()">Close</button>
     </div>
+    <button class="btn btn-primary btn-full" style="margin-top:22px;" onclick="window.close()">Close</button>
   </div>
 </div>
 
 <!-- --- ERROR ------------------------------------------ -->
 <div class="screen" id="s-error">
-  <div class="shell">
-    <div class="shell-grid"></div>
-    <div class="logo-block">
-      <div class="logo-mark">
-        <img src="/logo.png" style="height:44px;border-radius:8px;padding:6px 12px;background:#fff;">
-      </div>
-      <div class="logo-sub">ERROR</div>
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Error</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-warn">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+           stroke="#f39c12" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
     </div>
-    <div class="card" style="text-align:center;">
-      <div class="error-icon">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-      </div>
-      <div style="font-size:15px;font-weight:700;color:var(--amber);margin-bottom:8px;">Enrollment failed</div>
-      <div style="font-family:var(--mono);font-size:11px;color:var(--soft);margin-bottom:20px;line-height:1.8;" id="error-msg">
-        This link may be expired or invalid.
-      </div>
-    </div>
+    <p style="font-size:16px;font-weight:700;color:var(--amber);margin-bottom:10px;">Enrollment failed</p>
+    <p style="font-size:13px;color:var(--muted);line-height:1.7;" id="error-msg">
+      This link may be expired or invalid.
+    </p>
   </div>
 </div>
 

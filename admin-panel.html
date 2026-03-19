@@ -5,34 +5,53 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Encedo OIDC -- Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
+/* =====================================================
+   DARK THEME (default)
+   ===================================================== */
 :root{
   --bg:#0a0c0f; --surface:#0f1318; --panel:#141920; --rim:#1e2730;
   --dim:#2a3542; --muted:#4a5a6a; --soft:#9B7FCC; --text:#D8C8F8;
   --white:#F2EEFF; --accent:#8040F0; --accentL:#A060FF; --accentD:#5C28CC;
   --lavender:#C4A8FF; --green:#34D89A; --red:#FF4D72; --amber:#FFB020;
   --mono:'IBM Plex Mono',monospace; --sans:'Syne',sans-serif;
-}
-html.light{
-  --bg:#F5F3FF; --surface:#FFFFFF; --panel:#EDE8FC; --rim:#D4C8F5;
-  --dim:#BEB0EC; --muted:#7B6BA0; --soft:#6230C0; --text:#2D1E5E;
-  --white:#0F082A; --accent:#7C35F0; --accentL:#9050F8; --accentD:#5C28CC;
-  --lavender:#5020B0; --green:#0D9E6A; --red:#D42050; --amber:#C07010;
+  --radius-card:12px; --radius-btn:8px; --shadow-modal:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(128,64,240,.1);
 }
 
+/* =====================================================
+   LIGHT THEME
+   ===================================================== */
+html.light{
+  --bg:#f4f4f4; --surface:#ffffff; --panel:#f0edf8; --rim:#e0d8f0;
+  --dim:#ccc; --muted:#888; --soft:#6E358C; --text:#222;
+  --white:#111; --accent:#6E358C; --accentL:#8B45AF; --accentD:#2A225E;
+  --lavender:#6E358C; --green:#2ecc71; --red:#e74c3c; --amber:#f39c12;
+  --mono:'IBM Plex Mono',monospace; --sans:'Inter',sans-serif;
+  --radius-card:20px; --radius-btn:18px; --shadow-modal:-10px -1px 60px 20px rgba(0,0,0,.1);
+}
+html.light body { background: linear-gradient(160deg,#eee,#fff); }
+html.light .admin-main { background: transparent; }
+html.light .admin-main-grid { display: none; }
+html.light .admin-main-glow { display: none; }
+
+/* =====================================================
+   BASE
+   ===================================================== */
 body{background:var(--bg);font-family:var(--sans);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
 
 /* -- nav -- */
-#nav{background:var(--surface);border-bottom:1px solid var(--rim);padding:12px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:100}
+#nav{background:var(--surface);border-bottom:1px solid var(--rim);padding:12px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.08)}
 .nav-logo{height:28px;border-radius:6px;padding:3px 8px;background:#fff}
+html.light .nav-logo{border-radius:8px}
 .nav-sep{width:1px;height:20px;background:var(--rim)}
 .nav-badge{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:8px}
 .nav-btn{background:transparent;border:1px solid var(--rim);border-radius:5px;padding:5px 12px;font-family:var(--mono);font-size:10px;color:var(--soft);cursor:pointer;transition:all .15s}
-.nav-btn:hover{border-color:var(--accentL);color:var(--accentL)}
+.nav-btn:hover{border-color:var(--accent);color:var(--accent)}
+html.light .nav-btn{border-radius:12px}
 
 /* -- layout -- */
 .admin-layout{flex:1;display:flex;min-height:0}
@@ -41,11 +60,13 @@ body{background:var(--bg);font-family:var(--sans);color:var(--text);min-height:1
 .admin-nav-item{padding:9px 20px;font-family:var(--mono);font-size:11px;color:var(--soft);cursor:pointer;border-left:2px solid transparent;display:flex;align-items:center;gap:9px;transition:all .1s;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left}
 .admin-nav-item:hover{color:var(--lavender)}
 .admin-nav-item.active{color:var(--lavender);background:rgba(128,64,240,.1);border-left-color:var(--accent)}
+html.light .admin-nav-item.active{background:rgba(110,53,140,.08);border-left-color:var(--accent)}
 .admin-nav-item.disabled{opacity:.35;cursor:default;pointer-events:none}
 .sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--rim)}
 .config-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;margin-bottom:4px;margin-top:8px}
 .config-input{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 9px;outline:none;transition:border-color .15s}
 .config-input:focus{border-color:var(--accent)}
+html.light .config-input{border-radius:10px}
 .status-line{display:flex;align-items:center;gap:7px;margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:blink 2.5s ease-in-out infinite}
 .status-dot.red{background:var(--red);animation:none}
@@ -54,40 +75,50 @@ body{background:var(--bg);font-family:var(--sans);color:var(--text);min-height:1
 /* -- main -- */
 .admin-main{flex:1;padding:36px 40px;overflow-y:auto;background:var(--bg);position:relative}
 .admin-main-grid{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle,rgba(128,64,240,.1) 1px,transparent 1px);background-size:30px 30px}
-html.light .admin-main-grid{background-image:radial-gradient(circle,rgba(124,53,240,.06) 1px,transparent 1px)}
 .admin-main-glow{position:absolute;top:-80px;right:-100px;width:600px;height:500px;pointer-events:none;background:radial-gradient(ellipse at 70% 20%,rgba(128,64,240,.2) 0%,transparent 60%)}
-html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(124,53,240,.08) 0%,transparent 60%)}
 .admin-main-inner{position:relative;z-index:1}
 .page{display:none}.page.active{display:block}
 .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:28px}
 .page-title{font-size:22px;font-weight:800;color:var(--white);letter-spacing:-.02em;margin-bottom:3px}
 .page-sub{font-family:var(--mono);font-size:10px;color:var(--muted)}
+html.light .page-title{font-weight:700;letter-spacing:-.01em}
 
 /* -- buttons -- */
-.btn{display:inline-flex;align-items:center;gap:7px;border-radius:8px;font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;padding:8px 16px}
+@keyframes gradient-shift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:var(--radius-btn);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;padding:8px 16px}
 .btn-primary{background:linear-gradient(135deg,var(--accentL),var(--accentD));color:#fff;border:none;box-shadow:0 4px 16px rgba(128,64,240,.35)}
 .btn-primary:hover{box-shadow:0 6px 22px rgba(128,64,240,.55);transform:translateY(-1px)}
+html.light .btn-primary{background:linear-gradient(-45deg,#6E358C,#2A225E,#6E358C);background-size:400% 400%;animation:gradient-shift 3s ease infinite;box-shadow:0 4px 18px rgba(110,53,140,.3)}
+html.light .btn-primary:hover{box-shadow:0 6px 26px rgba(110,53,140,.5)}
 .btn-ghost{background:transparent;border:1px solid var(--dim);color:var(--soft)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--lavender)}
+html.light .btn-ghost:hover{color:var(--accent)}
 .btn-danger{background:transparent;border:1px solid rgba(255,77,114,.25);color:var(--red)}
 .btn-danger:hover{background:rgba(255,77,114,.08)}
+html.light .btn-danger{border-color:rgba(231,76,60,.3);color:var(--red)}
+html.light .btn-danger:hover{background:rgba(231,76,60,.06)}
 .btn-xs{padding:4px 10px;font-size:10px}
 
 /* -- table -- */
-.table{background:var(--surface);border:1px solid var(--rim);border-radius:12px;overflow:hidden}
+.table{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);overflow:hidden}
+html.light .table{box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .table-head{display:grid;padding:10px 20px;border-bottom:1px solid var(--rim);background:rgba(128,64,240,.06)}
+html.light .table-head{background:rgba(110,53,140,.04)}
 .table-head-cell{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
 .table-row{display:grid;padding:13px 20px;align-items:center;transition:background .1s}
 .table-row:not(:last-child){border-bottom:1px solid var(--rim)}
 .table-row:hover{background:rgba(128,64,240,.05)}
+html.light .table-row:hover{background:rgba(110,53,140,.04)}
 .cell-name{font-weight:700;color:var(--white);font-size:13px}
 .cell-mono{font-family:var(--mono);font-size:11px;color:var(--lavender);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cell-muted{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .cell-actions{display:flex;gap:6px;justify-content:flex-end}
 
 /* -- client cards -- */
-.client-card{background:var(--surface);border:1px solid var(--rim);border-radius:12px;padding:18px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;transition:border-color .12s}
+.client-card{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);padding:18px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;transition:border-color .12s}
 .client-card:hover{border-color:var(--dim)}
+html.light .client-card{box-shadow:0 2px 12px rgba(0,0,0,.06)}
+html.light .client-card:hover{border-color:var(--accent)}
 .client-card-body{flex:1;min-width:0}
 .client-card-name{font-size:15px;font-weight:700;color:var(--white);margin-bottom:5px}
 .client-card-meta{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -95,7 +126,8 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 .client-card-actions{display:flex;gap:6px;flex-shrink:0}
 
 /* -- info panel -- */
-.info-panel{background:var(--surface);border:1px solid var(--rim);border-radius:12px;padding:18px 22px;margin-top:20px}
+.info-panel{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);padding:18px 22px;margin-top:20px}
+html.light .info-panel{box-shadow:0 2px 12px rgba(0,0,0,.06)}
 .section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:12px}
 .info-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-bottom:7px}
 .info-row:last-child{margin-bottom:0}
@@ -112,11 +144,14 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 /* -- modal -- */
 .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(5px);z-index:200;align-items:center;justify-content:center;padding:24px}
 .overlay.open{display:flex}
-.modal{background:var(--surface);border:1px solid var(--dim);border-radius:16px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(128,64,240,.1);animation:modalIn .18s ease}
+html.light .overlay{background:rgba(0,0,0,.3)}
+.modal{background:var(--surface);border:1px solid var(--dim);border-radius:16px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:var(--shadow-modal);animation:modalIn .18s ease}
+html.light .modal{border-radius:24px}
 .modal-wide{width:540px}
 @keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
 .modal-title{font-size:15px;font-weight:800;color:var(--white)}
+html.light .modal-title{font-weight:700}
 .modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;border-radius:4px;transition:color .1s}
 .modal-close:hover{color:var(--text)}
 .modal-body{padding:22px 24px}
@@ -131,18 +166,21 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 .field-textarea{resize:vertical;min-height:76px}
 .field-hint{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+html.light .field-input,html.light .field-textarea{border-radius:12px}
 
 /* -- kid badge -- */
 .kid-empty{opacity:.45;font-style:italic}
 
 /* -- secret box -- */
 .secret-box{background:rgba(128,64,240,.07);border:1px solid rgba(128,64,240,.22);border-radius:10px;padding:14px 16px;margin-top:12px}
+html.light .secret-box{background:rgba(110,53,140,.05);border-color:rgba(110,53,140,.2);border-radius:14px}
 .secret-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .secret-val{font-family:var(--mono);font-size:12px;color:var(--lavender);word-break:break-all;line-height:1.6}
 .secret-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
 
 /* -- clients checklist -- */
 .clients-list{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:4px 12px;max-height:160px;overflow-y:auto}
+html.light .clients-list{border-radius:12px}
 .client-check{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--rim)}
 .client-check:last-child{border-bottom:none}
 .client-check input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;flex-shrink:0}
@@ -153,58 +191,44 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 #toasts{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--surface);border:1px solid var(--dim);border-radius:10px;padding:10px 14px;min-width:230px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.4);animation:toastIn .2s ease;color:var(--text)}
 .toast.ok{border-color:rgba(52,216,154,.3)}.toast.err{border-color:rgba(255,77,114,.3)}
+html.light .toast{box-shadow:0 4px 18px rgba(0,0,0,.12)}
 @keyframes toastIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
 
 /* -- scope tags -- */
-.scope-tag {
-  background: var(--panel); border: 1px solid var(--dim); border-radius: 7px;
-  padding: 7px 14px; font-family: var(--mono); font-size: 11px; color: var(--muted);
-  cursor: pointer; transition: all .12s; user-select: none;
-}
-.scope-tag.on {
-  background: rgba(128,64,240,.2); border-color: var(--accent); color: var(--lavender);
-}
+.scope-tag{background:var(--panel);border:1px solid var(--dim);border-radius:7px;padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;transition:all .12s;user-select:none}
+.scope-tag.on{background:rgba(128,64,240,.2);border-color:var(--accent);color:var(--lavender)}
+html.light .scope-tag.on{background:rgba(110,53,140,.1);border-color:var(--accent);color:var(--accent)}
+
 /* -- pkce toggle -- */
-.pkce-row {
-  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-  background: rgba(128,64,240,.06); border: 1px solid rgba(128,64,240,.18);
-  border-radius: 8px; cursor: pointer; transition: all .12s; user-select: none;
-}
-.pkce-row:hover { background: rgba(128,64,240,.1); }
-.pkce-row.on { background: rgba(128,64,240,.12); border-color: rgba(128,64,240,.4); }
-.pkce-check {
-  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
-  background: var(--dim); border: 1px solid var(--muted);
-  display: flex; align-items: center; justify-content: center; transition: all .12s;
-}
-.pkce-row.on .pkce-check {
-  background: linear-gradient(135deg, var(--accentL), var(--accentD));
-  border-color: var(--accentD);
-}
+.pkce-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(128,64,240,.06);border:1px solid rgba(128,64,240,.18);border-radius:8px;cursor:pointer;transition:all .12s;user-select:none}
+.pkce-row:hover{background:rgba(128,64,240,.1)}
+.pkce-row.on{background:rgba(128,64,240,.12);border-color:rgba(128,64,240,.4)}
+html.light .pkce-row{background:rgba(110,53,140,.04);border-color:rgba(110,53,140,.15);border-radius:12px}
+html.light .pkce-row.on{background:rgba(110,53,140,.1);border-color:rgba(110,53,140,.35)}
+.pkce-check{width:16px;height:16px;border-radius:4px;flex-shrink:0;background:var(--dim);border:1px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:all .12s}
+.pkce-row.on .pkce-check{background:linear-gradient(135deg,var(--accentL),var(--accentD));border-color:var(--accentD)}
+
 /* -- enrollment link box -- */
 .enroll-box{background:rgba(52,216,154,.06);border:1px solid rgba(52,216,154,.25);border-radius:10px;padding:14px 16px;margin-top:12px}
+html.light .enroll-box{background:rgba(46,204,113,.05);border-color:rgba(46,204,113,.3);border-radius:14px}
 .enroll-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
 .enroll-url{font-family:var(--mono);font-size:11px;color:var(--green);word-break:break-all;line-height:1.6}
 .enroll-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
 
-/* -- client_id / secret display in view modal -- */
-.id-badge {
-  background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
-  padding: 10px 13px; font-family: var(--mono); font-size: 12px;
-  color: var(--lavender); letter-spacing: .04em; word-break: break-all;
-}
-.secret-dots {
-  background: var(--panel); border: 1px solid var(--dim); border-radius: 8px;
-  padding: 10px 13px; font-family: var(--mono); font-size: 15px;
-  color: var(--muted); letter-spacing: .12em; flex: 1;
-}
-/* -- card detail line -- */
-.client-card-scopes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
-.scope-pill {
-  background: rgba(128,64,240,.12); border: 1px solid rgba(128,64,240,.25);
-  border-radius: 4px; padding: 2px 8px;
-  font-family: var(--mono); font-size: 9px; color: var(--soft); letter-spacing: .04em;
-}
+/* -- client_id / secret display -- */
+.id-badge{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:12px;color:var(--lavender);letter-spacing:.04em;word-break:break-all}
+html.light .id-badge{border-radius:12px}
+.secret-dots{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:15px;color:var(--muted);letter-spacing:.12em;flex:1}
+html.light .secret-dots{border-radius:12px}
+
+/* -- scope pills -- */
+.client-card-scopes{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.scope-pill{background:rgba(128,64,240,.12);border:1px solid rgba(128,64,240,.25);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:9px;color:var(--soft);letter-spacing:.04em}
+html.light .scope-pill{background:rgba(110,53,140,.08);border-color:rgba(110,53,140,.2);color:var(--accent)}
+
+/* -- audit filter select -- */
+.audit-select{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer}
+html.light .audit-select{border-radius:12px}
 
 </style>
 </head>
@@ -291,8 +315,7 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
             <div class="page-sub" id="audit-sub">loading...</div>
           </div>
           <div style="display:flex;gap:10px;align-items:center;">
-            <select id="audit-filter" onchange="applyAuditFilter()"
-              style="background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer;">
+            <select id="audit-filter" class="audit-select" onchange="applyAuditFilter()">
               <option value="">All events</option>
               <option value="auth.">Auth</option>
               <option value="admin.">Admin</option>
@@ -308,8 +331,7 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
             <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-prev-btn" onclick="auditPrevPage()">&#8592; Prev</button>
             <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-next-btn" onclick="auditNextPage()">Next &#8594;</button>
           </div>
-          <select id="audit-limit" onchange="auditChangeLimit()"
-            style="background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:5px 10px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer;">
+          <select id="audit-limit" class="audit-select" onchange="auditChangeLimit()">
             <option value="10">10 / page</option>
             <option value="20" selected>20 / page</option>
             <option value="500">500 / page</option>
@@ -412,7 +434,6 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
     </div>
     <div class="modal-body">
 
-      <!-- identity -->
       <div class="section-label">Identity</div>
       <div class="field">
         <label class="field-label">SUB (UUID)</label>
@@ -440,7 +461,6 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 
       <div class="divider"></div>
 
-      <!-- hardware -->
       <div class="section-label">Hardware</div>
       <div class="field">
         <label class="field-label">HSM URL</label>
@@ -458,7 +478,6 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
 
       <div class="divider"></div>
 
-      <!-- clients -->
       <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
       <div class="clients-list" id="eu-clients-list">
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
@@ -656,7 +675,6 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
         </div>
       </div>
 
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-client')">Cancel</button>
@@ -689,8 +707,6 @@ html.light .admin-main-glow{background:radial-gradient(ellipse at 70% 20%,rgba(1
     </div>
   </div>
 </div>
-
-
 
 <!-- SECRET ROTATED -->
 <div class="overlay" id="modal-secret-rotated">
