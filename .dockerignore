@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+*.log
+.git/
+.gitignore
+README.md
+CLAUDE.md
+security.md
+rp-server.mjs
+nextcloud-jwks-kid-patch.md
+tenants/
+nginx/
