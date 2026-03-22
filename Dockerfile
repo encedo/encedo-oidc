@@ -5,7 +5,8 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY src/           ./src/
-COPY signin.html    signin.js    \
+COPY index.html     index.js     \
+     signin.html    signin.js    \
      enrollment.html enrollment.js \
      admin-panel.html admin-panel.js \
      hem-sdk.js      logo.png    ./
