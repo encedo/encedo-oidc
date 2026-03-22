@@ -510,6 +510,23 @@ DNS is already covered by the wildcard A record — no changes needed there.
 
 No restart of existing tenants required.
 
+### Updating a single tenant
+
+To deploy a change to one tenant only (e.g. for testing):
+
+```
+# 1. Pull + build
+cd /opt/encedo-oidc/src && git pull
+docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \
+  -t encedo-oidc:latest /opt/encedo-oidc/src
+
+# 2. Restart only that tenant
+cd /opt/encedo-oidc/tenants/test
+docker compose up -d --no-deps oidc
+```
+
+Redis is untouched — data is safe. Other tenants keep running the previous image.
+
 ### Updating
 
 When a new release is available:
