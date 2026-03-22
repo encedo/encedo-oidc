@@ -2,6 +2,12 @@ import 'dotenv/config';
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
+import { execSync } from 'child_process';
+
+const GIT_COMMIT = (() => {
+  try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore','pipe','ignore'] }).toString().trim(); }
+  catch { return process.env.GIT_COMMIT || 'unknown'; }
+})();
 
 import { requireAdminAuth, requireAdminNetwork } from './middleware/auth.js';
 import { errorHandler }                          from './middleware/errorHandler.js';
@@ -81,7 +87,7 @@ app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
 // --- Health check -------------------------------------------------------------
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString() });
+  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT });
 });
 
 // --- Static UI pages ----------------------------------------------------------

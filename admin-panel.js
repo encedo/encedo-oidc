@@ -99,6 +99,8 @@ async function checkHealth() {
   try {
     const r = await fetch(base() + '/health');
     if (!r.ok) throw 0;
+    const health = await r.json();
+    if (health.commit) $('version-label').textContent = 'v ' + health.commit;
     // URL reachable — check if secret is valid by probing admin endpoint
     const r2 = await fetch(base() + '/admin/users', {
       method: 'HEAD',
