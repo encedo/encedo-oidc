@@ -71,7 +71,7 @@ sudo chown encedo:encedo /opt/encedo-oidc
 
 sudo -u encedo git clone https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc
 cd /opt/encedo-oidc
-sudo -u encedo npm ci --omit=dev
+sudo -u encedo npm install --omit=dev
 ```
 
 #### 3. Configure
@@ -107,20 +107,19 @@ Wait for propagation before the next step (`dig auth.example.com` should return 
 
 ```
 sudo apt install -y nginx
-sudo systemctl enable --now nginx
+sudo systemctl enable nginx
 ```
+
+Do **not** start nginx yet — port 80 must be free for certbot in the next step.
 
 #### 6. TLS certificate (Let's Encrypt)
 
-nginx is running, so use the webroot method — no downtime:
-
 ```
 sudo apt install -y certbot
-sudo mkdir -p /var/www/certbot
-sudo certbot certonly --webroot -w /var/www/certbot -d auth.example.com
+sudo certbot certonly --standalone -d auth.example.com
 ```
 
-certbot's systemd timer renews the cert automatically. Add a deploy hook so nginx reloads after each renewal:
+Add a deploy hook so nginx reloads automatically after each renewal:
 
 ```
 sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh << 'EOF'
@@ -129,6 +128,8 @@ systemctl reload nginx
 EOF
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 ```
+
+certbot's systemd timer runs `certbot renew` twice a day — no cron needed. Renewal uses the webroot location defined in the nginx config below.
 
 #### 7. Configure nginx
 
@@ -196,7 +197,7 @@ server {
 ```
 sudo nano /etc/nginx/sites-available/encedo-oidc   # paste the config above
 sudo ln -s /etc/nginx/sites-available/encedo-oidc /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl start nginx
 ```
 
 #### 8. systemd service
