@@ -37,6 +37,7 @@ const STYLE_HASHES = [
   "'sha256-wH4xooEbYpFyBIvPRhvZhbiEcwcSQVFaG5gSR1zDKVE='", // signin.html
   "'sha256-WPNRCWjevpCuzbaeXeJXbBvLGm9JxCIVJqLNS7qCHnk='", // enrollment.html
   "'sha256-MWnX7fnv+mswI1mJVjZyvWCikal94QvQajDilWxLKnE='", // admin-panel.html
+  "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",
@@ -87,13 +88,15 @@ app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
 // --- Health check -------------------------------------------------------------
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT });
+  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null });
 });
 
 // --- Static UI pages ----------------------------------------------------------
+app.get('/',                (_req, res) => res.sendFile(resolve(ROOT, 'index.html')));
 app.get('/admin',           (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.html')));
 app.get('/enrollment',      (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.html')));
 app.get('/logo.png',        (_req, res) => res.sendFile(resolve(ROOT, 'logo.png')));
+app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js')));
 app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk.js')));
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));
 app.get('/enrollment.js',   (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.js')));

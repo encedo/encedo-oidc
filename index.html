@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encedo OIDC Provider</title>
+<link rel="icon" href="/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+
+  :root {
+    --purple: #6E358C;
+    --navy:   #2A225E;
+    --text:   #222;
+    --muted:  #666;
+    --border: #ccc;
+    --white:  #fff;
+    --panel:  #f8f6fc;
+    --green:  #2ecc71;
+    --shadow: -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+  }
+
+  .wrap { width: 100%; max-width: 420px; }
+
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase; margin-top: 10px;
+  }
+
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 32px 36px 36px;
+  }
+
+  .status-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 24px;
+    font-size: 13px; font-weight: 600; color: var(--green);
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(46,204,113,.6);
+    flex-shrink: 0;
+  }
+
+  .info-table { width: 100%; border-collapse: collapse; }
+  .info-table tr { border-bottom: 1px solid #f0f0f0; }
+  .info-table tr:last-child { border-bottom: none; }
+  .info-table td {
+    padding: 11px 0;
+    font-size: 12px; line-height: 1.5;
+  }
+  .info-table td:first-child {
+    color: var(--muted); font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase;
+    white-space: nowrap; padding-right: 20px; width: 1%;
+  }
+  .info-table td:last-child {
+    color: var(--purple); font-weight: 600;
+    word-break: break-all;
+  }
+  .info-table a {
+    color: var(--purple); text-decoration: none;
+  }
+  .info-table a:hover { text-decoration: underline; }
+
+  .footer {
+    margin-top: 22px; padding-top: 18px;
+    border-top: 1px solid #eee;
+    font-size: 11px; color: var(--muted);
+    text-align: center; letter-spacing: .06em;
+  }
+
+  @media (max-width: 480px) {
+    .card { padding: 24px 20px 28px; border-radius: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">OIDC Provider</div>
+  </div>
+  <div class="card">
+    <div class="status-row">
+      <div class="dot"></div>
+      running
+    </div>
+    <table class="info-table">
+      <tr>
+        <td>issuer</td>
+        <td id="td-issuer">&hellip;</td>
+      </tr>
+      <tr>
+        <td>discovery</td>
+        <td><a id="td-discovery" href="/.well-known/openid-configuration">/.well-known/openid-configuration</a></td>
+      </tr>
+      <tr>
+        <td>version</td>
+        <td id="td-version">&hellip;</td>
+      </tr>
+    </table>
+    <div class="footer">Encedo HSM &nbsp;&middot;&nbsp; hardware-backed OIDC</div>
+  </div>
+</div>
+<script type="module" src="/index.js"></script>
+</body>
+</html>
