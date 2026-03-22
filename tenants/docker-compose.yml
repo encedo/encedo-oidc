@@ -1,0 +1,31 @@
+# Tenant template — do not edit per tenant.
+# Container names and volume names are derived from TENANT variable in .env.
+# Copy this file as-is to each tenants/{name}/ folder.
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: redis-${TENANT}
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1 --loglevel warning
+    networks:
+      - oidc-net
+
+  oidc:
+    image: encedo-oidc:latest
+    container_name: oidc-${TENANT}
+    restart: unless-stopped
+    depends_on: [redis]
+    env_file: .env
+    networks:
+      - oidc-net
+
+volumes:
+  redis-data:
+    name: redis-${TENANT}-data
+
+networks:
+  oidc-net:
+    external: true
