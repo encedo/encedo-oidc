@@ -122,9 +122,6 @@ Authorization: {{auth}}
 POST {{base}}/admin/users/YOUR-SUB-HERE/enrollment
 Authorization: {{auth}}
 
-### ══════════════════════════════════
-###  ENROLLMENT
-### ══════════════════════════════════
 
 ### Validate enrollment token — get challenge (open enrollment.html in browser instead)
 GET {{base}}/enrollment/validate?token=YOUR-ENROLLMENT-TOKEN

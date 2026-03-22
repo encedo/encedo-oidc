@@ -30,7 +30,7 @@ const connectExtra = process.env.CSP_CONNECT_EXTRA ? ` ${process.env.CSP_CONNECT
 const STYLE_HASHES = [
   "'sha256-wH4xooEbYpFyBIvPRhvZhbiEcwcSQVFaG5gSR1zDKVE='", // signin.html
   "'sha256-WPNRCWjevpCuzbaeXeJXbBvLGm9JxCIVJqLNS7qCHnk='", // enrollment.html
-  "'sha256-NXWoJ31fb1c+qnJvRdEjLsGV8T294jLafK2rlCBNgiM='", // admin-panel.html
+  "'sha256-MWnX7fnv+mswI1mJVjZyvWCikal94QvQajDilWxLKnE='", // admin-panel.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",

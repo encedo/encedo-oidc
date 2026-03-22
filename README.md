@@ -112,12 +112,22 @@ sudo systemctl enable --now nginx
 
 #### 6. TLS certificate (Let's Encrypt)
 
+nginx is running, so use the webroot method — no downtime:
+
 ```
-sudo apt install -y certbot python3-certbot-nginx
-# Temporarily stop nginx so certbot can bind port 80:
-sudo systemctl stop nginx
-sudo certbot certonly --standalone -d auth.example.com
-sudo systemctl start nginx
+sudo apt install -y certbot
+sudo mkdir -p /var/www/certbot
+sudo certbot certonly --webroot -w /var/www/certbot -d auth.example.com
+```
+
+certbot's systemd timer renews the cert automatically. Add a deploy hook so nginx reloads after each renewal:
+
+```
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh << 'EOF'
+#!/bin/sh
+systemctl reload nginx
+EOF
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 ```
 
 #### 7. Configure nginx
@@ -174,10 +184,12 @@ server {
     }
 }
 
+# HTTP: ACME webroot for cert renewal + redirect to HTTPS
 server {
     listen 80;
     server_name auth.example.com;
-    return 301 https://$host$request_uri;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
 }
 ```
 
@@ -224,14 +236,32 @@ The server is running. Continue to [First Steps After Startup](#first-steps-afte
 
 ## Production Deployment — Multi-Tenant (Docker)
 
-Run multiple independent organizations on one server (or spread across servers). Each tenant is an isolated Docker container with its own Redis instance. nginx routes traffic by subdomain.
+Run multiple independent organizations on one server. Each tenant gets its own OIDC container and Redis container, fully isolated. A shared nginx container sits in front and routes by subdomain. All tenant containers use one Docker image built once from this repo.
 
 ```
-acme.oidc.encedo.com   --+
-bigcorp.oidc.encedo.com --+--> nginx --> container-acme   --> redis-acme
-corp.oidc.encedo.com   --+         `--> container-bigcorp --> redis-bigcorp
-                                    `-> container-corp    --> redis-corp
+acme.oidc.encedo.com    ──┐
+bigcorp.oidc.encedo.com ──┼── nginx ──► oidc-acme    ──► redis-acme
+                          │         └─► oidc-bigcorp ──► redis-bigcorp
 ```
+
+### Directory layout
+
+```
+/opt/encedo-oidc/
+├── src/                        ← git clone of this repo (Docker build context)
+├── nginx/
+│   ├── docker-compose.yml      ← nginx container, started once, never changes
+│   ├── nginx.conf              ← add one server block per tenant
+│   └── proxy_params
+└── tenants/
+    ├── docker-compose.yml      ← template, identical for every tenant, never edit
+    ├── acme/
+    │   └── .env                ← only this file differs per tenant (chmod 600)
+    └── bigcorp/
+        └── .env
+```
+
+Redis data lives in named Docker volumes (`redis-{tenant}-data`) — survives container restarts and `docker compose down`.
 
 ### Step-by-step on Ubuntu 24.04
 
@@ -246,45 +276,47 @@ newgrp docker
 
 #### 2. Point DNS to your server
 
-Add a wildcard A record in your DNS provider:
+Add a single wildcard A record in your DNS provider:
 
 ```
-*.oidc.encedo.com  A  <your-server-public-ip>
+*.oidc.encedo.com  A  <server-ip>
 ```
 
-Wait for propagation before requesting a TLS certificate (`dig acme.oidc.encedo.com` should return your IP).
+This covers all current and future tenants — no DNS change needed when adding a new one. Wait for propagation (`dig acme.oidc.encedo.com` should return your IP).
 
-#### 3. Wildcard TLS certificate
+> **Note:** a wildcard DNS A record and a wildcard TLS cert are independent. The `*` here just routes all subdomains to your server. TLS certs are still issued per subdomain via HTTP-01 — no DNS challenge needed.
 
-Create `/etc/letsencrypt/cloudflare.ini` with your Cloudflare API token
-(get one at Cloudflare dashboard → My Profile → API Tokens → Create Token → "Edit zone DNS"):
+#### 3. TLS certificates (Let's Encrypt)
+
+Docker is not running yet, so port 80 is free for certbot's built-in web server:
 
 ```
-sudo apt install -y certbot python3-certbot-dns-cloudflare
-sudo tee /etc/letsencrypt/cloudflare.ini << 'EOF'
-dns_cloudflare_api_token = your-cloudflare-api-token-here
-EOF
-sudo chmod 600 /etc/letsencrypt/cloudflare.ini
-sudo certbot certonly --dns-cloudflare \
-  --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini \
-  -d "oidc.encedo.com" -d "*.oidc.encedo.com"
+sudo apt install -y certbot
+sudo certbot certonly --standalone -d acme.oidc.encedo.com
+sudo certbot certonly --standalone -d bigcorp.oidc.encedo.com
 ```
 
-#### 4. Create directory structure
+Certificates land in `/etc/letsencrypt/live/<domain>/`. They are bind-mounted into the nginx container. See [Cert renewal](#cert-renewal) for automated renewal setup.
+
+#### 4. Create directory structure and shared Docker network
 
 ```
 sudo mkdir -p /opt/encedo-oidc/nginx
 sudo mkdir -p /opt/encedo-oidc/tenants/acme
 sudo mkdir -p /opt/encedo-oidc/tenants/bigcorp
 sudo chown -R $USER /opt/encedo-oidc
-cd /opt/encedo-oidc
+
+docker network create oidc-net
 ```
 
-#### 5. Clone the repo (needed to build the Docker image)
+#### 5. Clone repo and build the OIDC image
 
 ```
 git clone https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc/src
+docker build -t encedo-oidc:latest /opt/encedo-oidc/src
 ```
+
+The image is built once and shared by all tenants. See [Updating](#updating) for how to deploy new releases.
 
 #### 6. Create nginx/proxy_params
 
@@ -311,63 +343,59 @@ http {
     limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=30r/m;
     limit_req_zone $binary_remote_addr zone=oidc_jwks:10m    rate=60r/m;
 
-    # Map subdomain to the correct Docker container.
-    # Container name = "oidc-{tenant}" as defined in docker-compose.yml.
-    map $host $tenant_backend {
-        acme.oidc.encedo.com    oidc-acme:3000;
-        bigcorp.oidc.encedo.com oidc-bigcorp:3000;
-    }
-
-    server {
-        listen 443 ssl http2;
-        server_name ~^(?<tenant>[^.]+)\.oidc\.encedo\.com$;
-
-        ssl_certificate     /etc/letsencrypt/live/oidc.encedo.com/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/oidc.encedo.com/privkey.pem;
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
-
-        # Required when proxy_pass uses a variable: use Docker's internal DNS
-        # so container names are re-resolved after a container restart.
-        resolver 127.0.0.11 valid=10s;
-
-        if ($tenant_backend = "") { return 404; }
-
-        location = /authorize/login {
-            limit_req zone=oidc_login burst=3 nodelay;
-            proxy_pass http://$tenant_backend;
-            include /etc/nginx/proxy_params;
-        }
-        location = /token {
-            limit_req zone=oidc_token burst=5 nodelay;
-            proxy_pass http://$tenant_backend;
-            include /etc/nginx/proxy_params;
-        }
-        location = /jwks.json {
-            limit_req zone=oidc_jwks burst=20 nodelay;
-            proxy_pass http://$tenant_backend;
-            include /etc/nginx/proxy_params;
-        }
-        location /admin {
-            allow 10.0.0.0/8;
-            allow 127.0.0.1;
-            deny  all;
-            limit_req zone=oidc_general burst=10 nodelay;
-            proxy_pass http://$tenant_backend;
-            include /etc/nginx/proxy_params;
-        }
-        location / {
-            limit_req zone=oidc_general burst=20 nodelay;
-            proxy_pass http://$tenant_backend;
-            include /etc/nginx/proxy_params;
-        }
-    }
-
+    # HTTP: ACME webroot for renewal + redirect everything else to HTTPS
     server {
         listen 80;
         server_name ~^[^.]+\.oidc\.encedo\.com$;
-        return 301 https://$host$request_uri;
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+        location / {
+            return 301 https://$host$request_uri;
+        }
     }
+
+    # HTTPS — tenant: acme
+    server {
+        listen 443 ssl http2;
+        server_name acme.oidc.encedo.com;
+        ssl_certificate     /etc/letsencrypt/live/acme.oidc.encedo.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/acme.oidc.encedo.com/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
+
+        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+        location /admin {
+            allow 10.0.0.0/8; allow 127.0.0.1; deny all;
+            limit_req zone=oidc_general burst=10 nodelay;
+            proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params;
+        }
+        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+    }
+
+    # HTTPS — tenant: bigcorp
+    server {
+        listen 443 ssl http2;
+        server_name bigcorp.oidc.encedo.com;
+        ssl_certificate     /etc/letsencrypt/live/bigcorp.oidc.encedo.com/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/bigcorp.oidc.encedo.com/privkey.pem;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
+
+        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+        location /admin {
+            allow 10.0.0.0/8; allow 127.0.0.1; deny all;
+            limit_req zone=oidc_general burst=10 nodelay;
+            proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params;
+        }
+        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+    }
+
+    # Add a new server block for each additional tenant (copy either block above).
 }
 ```
 
@@ -375,10 +403,45 @@ http {
 nano /opt/encedo-oidc/nginx/nginx.conf   # paste the config above
 ```
 
-#### 8. Create tenant .env files
+#### 8. Create nginx/docker-compose.yml
+
+```
+cat > /opt/encedo-oidc/nginx/docker-compose.yml << 'EOF'
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./proxy_params:/etc/nginx/proxy_params:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - oidc-net
+
+networks:
+  oidc-net:
+    external: true
+EOF
+```
+
+#### 9. Copy the tenant template
+
+The repo ships a ready-made `tenants/docker-compose.yml`. Copy it into each tenant folder — **it is identical for every tenant and never needs editing**. Container names are derived from the `TENANT` variable in `.env`:
+
+```
+cp /opt/encedo-oidc/src/tenants/docker-compose.yml /opt/encedo-oidc/tenants/acme/docker-compose.yml
+cp /opt/encedo-oidc/src/tenants/docker-compose.yml /opt/encedo-oidc/tenants/bigcorp/docker-compose.yml
+```
+
+#### 10. Create tenant .env files
 
 ```
 cat > /opt/encedo-oidc/tenants/acme/.env << 'EOF'
+TENANT=acme
 PORT=3000
 NODE_ENV=production
 ISSUER=https://acme.oidc.encedo.com
@@ -390,6 +453,7 @@ EOF
 chmod 600 /opt/encedo-oidc/tenants/acme/.env
 
 cat > /opt/encedo-oidc/tenants/bigcorp/.env << 'EOF'
+TENANT=bigcorp
 PORT=3000
 NODE_ENV=production
 ISSUER=https://bigcorp.oidc.encedo.com
@@ -401,152 +465,110 @@ EOF
 chmod 600 /opt/encedo-oidc/tenants/bigcorp/.env
 ```
 
-**Edit both files** — replace `replace-with-strong-secret-*` with real random secrets and `YOUR.ADMIN.IP.HERE` with your actual IP:
+Edit both files — set real secrets and your admin IP:
 
 ```
 nano /opt/encedo-oidc/tenants/acme/.env
 nano /opt/encedo-oidc/tenants/bigcorp/.env
 ```
 
-To rotate a secret later: edit the file, then `docker compose up -d --no-deps oidc-acme`. Other tenants are not affected.
-
-#### 9. Create docker-compose.yml
+#### 11. Start nginx
 
 ```
-cat > /opt/encedo-oidc/docker-compose.yml << 'EOF'
-services:
-
-  # ---------- nginx (shared reverse proxy) ----------
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/proxy_params:/etc/nginx/proxy_params:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    # Update depends_on when adding a new tenant.
-    depends_on: [oidc-acme, oidc-bigcorp]
-    networks: [oidc-net]
-
-  # ---------- tenant: acme ----------
-  redis-acme:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis-acme-data:/data
-    command: redis-server --save 60 1 --loglevel warning
-    networks: [oidc-net]
-
-  oidc-acme:
-    build: ./src
-    restart: unless-stopped
-    depends_on: [redis-acme]
-    env_file: ./tenants/acme/.env
-    networks: [oidc-net]
-
-  # ---------- tenant: bigcorp ----------
-  redis-bigcorp:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis-bigcorp-data:/data
-    command: redis-server --save 60 1 --loglevel warning
-    networks: [oidc-net]
-
-  oidc-bigcorp:
-    build: ./src
-    restart: unless-stopped
-    depends_on: [redis-bigcorp]
-    env_file: ./tenants/bigcorp/.env
-    networks: [oidc-net]
-
-networks:
-  oidc-net:
-
-volumes:
-  redis-acme-data:
-  redis-bigcorp-data:
-EOF
+cd /opt/encedo-oidc/nginx && docker compose up -d
 ```
 
-#### 10. Build and start
+#### 12. Start tenants
 
 ```
-cd /opt/encedo-oidc
-docker compose build
-docker compose up -d
+cd /opt/encedo-oidc/tenants/acme    && docker compose up -d
+cd /opt/encedo-oidc/tenants/bigcorp && docker compose up -d
 ```
 
-#### 11. Verify
+#### 13. Verify
 
 ```
-docker compose ps
+docker ps
 curl https://acme.oidc.encedo.com/.well-known/openid-configuration
 curl https://bigcorp.oidc.encedo.com/.well-known/openid-configuration
 ```
 
-All containers should be `Up`. Continue to [First Steps After Startup](#first-steps-after-startup) to create your first client and user.
-
-### Directory layout on the server
-
-```
-/opt/encedo-oidc/
-├── docker-compose.yml
-├── src/                     <- git clone of this repo (Docker build context)
-├── nginx/
-│   ├── nginx.conf           <- bind-mounted into nginx container (read-only)
-│   └── proxy_params         <- bind-mounted into nginx container (read-only)
-└── tenants/
-    ├── acme/
-    │   └── .env             <- env_file for oidc-acme  (chmod 600)
-    └── bigcorp/
-        └── .env             <- env_file for oidc-bigcorp (chmod 600)
-```
-
-Redis data is stored in Docker named volumes (`redis-acme-data`, etc.) — they survive `docker compose down` and container restarts.
+All containers should be running. Continue to [First Steps After Startup](#first-steps-after-startup).
 
 ### Adding a new tenant
 
-1. Create `tenants/{tenant}/.env` (copy from an existing tenant, update `ISSUER` and `ADMIN_SECRET`)
-2. Add `redis-{tenant}` and `oidc-{tenant}` blocks to `docker-compose.yml` (mirror an existing pair, add `networks: [oidc-net]`)
-3. Add the subdomain to the `map` block in `nginx/nginx.conf`
-4. Add the new container to the `depends_on` list of the `nginx` service
-5. Apply:
+DNS is already covered by the wildcard A record — no changes needed there.
 
-```
-docker compose up -d --no-deps redis-{tenant} oidc-{tenant}
-docker compose exec nginx nginx -s reload
-```
+1. Get a TLS cert (nginx is running and serving the webroot):
+   ```
+   sudo certbot certonly --webroot -w /var/www/certbot -d {tenant}.oidc.encedo.com
+   ```
+2. Create the tenant folder and copy the template:
+   ```
+   mkdir -p /opt/encedo-oidc/tenants/{tenant}
+   cp /opt/encedo-oidc/src/tenants/docker-compose.yml /opt/encedo-oidc/tenants/{tenant}/
+   ```
+3. Create `.env` (copy from an existing tenant, change `TENANT`, `ISSUER`, `ADMIN_SECRET`):
+   ```
+   cp /opt/encedo-oidc/tenants/acme/.env /opt/encedo-oidc/tenants/{tenant}/.env
+   chmod 600 /opt/encedo-oidc/tenants/{tenant}/.env
+   nano /opt/encedo-oidc/tenants/{tenant}/.env
+   ```
+4. Start the tenant:
+   ```
+   cd /opt/encedo-oidc/tenants/{tenant} && docker compose up -d
+   ```
+5. Add a server block to `nginx/nginx.conf` (copy an existing HTTPS block, update `server_name`, cert paths, and `proxy_pass`)
+6. Reload nginx:
+   ```
+   docker compose -f /opt/encedo-oidc/nginx/docker-compose.yml exec nginx nginx -s reload
+   ```
 
 No restart of existing tenants required.
 
-### Spreading tenants across multiple servers
+### Updating
 
-To move a tenant to a separate server:
+When a new release is available:
 
-1. On the **remote server**, run the tenant's containers. The `oidc-{tenant}` container must bind its port to the private NIC only:
+```
+# 1. Pull latest source
+cd /opt/encedo-oidc/src && git pull
 
-   ```yaml
-   oidc-bigcorp:
-     ports:
-       - "10.0.1.50:3000:3000"   # private NIC only, never 0.0.0.0
-   ```
+# 2. Build new image — once, shared by all tenants
+docker build -t encedo-oidc:latest /opt/encedo-oidc/src
 
-2. On the **primary server**, update the nginx `map` to the remote IP:
+# 3. Restart each tenant's OIDC container (Redis is untouched, data is safe)
+for dir in /opt/encedo-oidc/tenants/*/; do
+  [ -f "$dir/docker-compose.yml" ] && docker compose -f "$dir/docker-compose.yml" up -d --no-deps oidc
+done
+```
 
-   ```nginx
-   map $host $tenant_backend {
-       acme.oidc.encedo.com    oidc-acme:3000;     # local container
-       bigcorp.oidc.encedo.com 10.0.1.50:3000;     # remote server
-   }
-   ```
+### Cert renewal
 
-3. Reload: `docker compose exec nginx nginx -s reload`
+nginx serves `/.well-known/acme-challenge/` from `/var/www/certbot`. certbot renews certs without stopping nginx:
 
-> **Security note:** traffic between nginx and a remote backend is unencrypted. Use WireGuard or an isolated VLAN between the servers. Never expose port 3000 on a public interface.
+```
+sudo certbot renew --webroot -w /var/www/certbot
+```
+
+Create a deploy hook so nginx reloads automatically after every renewal:
+
+```
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh << 'EOF'
+#!/bin/sh
+docker compose -f /opt/encedo-oidc/nginx/docker-compose.yml exec nginx nginx -s reload
+EOF
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+```
+
+certbot's systemd timer runs `certbot renew` twice a day — no cron needed. Let's Encrypt sends email reminders at 30/7/1 days before expiry.
+
+> **Note:** the first cert per tenant was issued with `--standalone`. Switch to webroot once so auto-renewal works:
+> ```
+> sudo certbot certonly --webroot -w /var/www/certbot -d acme.oidc.encedo.com --force-renewal
+> sudo certbot certonly --webroot -w /var/www/certbot -d bigcorp.oidc.encedo.com --force-renewal
+> ```
+> After this, all renewals are fully automatic.
 
 ---
 
@@ -564,12 +586,10 @@ export ADMIN_SECRET=your-admin-secret-here
 export BASE=http://127.0.0.1:3000   # bypass nginx, hit the app directly
 ```
 
-**Multi-tenant (Docker) — run inside the container:**
+**Multi-tenant (Docker) — run inside the tenant container:**
 
 ```
-# Open a shell inside the tenant's container (from /opt/encedo-oidc):
-cd /opt/encedo-oidc
-docker compose exec oidc-acme sh
+docker exec -it oidc-acme sh
 
 # Inside the container:
 apk add --no-cache curl jq

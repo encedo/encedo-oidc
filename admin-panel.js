@@ -98,9 +98,23 @@ async function checkHealth() {
   const dot = $('status-dot'), txt = $('status-text');
   try {
     const r = await fetch(base() + '/health');
-    if (r.ok) { dot.className = 'status-dot'; txt.textContent = new URL(base()).host; }
-    else throw 0;
-  } catch { dot.className = 'status-dot red'; txt.textContent = 'unreachable'; }
+    if (!r.ok) throw 0;
+    // URL reachable — check if secret is valid by probing admin endpoint
+    const r2 = await fetch(base() + '/admin/users', {
+      method: 'HEAD',
+      headers: { Authorization: 'Bearer ' + secret() }
+    });
+    if (r2.ok || r2.status === 405) {
+      // 200 or 405 (Method Not Allowed) = auth passed
+      dot.className = 'status-dot'; dot.style.background = '';
+      txt.textContent = new URL(base()).host;
+      loadUsers();
+    } else {
+      // 401/403 = URL ok but secret wrong
+      dot.className = 'status-dot'; dot.style.background = 'var(--amber)';
+      txt.textContent = new URL(base()).host + ' — bad secret';
+    }
+  } catch { dot.className = 'status-dot red'; dot.style.background = ''; txt.textContent = 'unreachable'; }
 }
 
 /* ==================== USERS ==================== */
@@ -534,5 +548,25 @@ window.doRotateFromEdit = doRotateFromEdit;
 window.delClient        = delClient;
 
 /* -- boot -- */
+// Restore theme
+if (localStorage.getItem('encedo-theme') === 'light')
+  document.documentElement.classList.add('light');
+
+// Restore config (must run before checkHealth/loadUsers)
+(function(){
+  const savedBase   = localStorage.getItem('encedo-api-base');
+  const savedSecret = localStorage.getItem('encedo-api-secret');
+  if (savedBase)   document.getElementById('api-base').value   = savedBase;
+  if (savedSecret) document.getElementById('api-secret').value = savedSecret;
+  if (!savedBase && !savedSecret) {
+    document.getElementById('api-base').value   = 'http://localhost:3000';
+    document.getElementById('api-secret').value = 'dev-secret-change-me';
+  }
+  // Sync theme icon
+  const isLight = document.documentElement.classList.contains('light');
+  document.getElementById('theme-icon').textContent  = isLight ? '☾' : '☀';
+  document.getElementById('theme-label').textContent = isLight ? 'Dark' : 'Light';
+})();
+
 checkHealth();
 loadUsers();

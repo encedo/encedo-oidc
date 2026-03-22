@@ -5,231 +5,187 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Encedo OIDC -- Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
-/* =====================================================
-   DARK THEME (default)
-   ===================================================== */
+/* ── Dark theme (default) ─────────────────────────────── */
 :root{
   --bg:#0a0c0f; --surface:#0f1318; --panel:#141920; --rim:#1e2730;
   --dim:#2a3542; --muted:#4a5a6a; --soft:#9B7FCC; --text:#D8C8F8;
   --white:#F2EEFF; --accent:#8040F0; --accentL:#A060FF; --accentD:#5C28CC;
   --lavender:#C4A8FF; --green:#34D89A; --red:#FF4D72; --amber:#FFB020;
-  --mono:'IBM Plex Mono',monospace; --sans:'Syne',sans-serif;
-  --radius-card:12px; --radius-btn:8px; --shadow-modal:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(128,64,240,.1);
+  --sans:'Inter',sans-serif; --mono:'IBM Plex Mono',monospace;
 }
 
-/* =====================================================
-   LIGHT THEME
-   ===================================================== */
+/* ── Light theme ──────────────────────────────────────── */
 html.light{
-  --bg:#f4f4f4; --surface:#ffffff; --panel:#f0edf8; --rim:#e0d8f0;
-  --dim:#ccc; --muted:#888; --soft:#6E358C; --text:#222;
-  --white:#111; --accent:#6E358C; --accentL:#8B45AF; --accentD:#2A225E;
-  --lavender:#6E358C; --green:#2ecc71; --red:#e74c3c; --amber:#f39c12;
-  --mono:'IBM Plex Mono',monospace; --sans:'Inter',sans-serif;
-  --radius-card:20px; --radius-btn:18px; --shadow-modal:-10px -1px 60px 20px rgba(0,0,0,.1);
+  --bg:#f4f4f4; --surface:#ffffff; --panel:#f8f6fc; --rim:#e2daf5;
+  --dim:#cec4f0; --muted:#666; --soft:#6E358C; --text:#222;
+  --white:#111; --accent:#6E358C; --accentL:#8A44AE; --accentD:#2A225E;
+  --lavender:#2A225E; --green:#0D9E6A; --red:#D42050; --amber:#B06010;
 }
-html.light body { background: linear-gradient(160deg,#eee,#fff); }
-html.light .admin-main { background: transparent; }
-html.light .admin-main-grid { display: none; }
-html.light .admin-main-glow { display: none; }
 
-/* =====================================================
-   BASE
-   ===================================================== */
-body{background:var(--bg);font-family:var(--sans);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:5px;background:rgba(0,0,0,.08)}
+::-webkit-scrollbar-thumb{background:#6E358C}
 
-/* -- nav -- */
-#nav{background:var(--surface);border-bottom:1px solid var(--rim);padding:12px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;position:sticky;top:0;z-index:100;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.nav-logo{height:28px;border-radius:6px;padding:3px 8px;background:#fff}
-html.light .nav-logo{border-radius:8px}
+html{height:100%;overflow:hidden}body{background:var(--bg);font-family:var(--sans);font-size:15px;color:var(--text);height:100%;display:flex;flex-direction:column;overflow:hidden;transition:background .2s,color .2s}
+
+/* ── Nav ──────────────────────────────────────────────── */
+#nav{background:var(--surface);border-bottom:1px solid var(--rim);padding:10px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:100;transition:background .2s,border-color .2s}
+.nav-logo{height:28px;border-radius:8px;padding:3px 8px;background:#fff}
 .nav-sep{width:1px;height:20px;background:var(--rim)}
-.nav-badge{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
+.nav-badge{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.15em}
 .nav-right{margin-left:auto;display:flex;align-items:center;gap:8px}
-.nav-btn{background:transparent;border:1px solid var(--rim);border-radius:5px;padding:5px 12px;font-family:var(--mono);font-size:10px;color:var(--soft);cursor:pointer;transition:all .15s}
-.nav-btn:hover{border-color:var(--accent);color:var(--accent)}
-html.light .nav-btn{border-radius:12px}
+.theme-toggle{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rim);border-radius:20px;padding:5px 14px;cursor:pointer;font-family:var(--mono);font-size:10px;color:var(--muted);transition:all .15s;user-select:none}
+.theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
 
-/* -- layout -- */
+/* ── Layout ───────────────────────────────────────────── */
 .admin-layout{flex:1;display:flex;min-height:0}
-.admin-sidebar{width:210px;background:var(--surface);border-right:1px solid var(--rim);padding:24px 0;flex-shrink:0;display:flex;flex-direction:column}
-.admin-nav-section{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em;padding:0 20px;margin:18px 0 6px}
-.admin-nav-item{padding:9px 20px;font-family:var(--mono);font-size:11px;color:var(--soft);cursor:pointer;border-left:2px solid transparent;display:flex;align-items:center;gap:9px;transition:all .1s;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left}
-.admin-nav-item:hover{color:var(--lavender)}
-.admin-nav-item.active{color:var(--lavender);background:rgba(128,64,240,.1);border-left-color:var(--accent)}
-html.light .admin-nav-item.active{background:rgba(110,53,140,.08);border-left-color:var(--accent)}
-.admin-nav-item.disabled{opacity:.35;cursor:default;pointer-events:none}
-.sidebar-footer{margin-top:auto;padding:16px 20px;border-top:1px solid var(--rim)}
+.admin-sidebar{width:210px;background:var(--surface);border-right:1px solid var(--rim);padding:20px 0;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;transition:background .2s,border-color .2s}
+.admin-nav-section{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em;padding:0 18px;margin:16px 0 5px}
+.admin-nav-item{padding:9px 18px;font-family:var(--mono);font-size:11px;color:var(--soft);cursor:pointer;border-left:2px solid transparent;display:flex;align-items:center;gap:9px;transition:all .1s;background:none;border-top:none;border-right:none;border-bottom:none;width:100%;text-align:left}
+.admin-nav-item:hover{color:var(--accent)}
+.admin-nav-item.active{color:var(--accent);background:rgba(110,53,140,.08);border-left-color:var(--accent)}
+.sidebar-footer{margin-top:auto;padding:14px 18px;border-top:1px solid var(--rim)}
 .config-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;margin-bottom:4px;margin-top:8px}
-.config-input{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 9px;outline:none;transition:border-color .15s}
+.config-input{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:10px;padding:6px 9px;outline:none;transition:border-color .15s}
 .config-input:focus{border-color:var(--accent)}
-html.light .config-input{border-radius:10px}
 .status-line{display:flex;align-items:center;gap:7px;margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0;animation:blink 2.5s ease-in-out infinite}
 .status-dot.red{background:var(--red);animation:none}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
 
-/* -- main -- */
-.admin-main{flex:1;padding:36px 40px;overflow-y:auto;background:var(--bg);position:relative}
-.admin-main-grid{position:absolute;inset:0;pointer-events:none;background-image:radial-gradient(circle,rgba(128,64,240,.1) 1px,transparent 1px);background-size:30px 30px}
-.admin-main-glow{position:absolute;top:-80px;right:-100px;width:600px;height:500px;pointer-events:none;background:radial-gradient(ellipse at 70% 20%,rgba(128,64,240,.2) 0%,transparent 60%)}
-.admin-main-inner{position:relative;z-index:1}
+/* ── Main ─────────────────────────────────────────────── */
+.admin-main{flex:1;padding:32px 36px;overflow-y:auto;position:relative}
+html:not(.light) .admin-main{background-image:radial-gradient(circle,rgba(128,64,240,.1) 1px,transparent 1px);background-size:30px 30px}
 .page{display:none}.page.active{display:block}
-.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:28px}
-.page-title{font-size:22px;font-weight:800;color:var(--white);letter-spacing:-.02em;margin-bottom:3px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px}
+.page-title{font-size:22px;font-weight:700;color:var(--white);letter-spacing:-.02em;margin-bottom:3px}
+html.light .page-title{color:var(--text)}
 .page-sub{font-family:var(--mono);font-size:10px;color:var(--muted)}
-html.light .page-title{font-weight:700;letter-spacing:-.01em}
 
-/* -- buttons -- */
+/* ── Buttons ──────────────────────────────────────────── */
 @keyframes gradient-shift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
-.btn{display:inline-flex;align-items:center;gap:7px;border-radius:var(--radius-btn);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s;padding:8px 16px}
-.btn-primary{background:linear-gradient(135deg,var(--accentL),var(--accentD));color:#fff;border:none;box-shadow:0 4px 16px rgba(128,64,240,.35)}
-.btn-primary:hover{box-shadow:0 6px 22px rgba(128,64,240,.55);transform:translateY(-1px)}
-html.light .btn-primary{background:linear-gradient(-45deg,#6E358C,#2A225E,#6E358C);background-size:400% 400%;animation:gradient-shift 3s ease infinite;box-shadow:0 4px 18px rgba(110,53,140,.3)}
-html.light .btn-primary:hover{box-shadow:0 6px 26px rgba(110,53,140,.5)}
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:20px;font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;padding:8px 18px}
+.btn-primary{background:linear-gradient(-45deg,#6E358C,#2A225E,#6E358C);background-size:400% 400%;animation:gradient-shift 3s ease infinite;color:#fff;border:none;box-shadow:0 4px 16px rgba(110,53,140,.3)}
+.btn-primary:hover{box-shadow:0 6px 24px rgba(110,53,140,.5);transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;animation:none}
 .btn-ghost{background:transparent;border:1px solid var(--dim);color:var(--soft)}
-.btn-ghost:hover{border-color:var(--accent);color:var(--lavender)}
-html.light .btn-ghost:hover{color:var(--accent)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
 .btn-danger{background:transparent;border:1px solid rgba(255,77,114,.25);color:var(--red)}
 .btn-danger:hover{background:rgba(255,77,114,.08)}
-html.light .btn-danger{border-color:rgba(231,76,60,.3);color:var(--red)}
-html.light .btn-danger:hover{background:rgba(231,76,60,.06)}
-.btn-xs{padding:4px 10px;font-size:10px}
+.btn-xs{padding:4px 10px;font-size:11px}
 
-/* -- table -- */
-.table{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);overflow:hidden}
-html.light .table{box-shadow:0 2px 12px rgba(0,0,0,.06)}
-.table-head{display:grid;padding:10px 20px;border-bottom:1px solid var(--rim);background:rgba(128,64,240,.06)}
-html.light .table-head{background:rgba(110,53,140,.04)}
+/* ── Table ────────────────────────────────────────────── */
+.table{background:var(--surface);border:1px solid var(--rim);border-radius:14px;overflow:hidden}
+.table-head{display:grid;padding:10px 20px;border-bottom:1px solid var(--rim);background:rgba(110,53,140,.05)}
 .table-head-cell{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.15em}
 .table-row{display:grid;padding:13px 20px;align-items:center;transition:background .1s}
 .table-row:not(:last-child){border-bottom:1px solid var(--rim)}
-.table-row:hover{background:rgba(128,64,240,.05)}
-html.light .table-row:hover{background:rgba(110,53,140,.04)}
-.cell-name{font-weight:700;color:var(--white);font-size:13px}
-.cell-mono{font-family:var(--mono);font-size:11px;color:var(--lavender);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.table-row:hover{background:rgba(110,53,140,.04)}
+.cell-name{font-weight:700;color:var(--white);font-size:14px}
+html.light .cell-name{color:var(--text)}
+.cell-mono{font-family:var(--mono);font-size:11px;color:var(--accent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cell-muted{font-family:var(--mono);font-size:10px;color:var(--muted)}
 .cell-actions{display:flex;gap:6px;justify-content:flex-end}
 
-/* -- client cards -- */
-.client-card{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);padding:18px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;transition:border-color .12s}
-.client-card:hover{border-color:var(--dim)}
-html.light .client-card{box-shadow:0 2px 12px rgba(0,0,0,.06)}
-html.light .client-card:hover{border-color:var(--accent)}
+/* ── Client cards ─────────────────────────────────────── */
+.client-card{background:var(--surface);border:1px solid var(--rim);border-radius:14px;padding:18px 22px;margin-bottom:10px;display:flex;align-items:center;gap:16px;transition:border-color .12s}
+.client-card:hover{border-color:var(--accent)}
 .client-card-body{flex:1;min-width:0}
 .client-card-name{font-size:15px;font-weight:700;color:var(--white);margin-bottom:5px}
+html.light .client-card-name{color:var(--text)}
 .client-card-meta{font-family:var(--mono);font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .client-card-meta span{color:var(--soft)}
 .client-card-actions{display:flex;gap:6px;flex-shrink:0}
+.client-card-scopes{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.scope-pill{background:rgba(110,53,140,.1);border:1px solid rgba(110,53,140,.22);border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:9px;color:var(--soft);letter-spacing:.04em}
 
-/* -- info panel -- */
-.info-panel{background:var(--surface);border:1px solid var(--rim);border-radius:var(--radius-card);padding:18px 22px;margin-top:20px}
-html.light .info-panel{box-shadow:0 2px 12px rgba(0,0,0,.06)}
+/* ── Info panel ───────────────────────────────────────── */
+.info-panel{background:var(--surface);border:1px solid var(--rim);border-radius:14px;padding:18px 22px;margin-top:20px}
 .section-label{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:12px}
-.info-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;margin-bottom:7px}
+.info-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;margin-bottom:7px}
 .info-row:last-child{margin-bottom:0}
-.info-key{color:var(--muted)}.info-value{color:var(--text)}
+.info-key{color:var(--muted)}.info-value{color:var(--text);font-weight:600}
 .divider{height:1px;background:var(--rim);margin:14px 0}
 
-/* -- misc -- */
+/* ── Misc ─────────────────────────────────────────────── */
 .spinner{width:15px;height:15px;border:2px solid var(--dim);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 .empty{text-align:center;padding:48px 20px;font-family:var(--mono);font-size:11px;color:var(--muted)}
 .empty-icon{font-size:28px;margin-bottom:10px;opacity:.3}
 .loading-row{text-align:center;padding:36px}
 
-/* -- modal -- */
-.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(5px);z-index:200;align-items:center;justify-content:center;padding:24px}
+/* ── Modal ────────────────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:24px}
 .overlay.open{display:flex}
-html.light .overlay{background:rgba(0,0,0,.3)}
-.modal{background:var(--surface);border:1px solid var(--dim);border-radius:16px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:var(--shadow-modal);animation:modalIn .18s ease}
-html.light .modal{border-radius:24px}
+.modal{background:var(--surface);border:1px solid var(--rim);border-radius:20px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.4);animation:modalIn .18s ease}
 .modal-wide{width:540px}
 @keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
-.modal-title{font-size:15px;font-weight:800;color:var(--white)}
-html.light .modal-title{font-weight:700}
-.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;border-radius:4px;transition:color .1s}
+.modal-title{font-size:16px;font-weight:700;color:var(--white)}
+html.light .modal-title{color:var(--text)}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px;border-radius:6px;transition:color .1s}
 .modal-close:hover{color:var(--text)}
 .modal-body{padding:22px 24px}
 .modal-footer{padding:14px 24px;border-top:1px solid var(--rim);display:flex;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--surface)}
 
-/* -- form -- */
+/* ── Form ─────────────────────────────────────────────── */
 .field{margin-bottom:14px}
 .field-label{display:block;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase;margin-bottom:6px}
-.field-input,.field-textarea{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 13px;outline:none;transition:border-color .15s}
-.field-input:focus,.field-textarea:focus{border-color:var(--accent)}
+.field-input,.field-textarea{width:100%;background:var(--panel);border:1px solid var(--dim);border-radius:10px;color:var(--text);font-family:var(--mono);font-size:12px;padding:10px 13px;outline:none;transition:border-color .15s,box-shadow .15s}
+.field-input:focus,.field-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(110,53,140,.1)}
 .field-input:disabled{opacity:.45;cursor:not-allowed}
 .field-textarea{resize:vertical;min-height:76px}
 .field-hint{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-html.light .field-input,html.light .field-textarea{border-radius:12px}
 
-/* -- kid badge -- */
-.kid-empty{opacity:.45;font-style:italic}
+/* ── Badges ───────────────────────────────────────────── */
+.id-badge{background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:10px 13px;font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.04em;word-break:break-all}
+.secret-dots{background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:10px 13px;font-family:var(--mono);font-size:15px;color:var(--muted);letter-spacing:.12em;flex:1}
 
-/* -- secret box -- */
-.secret-box{background:rgba(128,64,240,.07);border:1px solid rgba(128,64,240,.22);border-radius:10px;padding:14px 16px;margin-top:12px}
-html.light .secret-box{background:rgba(110,53,140,.05);border-color:rgba(110,53,140,.2);border-radius:14px}
+/* ── Secret box ───────────────────────────────────────── */
+.secret-box{background:rgba(110,53,140,.06);border:1px solid rgba(110,53,140,.2);border-radius:12px;padding:14px 16px;margin-top:12px}
 .secret-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-.secret-val{font-family:var(--mono);font-size:12px;color:var(--lavender);word-break:break-all;line-height:1.6}
+.secret-val{font-family:var(--mono);font-size:12px;color:var(--accent);word-break:break-all;line-height:1.6}
 .secret-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
 
-/* -- clients checklist -- */
-.clients-list{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:4px 12px;max-height:160px;overflow-y:auto}
-html.light .clients-list{border-radius:12px}
+/* ── Clients checklist ────────────────────────────────── */
+.clients-list{background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:4px 12px;max-height:160px;overflow-y:auto}
 .client-check{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;border-bottom:1px solid var(--rim)}
 .client-check:last-child{border-bottom:none}
 .client-check input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer;flex-shrink:0}
 .client-check-name{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--white)}
+html.light .client-check-name{color:var(--text)}
 .client-check-id{font-family:var(--mono);font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* -- toasts -- */
-#toasts{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
-.toast{background:var(--surface);border:1px solid var(--dim);border-radius:10px;padding:10px 14px;min-width:230px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.4);animation:toastIn .2s ease;color:var(--text)}
-.toast.ok{border-color:rgba(52,216,154,.3)}.toast.err{border-color:rgba(255,77,114,.3)}
-html.light .toast{box-shadow:0 4px 18px rgba(0,0,0,.12)}
-@keyframes toastIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
-
-/* -- scope tags -- */
-.scope-tag{background:var(--panel);border:1px solid var(--dim);border-radius:7px;padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;transition:all .12s;user-select:none}
-.scope-tag.on{background:rgba(128,64,240,.2);border-color:var(--accent);color:var(--lavender)}
-html.light .scope-tag.on{background:rgba(110,53,140,.1);border-color:var(--accent);color:var(--accent)}
-
-/* -- pkce toggle -- */
-.pkce-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(128,64,240,.06);border:1px solid rgba(128,64,240,.18);border-radius:8px;cursor:pointer;transition:all .12s;user-select:none}
-.pkce-row:hover{background:rgba(128,64,240,.1)}
-.pkce-row.on{background:rgba(128,64,240,.12);border-color:rgba(128,64,240,.4)}
-html.light .pkce-row{background:rgba(110,53,140,.04);border-color:rgba(110,53,140,.15);border-radius:12px}
-html.light .pkce-row.on{background:rgba(110,53,140,.1);border-color:rgba(110,53,140,.35)}
-.pkce-check{width:16px;height:16px;border-radius:4px;flex-shrink:0;background:var(--dim);border:1px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:all .12s}
-.pkce-row.on .pkce-check{background:linear-gradient(135deg,var(--accentL),var(--accentD));border-color:var(--accentD)}
-
-/* -- enrollment link box -- */
-.enroll-box{background:rgba(52,216,154,.06);border:1px solid rgba(52,216,154,.25);border-radius:10px;padding:14px 16px;margin-top:12px}
-html.light .enroll-box{background:rgba(46,204,113,.05);border-color:rgba(46,204,113,.3);border-radius:14px}
+/* ── Enrollment box ───────────────────────────────────── */
+.enroll-box{background:rgba(110,53,140,.05);border:1px solid rgba(110,53,140,.22);border-radius:12px;padding:14px 16px;margin-top:12px}
 .enroll-box-label{font-family:var(--mono);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
-.enroll-url{font-family:var(--mono);font-size:11px;color:var(--green);word-break:break-all;line-height:1.6}
+.enroll-url{font-family:var(--mono);font-size:11px;color:var(--accent);word-break:break-all;line-height:1.6}
 .enroll-warn{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:9px}
 
-/* -- client_id / secret display -- */
-.id-badge{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:12px;color:var(--lavender);letter-spacing:.04em;word-break:break-all}
-html.light .id-badge{border-radius:12px}
-.secret-dots{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:10px 13px;font-family:var(--mono);font-size:15px;color:var(--muted);letter-spacing:.12em;flex:1}
-html.light .secret-dots{border-radius:12px}
+/* ── Scope tags ───────────────────────────────────────── */
+.scope-tag{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;transition:all .12s;user-select:none}
+.scope-tag.on{background:rgba(110,53,140,.15);border-color:var(--accent);color:var(--accent)}
 
-/* -- scope pills -- */
-.client-card-scopes{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
-.scope-pill{background:rgba(128,64,240,.12);border:1px solid rgba(128,64,240,.25);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:9px;color:var(--soft);letter-spacing:.04em}
-html.light .scope-pill{background:rgba(110,53,140,.08);border-color:rgba(110,53,140,.2);color:var(--accent)}
+/* ── PKCE toggle ──────────────────────────────────────── */
+.pkce-row{display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(110,53,140,.05);border:1px solid rgba(110,53,140,.15);border-radius:10px;cursor:pointer;transition:all .12s;user-select:none}
+.pkce-row:hover{background:rgba(110,53,140,.09)}
+.pkce-row.on{background:rgba(110,53,140,.1);border-color:rgba(110,53,140,.35)}
+.pkce-check{width:16px;height:16px;border-radius:4px;flex-shrink:0;background:var(--dim);border:1px solid var(--muted);display:flex;align-items:center;justify-content:center;transition:all .12s}
+.pkce-row.on .pkce-check{background:linear-gradient(135deg,#6E358C,#2A225E);border-color:#2A225E}
 
-/* -- audit filter select -- */
-.audit-select{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer}
-html.light .audit-select{border-radius:12px}
+/* ── Toasts ───────────────────────────────────────────── */
+#toasts{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--surface);border:1px solid var(--dim);border-radius:12px;padding:10px 14px;min-width:230px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;gap:9px;box-shadow:0 8px 28px rgba(0,0,0,.25);animation:toastIn .2s ease;color:var(--text)}
+.toast.ok{border-color:rgba(110,53,140,.35)}.toast.err{border-color:rgba(212,32,80,.35)}
+@keyframes toastIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
 
+/* ── Audit selects ────────────────────────────────────── */
+.audit-select{background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer}
 </style>
 </head>
 <body>
@@ -240,9 +196,10 @@ html.light .audit-select{border-radius:12px}
   <div class="nav-sep"></div>
   <span class="nav-badge">ADMIN PANEL</span>
   <div class="nav-right">
-    <button class="nav-btn" onclick="toggleTheme()">
+    <div class="theme-toggle" onclick="toggleTheme()">
+      <span id="theme-icon">☀</span>
       <span id="theme-label">Light</span>
-    </button>
+    </div>
   </div>
 </div>
 
@@ -267,9 +224,9 @@ html.light .audit-select{border-radius:12px}
     </button>
     <div class="sidebar-footer">
       <div class="config-label">API BASE</div>
-      <input class="config-input" id="api-base" value="http://localhost:3000" oninput="checkHealth()">
+      <input class="config-input" id="api-base" placeholder="http://localhost:3000" value="" oninput="checkHealth()" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('api-secret').focus();}">
       <div class="config-label">ADMIN SECRET</div>
-      <input class="config-input" id="api-secret" type="password" value="dev-secret-change-me" oninput="checkHealth()">
+      <input class="config-input" id="api-secret" type="password" value="" oninput="checkHealth()" onkeydown="if(event.key==='Enter'){event.preventDefault();connectAndSave();}">
       <div class="status-line">
         <div class="status-dot" id="status-dot"></div>
         <span id="status-text">connecting...</span>
@@ -279,108 +236,101 @@ html.light .audit-select{border-radius:12px}
 
   <!-- MAIN -->
   <div class="admin-main">
-    <div class="admin-main-grid"></div>
-    <div class="admin-main-glow"></div>
-    <div class="admin-main-inner">
 
-      <!-- PAGE: USERS -->
-      <div class="page active" id="page-users">
-        <div class="page-head">
-          <div>
-            <div class="page-title">Users</div>
-            <div class="page-sub" id="users-sub">loading...</div>
-          </div>
-          <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+    <!-- PAGE: USERS -->
+    <div class="page active" id="page-users">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Users</div>
+          <div class="page-sub" id="users-sub">loading...</div>
         </div>
-        <div class="table">
-          <div class="table-head" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
-            <div class="table-head-cell">USERNAME</div>
-            <div class="table-head-cell">FULL NAME</div>
-            <div class="table-head-cell">EMAIL</div>
-            <div class="table-head-cell">HSM URL</div>
-            <div class="table-head-cell">CREATED</div>
-            <div class="table-head-cell" style="text-align:right">ACTIONS</div>
-          </div>
-          <div id="users-body">
-            <div class="loading-row"><span class="spinner"></span></div>
-          </div>
-        </div>
+        <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
       </div>
-
-      <!-- PAGE: AUDIT LOG -->
-      <div class="page" id="page-audit">
-        <div class="page-head">
-          <div>
-            <div class="page-title">Audit Log</div>
-            <div class="page-sub" id="audit-sub">loading...</div>
-          </div>
-          <div style="display:flex;gap:10px;align-items:center;">
-            <select id="audit-filter" class="audit-select" onchange="applyAuditFilter()">
-              <option value="">All events</option>
-              <option value="auth.">Auth</option>
-              <option value="admin.">Admin</option>
-              <option value="enrollment.">Enrollment</option>
-              <option value="ratelimit.">Rate limit</option>
-            </select>
-            <button class="btn btn-ghost" style="padding:7px 14px;font-size:12px;" onclick="loadAudit(true)">&#8635; Refresh</button>
-          </div>
+      <div class="table">
+        <div class="table-head" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
+          <div class="table-head-cell">USERNAME</div>
+          <div class="table-head-cell">FULL NAME</div>
+          <div class="table-head-cell">EMAIL</div>
+          <div class="table-head-cell">HSM URL</div>
+          <div class="table-head-cell">CREATED</div>
+          <div class="table-head-cell" style="text-align:right">ACTIONS</div>
         </div>
-        <div style="display:flex;align-items:center;gap:16px;padding:10px 0 14px;font-family:var(--mono);font-size:11px;color:var(--muted);">
-          <span id="audit-page-info">--</span>
-          <div style="display:flex;gap:6px;margin-left:auto;">
-            <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-prev-btn" onclick="auditPrevPage()">&#8592; Prev</button>
-            <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-next-btn" onclick="auditNextPage()">Next &#8594;</button>
-          </div>
-          <select id="audit-limit" class="audit-select" onchange="auditChangeLimit()">
-            <option value="10">10 / page</option>
-            <option value="20" selected>20 / page</option>
-            <option value="500">500 / page</option>
-          </select>
-        </div>
-        <div class="table">
-          <div class="table-head" style="grid-template-columns:150px 210px 1fr 130px 36px;">
-            <div class="table-head-cell">TIME</div>
-            <div class="table-head-cell">TYPE</div>
-            <div class="table-head-cell">USER / SUB</div>
-            <div class="table-head-cell">IP</div>
-            <div class="table-head-cell"></div>
-          </div>
-          <div id="audit-body">
-            <div class="loading-row"><span class="spinner"></span></div>
-          </div>
-        </div>
-        <div id="audit-load-more" style="display:none;padding:16px 20px;">
-          <button class="btn btn-ghost" style="width:100%;" onclick="loadAuditMore()">Load more</button>
-        </div>
-      </div>
-
-      <!-- PAGE: CLIENTS -->
-      <div class="page" id="page-clients">
-        <div class="page-head">
-          <div>
-            <div class="page-title">Clients</div>
-            <div class="page-sub" id="clients-sub">loading...</div>
-          </div>
-          <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
-        </div>
-        <div id="clients-body">
+        <div id="users-body">
           <div class="loading-row"><span class="spinner"></span></div>
         </div>
-        <div class="info-panel" id="jwks-panel" style="display:none">
-          <div class="section-label">JWKS ENDPOINT</div>
-          <div class="info-row">
-            <span class="info-key">GET</span>
-            <span class="info-value" id="jwks-url"></span>
-          </div>
-          <div class="divider"></div>
-          <div style="display:flex;gap:24px;">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">?kid= supported</span>
-            <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">Cache-Control: max-age=86400</span>
-          </div>
+      </div>
+    </div>
+
+    <!-- PAGE: AUDIT LOG -->
+    <div class="page" id="page-audit">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Audit Log</div>
+          <div class="page-sub" id="audit-sub">loading...</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="audit-filter" class="audit-select" onchange="applyAuditFilter()">
+            <option value="">All events</option>
+            <option value="auth.">Auth</option>
+            <option value="admin.">Admin</option>
+            <option value="enrollment.">Enrollment</option>
+            <option value="ratelimit.">Rate limit</option>
+          </select>
+          <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadAudit(true)">&#8635; Refresh</button>
         </div>
       </div>
-
+      <div style="display:flex;align-items:center;gap:16px;padding:10px 0 14px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+        <span id="audit-page-info">--</span>
+        <div style="display:flex;gap:6px;margin-left:auto;">
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-prev-btn" onclick="auditPrevPage()">&#8592; Prev</button>
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px;" id="audit-next-btn" onclick="auditNextPage()">Next &#8594;</button>
+        </div>
+        <select id="audit-limit" class="audit-select" onchange="auditChangeLimit()">
+          <option value="10">10 / page</option>
+          <option value="20" selected>20 / page</option>
+          <option value="100">100 / page</option>
+        </select>
+      </div>
+      <div class="table">
+        <div class="table-head" style="grid-template-columns:150px 210px 1fr 130px 36px;">
+          <div class="table-head-cell">TIME</div>
+          <div class="table-head-cell">TYPE</div>
+          <div class="table-head-cell">USER / SUB</div>
+          <div class="table-head-cell">IP</div>
+          <div class="table-head-cell"></div>
+        </div>
+        <div id="audit-body">
+          <div class="loading-row"><span class="spinner"></span></div>
+        </div>
+      </div>
     </div>
+
+    <!-- PAGE: CLIENTS -->
+    <div class="page" id="page-clients">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Clients</div>
+          <div class="page-sub" id="clients-sub">loading...</div>
+        </div>
+        <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
+      </div>
+      <div id="clients-body">
+        <div class="loading-row"><span class="spinner"></span></div>
+      </div>
+      <div class="info-panel" id="jwks-panel" style="display:none">
+        <div class="section-label">JWKS ENDPOINT</div>
+        <div class="info-row">
+          <span class="info-key">GET</span>
+          <span class="info-value" id="jwks-url"></span>
+        </div>
+        <div class="divider"></div>
+        <div style="display:flex;gap:24px;">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">?kid= supported</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--soft);">Cache-Control: max-age=86400</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -415,7 +365,7 @@ html.light .audit-select{border-radius:12px}
       </div>
       <div class="field">
         <label class="field-label">HSM URL</label>
-        <input class="field-input" id="u-hsm" placeholder="http://192.168.7.1">
+        <input class="field-input" id="u-hsm" placeholder="https://my.ence.do">
       </div>
     </div>
     <div class="modal-footer">
@@ -433,11 +383,10 @@ html.light .audit-select{border-radius:12px}
       <button class="modal-close" onclick="closeModal('modal-edit-user')">&#215;</button>
     </div>
     <div class="modal-body">
-
       <div class="section-label">Identity</div>
       <div class="field">
         <label class="field-label">SUB (UUID)</label>
-        <div class="id-badge" id="eu-sub" style="font-size:11px;letter-spacing:.04em">--</div>
+        <div class="id-badge" id="eu-sub">--</div>
         <div class="field-hint">Auto-generated &#183; immutable &#183; used in all OIDC tokens</div>
       </div>
       <div class="field">
@@ -458,9 +407,7 @@ html.light .audit-select{border-radius:12px}
         <label class="field-label">Email</label>
         <input class="field-input" id="eu-email" type="email">
       </div>
-
       <div class="divider"></div>
-
       <div class="section-label">Hardware</div>
       <div class="field">
         <label class="field-label">HSM URL</label>
@@ -468,22 +415,19 @@ html.light .audit-select{border-radius:12px}
       </div>
       <div class="field">
         <label class="field-label">KID</label>
-        <div class="id-badge" id="eu-kid" style="font-size:11px;letter-spacing:.05em">--</div>
+        <div class="id-badge" id="eu-kid">--</div>
       </div>
       <div class="field">
         <label class="field-label">Public key (Ed25519)</label>
-        <div class="id-badge" id="eu-pubkey-preview" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--</div>
+        <div class="id-badge" id="eu-pubkey-preview" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--</div>
         <div class="field-hint">Key type: <span style="color:var(--green)" id="eu-key-type">EdDSA</span></div>
       </div>
-
       <div class="divider"></div>
-
       <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
       <div class="clients-list" id="eu-clients-list">
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
       </div>
       <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to</div>
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-user')">Cancel</button>
@@ -492,7 +436,7 @@ html.light .audit-select{border-radius:12px}
   </div>
 </div>
 
-<!-- USER CREATED (enrollment link) -->
+<!-- USER CREATED -->
 <div class="overlay" id="modal-user-created">
   <div class="modal">
     <div class="modal-header">
@@ -552,7 +496,6 @@ html.light .audit-select{border-radius:12px}
       <button class="modal-close" onclick="closeModal('modal-add-client')">&#215;</button>
     </div>
     <div class="modal-body">
-
       <div class="section-label">Client identity</div>
       <div class="field">
         <label class="field-label">Application name</label>
@@ -563,7 +506,6 @@ html.light .audit-select{border-radius:12px}
         <textarea class="field-textarea" id="c-uris" placeholder="https://cloud.example.com/apps/user_oidc/code&#10;http://localhost:8080/callback"></textarea>
         <div class="field-hint">One URI per line &#183; HTTPS required (localhost http allowed)</div>
       </div>
-
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap" id="c-scopes">
@@ -573,7 +515,6 @@ html.light .audit-select{border-radius:12px}
         <div class="scope-tag" data-scope="groups">groups</div>
       </div>
       <div class="field-hint" style="margin-top:8px">Click to toggle &#183; <span style="color:var(--soft)">openid</span> always required</div>
-
       <div class="divider"></div>
       <div class="section-label">Token settings</div>
       <div class="two-col">
@@ -586,7 +527,6 @@ html.light .audit-select{border-radius:12px}
           <input class="field-input" id="c-at-ttl" type="number" value="3600" min="60">
         </div>
       </div>
-
       <div class="divider"></div>
       <div class="section-label">PKCE</div>
       <div class="pkce-row on" id="c-pkce" onclick="togglePkce('c-pkce')">
@@ -598,7 +538,6 @@ html.light .audit-select{border-radius:12px}
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
         </div>
       </div>
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-client')">Cancel</button>
@@ -615,7 +554,6 @@ html.light .audit-select{border-radius:12px}
       <button class="modal-close" onclick="closeModal('modal-edit-client')">&#215;</button>
     </div>
     <div class="modal-body">
-
       <div class="section-label">Client identity</div>
       <div class="field">
         <label class="field-label">Client ID</label>
@@ -639,7 +577,6 @@ html.light .audit-select{border-radius:12px}
         <textarea class="field-textarea" id="ec-uris"></textarea>
         <div class="field-hint">One URI per line</div>
       </div>
-
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap" id="ec-scopes">
@@ -649,7 +586,6 @@ html.light .audit-select{border-radius:12px}
         <div class="scope-tag" data-scope="groups">groups</div>
       </div>
       <div class="field-hint" style="margin-top:8px">Click to toggle &#183; <span style="color:var(--soft)">openid</span> always required</div>
-
       <div class="divider"></div>
       <div class="section-label">Token settings</div>
       <div class="two-col">
@@ -662,7 +598,6 @@ html.light .audit-select{border-radius:12px}
           <input class="field-input" id="ec-at-ttl" type="number" min="60">
         </div>
       </div>
-
       <div class="divider"></div>
       <div class="section-label">PKCE</div>
       <div class="pkce-row" id="ec-pkce" onclick="togglePkce('ec-pkce')">
@@ -674,7 +609,6 @@ html.light .audit-select{border-radius:12px}
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
         </div>
       </div>
-
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-client')">Cancel</button>
@@ -683,7 +617,7 @@ html.light .audit-select{border-radius:12px}
   </div>
 </div>
 
-<!-- CLIENT CREATED (secret reveal) -->
+<!-- CLIENT CREATED -->
 <div class="overlay" id="modal-client-created">
   <div class="modal">
     <div class="modal-header">

@@ -63,7 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     const rpHost = new URL(OIDC.redirect_uri).hostname;
     document.getElementById('rp-label-login').textContent = rpHost;
-    document.getElementById('rp-label-pin').textContent   = rpHost;
     document.getElementById('confirm-rp').textContent     = rpHost;
     document.getElementById('sign-audience').textContent  = rpHost;
   } catch {
@@ -300,11 +299,12 @@ async function doSelectKey() {
 
     const extra = document.getElementById('tc-extra');
     extra.innerHTML = '';
-    for (const key of ['name', 'email']) {
+    const CLAIM_LABELS = { preferred_username: 'username' };
+    for (const key of ['preferred_username', 'name', 'email']) {
       if (payload?.[key]) {
         const row = document.createElement('div');
         row.className = 'info-row';
-        const k = document.createElement('span'); k.className = 'info-key';   k.textContent = key;
+        const k = document.createElement('span'); k.className = 'info-key';   k.textContent = CLAIM_LABELS[key] ?? key;
         const v = document.createElement('span'); v.className = 'info-value'; v.textContent = payload[key];
         row.append(k, v);
         extra.appendChild(row);
@@ -486,6 +486,19 @@ function doCancel() {
     openSearch: false, hasMobileApp: false, pendingAfterPin: null, pendingSign: null };
 }
 
+// --- Try again — full reset back to login screen ------
+function doTryAgain() {
+  currentOpId = null;
+  mobileAbortCtrl?.abort(); mobileAbortCtrl = null;
+  cancelRedirect = null;
+  session = { session_id: null, signing_input: null,
+    user_name: null, user_username: null, hsm_url: null, password: null,
+    hem: null, listToken: null, selectedKey: null, useToken: null,
+    openSearch: false, hasMobileApp: false, pendingAfterPin: null, pendingSign: null };
+  document.getElementById('login-err').textContent = '';
+  showScreen('s-login');
+}
+
 // --- Confirm + Sign -----------------------------------
 async function doConfirm() {
   const btn = document.getElementById('confirm-btn');
@@ -562,6 +575,7 @@ window.doSelectKey    = doSelectKey;
 window.doSubmitPin    = doSubmitPin;
 window.doCancelMobile = doCancelMobile;
 window.doCancel       = doCancel;
+window.doTryAgain     = doTryAgain;
 window.doApproveSign   = doApproveSign;
 window.doCancelRedirect = doCancelRedirect;
 window.doConfirm      = doConfirm;
