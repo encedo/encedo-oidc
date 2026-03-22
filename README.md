@@ -404,29 +404,12 @@ http {
 nano /opt/encedo-oidc/nginx/nginx.conf   # paste the config above
 ```
 
-#### 8. Create nginx/docker-compose.yml
+#### 8. Copy nginx/docker-compose.yml from the repo
+
+The repo ships a ready-made `nginx/docker-compose.yml`:
 
 ```
-cat > /opt/encedo-oidc/nginx/docker-compose.yml << 'EOF'
-services:
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./proxy_params:/etc/nginx/proxy_params:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
-    networks:
-      - oidc-net
-
-networks:
-  oidc-net:
-    external: true
-EOF
+cp /opt/encedo-oidc/src/nginx/docker-compose.yml /opt/encedo-oidc/nginx/docker-compose.yml
 ```
 
 #### 9. Copy the tenant template
@@ -536,7 +519,8 @@ When a new release is available:
 cd /opt/encedo-oidc/src && git pull
 
 # 2. Build new image — once, shared by all tenants
-docker build -t encedo-oidc:latest /opt/encedo-oidc/src
+docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \
+  -t encedo-oidc:latest /opt/encedo-oidc/src
 
 # 3. Restart each tenant's OIDC container (Redis is untouched, data is safe)
 for dir in /opt/encedo-oidc/tenants/*/; do

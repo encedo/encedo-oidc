@@ -10,5 +10,8 @@ COPY signin.html    signin.js    \
      admin-panel.html admin-panel.js \
      hem-sdk.js      logo.png    ./
 
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 EXPOSE 3000
 CMD ["node", "src/app.js"]
