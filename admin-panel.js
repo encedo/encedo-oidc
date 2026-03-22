@@ -31,6 +31,8 @@ let _rotateId = null;
 
 /* -- helpers -- */
 const $ = id => document.getElementById(id);
+let _healthTimer = null;
+const checkHealthDebounced = () => { clearTimeout(_healthTimer); _healthTimer = setTimeout(checkHealth, 600); };
 const base = () => $('api-base').value.replace(/\/$/, '');
 const secret = () => $('api-secret').value;
 const hdrs = () => ({'Content-Type':'application/json','Authorization':`Bearer ${secret()}`});
@@ -528,6 +530,9 @@ window.loadAudit        = loadAudit;
 window.auditPrevPage    = auditPrevPage;
 window.auditNextPage    = auditNextPage;
 window.auditChangeLimit = auditChangeLimit;
+window.connectAndSave    = connectAndSave;
+window.checkHealth       = checkHealth;
+window.checkHealthDebounced = checkHealthDebounced;
 window.applyAuditFilter = applyAuditFilter;
 window.toggleAuditRow   = toggleAuditRow;
 window.togglePkce       = togglePkce;
@@ -550,6 +555,23 @@ window.doRotateFromEdit = doRotateFromEdit;
 window.delClient        = delClient;
 
 /* -- boot -- */
+/* -- connect & save config -- */
+async function connectAndSave() {
+  let url = $('api-base').value.trim();
+  if (url && !url.startsWith('http')) url = 'https://' + url;
+  $('api-base').value = url;
+  try {
+    const r = await fetch(url + '/health');
+    if (!r.ok) throw 0;
+    localStorage.setItem('encedo-api-base',   url);
+    localStorage.setItem('encedo-api-secret', $('api-secret').value);
+    $('status-text').textContent = '✔ saved — reloading…';
+    setTimeout(() => location.reload(), 1200);
+  } catch {
+    $('status-text').textContent = 'unreachable — not saved';
+  }
+}
+
 // Restore theme
 if (localStorage.getItem('encedo-theme') === 'light')
   document.documentElement.classList.add('light');
@@ -560,10 +582,7 @@ if (localStorage.getItem('encedo-theme') === 'light')
   const savedSecret = localStorage.getItem('encedo-api-secret');
   if (savedBase)   document.getElementById('api-base').value   = savedBase;
   if (savedSecret) document.getElementById('api-secret').value = savedSecret;
-  if (!savedBase && !savedSecret) {
-    document.getElementById('api-base').value   = 'http://localhost:3000';
-    document.getElementById('api-secret').value = 'dev-secret-change-me';
-  }
+  if (!savedBase) document.getElementById('api-base').value = window.location.origin;
   // Sync theme icon
   const isLight = document.documentElement.classList.contains('light');
   document.getElementById('theme-icon').textContent  = isLight ? '☾' : '☀';

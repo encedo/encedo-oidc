@@ -224,9 +224,9 @@ html.light .client-check-name{color:var(--text)}
     </button>
     <div class="sidebar-footer">
       <div class="config-label">API BASE</div>
-      <input class="config-input" id="api-base" placeholder="http://localhost:3000" value="" oninput="checkHealth()" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('api-secret').focus();}">
+      <input class="config-input" id="api-base" placeholder="http://localhost:3000" value="" oninput="checkHealthDebounced()" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('api-secret').focus();}">
       <div class="config-label">ADMIN SECRET</div>
-      <input class="config-input" id="api-secret" type="password" value="" oninput="checkHealth()" onkeydown="if(event.key==='Enter'){event.preventDefault();connectAndSave();}">
+      <input class="config-input" id="api-secret" type="password" value="" oninput="checkHealthDebounced()" onkeydown="if(event.key==='Enter'){event.preventDefault();connectAndSave();}">
       <div class="status-line">
         <div class="status-dot" id="status-dot"></div>
         <span id="status-text">connecting...</span>
