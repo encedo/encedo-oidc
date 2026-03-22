@@ -28,11 +28,15 @@ Read only when you need to know the HSM API.
 - Step B: `searchKeys(token?, '^ETSOIDC...')` — find OIDC keys
 - Auto-select when single key (skip s-keys)
 - s-keys screen — key list, selection
+- s-confirm screen — shows `preferred_username` (label: "username"), name, email, client name, issuer, iat, exp; user clicks Approve
 - s-signing screen — spinner, "Waiting for approval…" + "Use passphrase instead" button
-- s-pin screen — passphrase fallback (4xx from HSM or mobile cancel)
-- `doCancelMobile()` — cancels mobile polling (`currentOpId = null`), switches to passphrase
+- s-pin screen — passphrase fallback (4xx from HSM or mobile cancel); no RP badge
+- `doCancelMobile()` — sets `currentOpId=null`, aborts `mobileAbortCtrl`, switches to passphrase
+- `doTryAgain()` — full state reset (all session vars + `currentOpId` + `mobileAbortCtrl` + `cancelRedirect`), returns to s-login; exposed as `window.doTryAgain`
 - `finalizeSign()` — shared logic: `/authorize/login` → HSM sign → `/authorize/confirm` → 5s countdown → redirect
-- 5→1 countdown before RP redirect
+- 5→1 countdown before RP redirect; Cancel button stops redirect (code expires naturally after 60s)
+- `CLAIM_LABELS` map: `{ preferred_username: 'username' }` — translates JWT claim names to display labels
+- Module-level vars: `currentOpId` (Symbol|null), `mobileAbortCtrl` (AbortController|null), `cancelRedirect` (fn|null)
 
 ### enrollment.js — 100%
 - pubkey converted base64 → hex before sending to backend
@@ -58,7 +62,7 @@ No external crypto dependencies
 ```
 encedo-oidc/
 ├── src/
-│   ├── app.js
+│   ├── app.js                  ← Express app, CSP, routes; /health returns {status,ts,commit,issuer}
 │   ├── routes/
 │   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache
 │   │   ├── enrollment.js       ← HSM key enrollment
@@ -73,13 +77,17 @@ encedo-oidc/
 │       ├── redis.js
 │       ├── securityLog.js      ← dual-write: stderr + Redis ZSET
 │       └── attestation.js      ← HSM attestation via api.encedo.com
+├── index.html                  ← Landing page: status, issuer, discovery link, version
+├── index.js                    ← Landing page JS (fetches /health)
 ├── signin.js                   ← Trusted App logic
 ├── signin.html                 ← Trusted App shell
 ├── enrollment.js               ← Enrollment flow logic
 ├── enrollment.html
 ├── admin-panel.js
 ├── admin-panel.html
-└── hem-sdk.js                  ← Encedo HEM JavaScript SDK
+├── hem-sdk.js                  ← Encedo HEM JavaScript SDK
+├── nginx/docker-compose.yml    ← nginx container (shared, ports 80+443, oidc-net)
+└── tenants/docker-compose.yml  ← per-tenant template (TENANT env var)
 ```
 
 ---
@@ -140,16 +148,20 @@ try { data = await res.json(); } catch { data = null; }
 ```
 Without this, a 401 with empty body throws SyntaxError instead of HemError — trusted app doesn't recognise it as 4xx.
 
-### Mobile cancel — currentOpId
+### Mobile cancel — currentOpId + mobileAbortCtrl
 ```javascript
 let currentOpId = null;
+let mobileAbortCtrl = null;
 // before authorizeRemote:
 const opId = Symbol();
 currentOpId = opId;
+mobileAbortCtrl = new AbortController();
 // after return:
 if (currentOpId !== opId) return; // cancelled
 // doCancelMobile():
-currentOpId = null;  // polling continues in background but result is ignored
+currentOpId = null;
+mobileAbortCtrl?.abort(); mobileAbortCtrl = null;
+// authorizeRemote accepts { signal } — aborts broker polling immediately
 ```
 
 ### JWKS cache
@@ -256,6 +268,37 @@ Open (accepted or delegated):
 
 ---
 
+## Admin Panel — Key Details
+
+- `connectAndSave()` — saves API base URL + secret to localStorage, reloads page
+- `checkHealth()` — fetches `/health`, sets green/orange indicator (orange = URL ok but secret invalid), populates version label
+- `checkHealthDebounced()` — 600ms debounce wrapper; used on `oninput` to avoid CSP errors on partial URLs
+- Default API base = `window.location.origin` (not hardcoded localhost — critical for multi-tenant)
+- Version label in sidebar: `' v ' + commit` (space before v)
+- `ADMIN_ALLOWED_IPS` must include `172.16.0.0/12` for Docker nginx reverse proxy
+
+## Multi-Tenant Docker Architecture
+
+```
+nginx container  (nginx/docker-compose.yml)   ports 80+443, shared oidc-net
+per-tenant/      (tenants/docker-compose.yml template)
+  redis-${TENANT}   redis:7-alpine, volume redis-${TENANT}-data
+  oidc-${TENANT}    encedo-oidc:latest, env_file: .env
+```
+
+- Build: `docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) -t encedo-oidc:latest .`
+- SSL: `--standalone` for initial cert, `--webroot` for renewal
+- Renewal hook: `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` → `docker exec nginx nginx -s reload`
+- Wildcard DNS `*.oidc.encedo.com A <ip>` — unknown subdomains show SSL error (no wildcard cert, accepted)
+
+## CSP Hashes
+
+Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 4 files: signin.html, enrollment.html, admin-panel.html, index.html.
+Run `node update-csp-hashes.js` after any `<style>` block change.
+JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks.
+
+---
+
 ## Known Issues / Notes
 
 1. Nextcloud requires `allow_local_remote_servers = true` and `allow_insecure_http = 1` for dev
@@ -264,3 +307,4 @@ Open (accepted or delegated):
 4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
 5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
+7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s)
