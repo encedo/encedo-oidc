@@ -143,11 +143,12 @@ upstream oidc_backend {
 
 limit_req_zone $binary_remote_addr zone=oidc_login:10m   rate=5r/m;
 limit_req_zone $binary_remote_addr zone=oidc_token:10m   rate=10r/m;
-limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=30r/m;
+limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=120r/m;
 limit_req_zone $binary_remote_addr zone=oidc_jwks:10m    rate=60r/m;
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name auth.example.com;
 
     ssl_certificate     /etc/letsencrypt/live/auth.example.com/fullchain.pem;
@@ -174,7 +175,6 @@ server {
         allow 10.0.0.0/8;
         allow 127.0.0.1;
         deny  all;
-        limit_req zone=oidc_general burst=10 nodelay;
         proxy_pass http://oidc_backend;
         include /etc/nginx/proxy_params;
     }
@@ -339,9 +339,11 @@ EOF
 events {}
 
 http {
+    resolver 127.0.0.11 valid=10s;  # Docker internal DNS — required for runtime container name resolution
+
     limit_req_zone $binary_remote_addr zone=oidc_login:10m   rate=5r/m;
     limit_req_zone $binary_remote_addr zone=oidc_token:10m   rate=10r/m;
-    limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=30r/m;
+    limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=120r/m;
     limit_req_zone $binary_remote_addr zone=oidc_jwks:10m    rate=60r/m;
 
     # HTTP: ACME webroot for renewal + redirect everything else to HTTPS
@@ -358,42 +360,46 @@ http {
 
     # HTTPS — tenant: acme
     server {
-        listen 443 ssl http2;
+        listen 443 ssl;
+        http2 on;
         server_name acme.oidc.encedo.com;
         ssl_certificate     /etc/letsencrypt/live/acme.oidc.encedo.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/acme.oidc.encedo.com/privkey.pem;
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
 
-        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
-        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
-        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+        set $backend http://oidc-acme:3000;
+
+        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
+        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
+        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location /admin {
             allow 10.0.0.0/8; allow 127.0.0.1; deny all;
-            limit_req zone=oidc_general burst=10 nodelay;
-            proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params;
+            proxy_pass $backend; include /etc/nginx/proxy_params;
         }
-        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass http://oidc-acme:3000; include /etc/nginx/proxy_params; }
+        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
     }
 
     # HTTPS — tenant: bigcorp
     server {
-        listen 443 ssl http2;
+        listen 443 ssl;
+        http2 on;
         server_name bigcorp.oidc.encedo.com;
         ssl_certificate     /etc/letsencrypt/live/bigcorp.oidc.encedo.com/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/bigcorp.oidc.encedo.com/privkey.pem;
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
 
-        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
-        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
-        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+        set $backend http://oidc-bigcorp:3000;
+
+        location = /authorize/login { limit_req zone=oidc_login    burst=3  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
+        location = /token          { limit_req zone=oidc_token     burst=5  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
+        location = /jwks.json      { limit_req zone=oidc_jwks      burst=20 nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location /admin {
             allow 10.0.0.0/8; allow 127.0.0.1; deny all;
-            limit_req zone=oidc_general burst=10 nodelay;
-            proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params;
+            proxy_pass $backend; include /etc/nginx/proxy_params;
         }
-        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass http://oidc-bigcorp:3000; include /etc/nginx/proxy_params; }
+        location / { limit_req zone=oidc_general burst=20 nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
     }
 
     # Add a new server block for each additional tenant (copy either block above).
