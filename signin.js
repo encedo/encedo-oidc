@@ -34,6 +34,7 @@ let session = {
 // Used to cancel stale async mobile-auth operations
 let currentOpId = null;
 let mobileAbortCtrl = null;
+let fasttrackActive = false;
 
 // --- localStorage helpers -----------------------------
 const LS_HSM_URL  = 'encedo_oidc_hsm_url';
@@ -58,6 +59,42 @@ function lsRestoreHints() {
   } catch {}
 }
 
+// --- Fasttrack cache (per redirect_uri) ---------------
+function ftKey() { return 'encedo_ft_' + OIDC.redirect_uri; }
+
+function ftLoad() {
+  try { return JSON.parse(localStorage.getItem(ftKey()) || 'null'); } catch { return null; }
+}
+
+function ftSave(patch) {
+  try {
+    const cur = ftLoad() || {};
+    localStorage.setItem(ftKey(), JSON.stringify({ ...cur, ...patch }));
+  } catch {}
+}
+
+function ftClear() {
+  try {
+    const cur = ftLoad();
+    if (cur) {
+      delete cur.kid; delete cur.label; delete cur.sub;
+      localStorage.setItem(ftKey(), JSON.stringify(cur));
+    }
+  } catch {}
+}
+
+function ftRestoreUI() {
+  const cache = ftLoad();
+  if (!cache?.kid) return;
+  const row = document.getElementById('ft-row');
+  if (row) row.style.display = '';
+  const lbl = document.getElementById('ft-key-label');
+  if (lbl) lbl.textContent = cache.label || cache.kid;
+  const cb = document.getElementById('ft-checkbox');
+  if (cb) cb.checked = !!cache.fasttrack;
+  if (cache.hsmUrl) document.getElementById('hsm-url-input').value = cache.hsmUrl;
+}
+
 // --- Init ---------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
   try {
@@ -72,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   lsRestoreHints();
+  ftRestoreUI();
 
   document.getElementById('hsm-url-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
@@ -123,6 +161,17 @@ async function doLogin() {
       session.hasMobileApp = false;
     }
 
+    // Fasttrack: skip key search + confirm screen if enabled
+    const ftCache = ftLoad();
+    const ftEnabled = !!(ftCache?.kid && document.getElementById('ft-checkbox')?.checked);
+    ftSave({ hsmUrl, fasttrack: ftEnabled });
+
+    if (ftEnabled) {
+      const ok = await tryFasttrack(ftCache.kid, ftCache.label || '', ftCache.sub || null, btn);
+      if (ok) return;
+      // fallthrough to normal key search on failure
+    }
+
     // Step B: search OIDC keys (or delegate to passphrase screen)
     if (session.openSearch) {
       btn.textContent = 'Searching keys...';
@@ -152,6 +201,35 @@ async function doLogin() {
     document.getElementById('login-err').textContent = hemErrMsg(err);
     btn.disabled = false;
     btn.textContent = 'Continue ->';
+  }
+}
+
+// --- Fasttrack: skip key selection + confirm screen ---
+async function tryFasttrack(kid, label, sub, btn) {
+  try {
+    btn.textContent = 'Fast track\u2026';
+    fasttrackActive = true;
+    const loginRes = await fetch('/authorize/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ sub, ...OIDC }),
+    });
+    const loginData = await loginRes.json();
+    if (!loginRes.ok) throw new Error(loginData.error_description || loginData.error || 'Login failed');
+
+    session.selectedKey = { kid, label, sub };
+    session.pendingSign = { kid, label, loginData };
+    btn.disabled = false;
+    btn.textContent = 'Continue \u2192';
+    await doApproveSign();
+    return true;
+  } catch (err) {
+    console.warn('[fasttrack] failed, clearing cache and falling back:', err);
+    fasttrackActive = false;
+    ftClear();
+    document.getElementById('ft-row').style.display = 'none';
+    btn.textContent = 'Searching keys\u2026';
+    return false;
   }
 }
 
@@ -435,6 +513,11 @@ async function doCompleteSign(useToken, kid, label, loginData) {
       return;
     }
 
+    // Save fasttrack cache for next login to this RP
+    ftSave({ hsmUrl: session.hsm_url, kid, label, sub: session.selectedKey?.sub || null });
+    document.getElementById('ft-row').style.display = '';
+    document.getElementById('ft-key-label').textContent = label || kid;
+
     // Countdown 5->1 -- code issued but RP hasn't received it yet; user can still cancel
     const statusEl = document.getElementById('sign-status');
     const cancelBtn = document.getElementById('cancel-redirect-btn');
@@ -443,7 +526,8 @@ async function doCompleteSign(useToken, kid, label, loginData) {
     let cancelled = false;
     cancelRedirect = () => { cancelled = true; };
 
-    let count = 5;
+    let count = fasttrackActive ? 3 : 5;
+    fasttrackActive = false;
     statusEl.textContent = `Redirecting in ${count}\u2026`;
     await new Promise(resolve => {
       const iv = setInterval(() => {
@@ -496,6 +580,7 @@ function doTryAgain() {
     hem: null, listToken: null, selectedKey: null, useToken: null,
     openSearch: false, hasMobileApp: false, pendingAfterPin: null, pendingSign: null };
   document.getElementById('login-err').textContent = '';
+  ftRestoreUI();
   showScreen('s-login');
 }
 

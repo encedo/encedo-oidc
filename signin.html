@@ -303,6 +303,12 @@
         autocomplete="url" list="hsm-url-list">
       <datalist id="hsm-url-list"></datalist>
     </div>
+    <div id="ft-row" style="display:none;margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none;">
+        <input type="checkbox" id="ft-checkbox" style="accent-color:var(--purple);width:16px;height:16px;cursor:pointer;">
+        Fast track &mdash; use last key: <strong id="ft-key-label" style="color:var(--purple);"></strong>
+      </label>
+    </div>
     <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Continue &rarr;</button>
     <div class="err-msg" id="login-err"></div>
     <div class="hint-row">requires hardware key confirmation</div>
