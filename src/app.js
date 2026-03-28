@@ -25,7 +25,10 @@ const ROOT      = resolve(__dirname, '..');
 const app = express();
 
 // --- Trust proxy (set to 1 if behind nginx/caddy, adjust as needed) ----------
-if (process.env.TRUST_PROXY) app.set('trust proxy', process.env.TRUST_PROXY);
+if (process.env.TRUST_PROXY) {
+  const v = process.env.TRUST_PROXY;
+  app.set('trust proxy', /^\d+$/.test(v) ? Number(v) : v);
+}
 
 // --- Content-Security-Policy --------------------------------------------------
 // connect-src: 'self' (OIDC backend) + *.ence.do (PPA HSMs) + api.encedo.com (broker).

@@ -157,6 +157,19 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
 
+    limit_req_status 429;
+
+    error_page 403 @error_403;
+    error_page 429 @error_429;
+    error_page 502 @error_502;
+    error_page 503 @error_503;
+    error_page 504 @error_504;
+    location @error_403 { default_type text/html; return 403 '<!DOCTYPE html><html><head><title>403</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>403</h1></body></html>'; }
+    location @error_429 { default_type text/html; return 429 '<!DOCTYPE html><html><head><title>429</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>429</h1></body></html>'; }
+    location @error_502 { default_type text/html; return 502 '<!DOCTYPE html><html><head><title>502</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>502</h1></body></html>'; }
+    location @error_503 { default_type text/html; return 503 '<!DOCTYPE html><html><head><title>503</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>503</h1></body></html>'; }
+    location @error_504 { default_type text/html; return 504 '<!DOCTYPE html><html><head><title>504</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>504</h1></body></html>'; }
+
     location = /authorize/login {
         limit_req zone=oidc_login burst=3 nodelay;
         proxy_pass http://oidc_backend;
@@ -353,6 +366,7 @@ http {
     limit_req_zone $binary_remote_addr zone=oidc_general:10m rate=120r/m;
     limit_req_zone $binary_remote_addr zone=oidc_jwks:10m    rate=60r/m;
     limit_req_zone $binary_remote_addr zone=oidc_signup:10m  rate=20r/m;
+    limit_req_status 429;
 
     # HTTP: ACME webroot for renewal + redirect everything else to HTTPS
     server {
@@ -376,6 +390,17 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
         set $backend http://oidc-acme:3000;
+
+        error_page 403 @error_403;
+        error_page 429 @error_429;
+        error_page 502 @error_502;
+        error_page 503 @error_503;
+        error_page 504 @error_504;
+        location @error_403 { default_type text/html; return 403 '<!DOCTYPE html><html><head><title>403</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>403</h1></body></html>'; }
+        location @error_429 { default_type text/html; return 429 '<!DOCTYPE html><html><head><title>429</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>429</h1></body></html>'; }
+        location @error_502 { default_type text/html; return 502 '<!DOCTYPE html><html><head><title>502</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>502</h1></body></html>'; }
+        location @error_503 { default_type text/html; return 503 '<!DOCTYPE html><html><head><title>503</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>503</h1></body></html>'; }
+        location @error_504 { default_type text/html; return 504 '<!DOCTYPE html><html><head><title>504</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>504</h1></body></html>'; }
 
         location = /authorize/login        { limit_req zone=oidc_login   burst=3  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location = /token                  { limit_req zone=oidc_token   burst=5  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
@@ -404,6 +429,17 @@ http {
         ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
         set $backend http://oidc-test:3000;
 
+        error_page 403 @error_403;
+        error_page 429 @error_429;
+        error_page 502 @error_502;
+        error_page 503 @error_503;
+        error_page 504 @error_504;
+        location @error_403 { default_type text/html; return 403 '<!DOCTYPE html><html><head><title>403</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>403</h1></body></html>'; }
+        location @error_429 { default_type text/html; return 429 '<!DOCTYPE html><html><head><title>429</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>429</h1></body></html>'; }
+        location @error_502 { default_type text/html; return 502 '<!DOCTYPE html><html><head><title>502</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>502</h1></body></html>'; }
+        location @error_503 { default_type text/html; return 503 '<!DOCTYPE html><html><head><title>503</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>503</h1></body></html>'; }
+        location @error_504 { default_type text/html; return 504 '<!DOCTYPE html><html><head><title>504</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>504</h1></body></html>'; }
+
         location = /authorize/login        { limit_req zone=oidc_login   burst=3  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location = /token                  { limit_req zone=oidc_token   burst=5  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location = /jwks.json              { limit_req zone=oidc_jwks    burst=20 nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
@@ -430,6 +466,17 @@ http {
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers   ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384;
         set $backend http://oidc-demo:3000;
+
+        error_page 403 @error_403;
+        error_page 429 @error_429;
+        error_page 502 @error_502;
+        error_page 503 @error_503;
+        error_page 504 @error_504;
+        location @error_403 { default_type text/html; return 403 '<!DOCTYPE html><html><head><title>403</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>403</h1></body></html>'; }
+        location @error_429 { default_type text/html; return 429 '<!DOCTYPE html><html><head><title>429</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>429</h1></body></html>'; }
+        location @error_502 { default_type text/html; return 502 '<!DOCTYPE html><html><head><title>502</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>502</h1></body></html>'; }
+        location @error_503 { default_type text/html; return 503 '<!DOCTYPE html><html><head><title>503</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>503</h1></body></html>'; }
+        location @error_504 { default_type text/html; return 504 '<!DOCTYPE html><html><head><title>504</title></head><body style="font-family:sans-serif;text-align:center;padding:15%"><h1>504</h1></body></html>'; }
 
         location = /authorize/login        { limit_req zone=oidc_login   burst=3  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
         location = /token                  { limit_req zone=oidc_token   burst=5  nodelay; proxy_pass $backend; include /etc/nginx/proxy_params; }
