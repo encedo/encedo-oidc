@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Encedo OIDC -- Admin</title>
-<link rel="icon" href="/logo.png">
+<link rel="icon" href="/favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -218,6 +218,10 @@ html.light .client-check-name{color:var(--text)}
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       Clients
     </button>
+    <button class="admin-nav-item" onclick="showPage('invites',this)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 12H12m0 0l4-4m-4 4l4 4"/><path d="M21 5.5A9 9 0 1 0 21 18.5"/></svg>
+      Invites
+    </button>
     <div class="admin-nav-section">SYSTEM</div>
     <button class="admin-nav-item" onclick="showPage('audit',this)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -246,7 +250,11 @@ html.light .client-check-name{color:var(--text)}
           <div class="page-title">Users</div>
           <div class="page-sub" id="users-sub">loading...</div>
         </div>
-        <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" onclick="openInviteUser()">&#9993; Invite user</button>
+          <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+          <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadUsers()">&#8635;</button>
+        </div>
       </div>
       <div class="table">
         <div class="table-head" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
@@ -258,6 +266,30 @@ html.light .client-check-name{color:var(--text)}
           <div class="table-head-cell" style="text-align:right">ACTIONS</div>
         </div>
         <div id="users-body">
+          <div class="loading-row"><span class="spinner"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: INVITES -->
+    <div class="page" id="page-invites">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Invites</div>
+          <div class="page-sub" id="invites-sub">loading...</div>
+        </div>
+        <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadInvites()">&#8635;</button>
+      </div>
+      <div class="table">
+        <div class="table-head" style="grid-template-columns:110px 1fr 1.2fr 1.4fr 100px 42px;">
+          <div class="table-head-cell">TOKEN</div>
+          <div class="table-head-cell">CLIENT</div>
+          <div class="table-head-cell">USERNAME</div>
+          <div class="table-head-cell">EMAIL</div>
+          <div class="table-head-cell">EXPIRES IN</div>
+          <div class="table-head-cell"></div>
+        </div>
+        <div id="invites-body">
           <div class="loading-row"><span class="spinner"></span></div>
         </div>
       </div>
@@ -314,7 +346,10 @@ html.light .client-check-name{color:var(--text)}
           <div class="page-title">Clients</div>
           <div class="page-sub" id="clients-sub">loading...</div>
         </div>
-        <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
+          <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadClients()">&#8635;</button>
+        </div>
       </div>
       <div id="clients-body">
         <div class="loading-row"><span class="spinner"></span></div>
@@ -377,6 +412,62 @@ html.light .client-check-name{color:var(--text)}
   </div>
 </div>
 
+<!-- INVITE USER -->
+<div class="overlay" id="modal-invite-user">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Invite user</div>
+      <button class="modal-close" onclick="closeModal('modal-invite-user')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label">Client (required)</label>
+        <select class="field-input" id="inv-client" style="appearance:none;cursor:pointer;"></select>
+      </div>
+      <div class="section-label" style="margin-bottom:10px">Pre-fill (optional — user can edit)</div>
+      <div class="field">
+        <label class="field-label" for="inv-username">Username</label>
+        <input class="field-input" id="inv-username" type="text" placeholder="leave empty for user to choose">
+      </div>
+      <div class="field">
+        <label class="field-label" for="inv-name">Full name</label>
+        <input class="field-input" id="inv-name" type="text" placeholder="">
+      </div>
+      <div class="field">
+        <label class="field-label" for="inv-email">Email</label>
+        <input class="field-input" id="inv-email" type="email" placeholder="">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-invite-user')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitInviteUser()">Generate link</button>
+    </div>
+  </div>
+</div>
+
+<!-- INVITE LINK -->
+<div class="overlay" id="modal-invite-link">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Invite link generated</div>
+      <button class="modal-close" onclick="closeModal('modal-invite-link')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+        Send this link to the user. It expires in 24 hours and can only be used once.
+      </p>
+      <div class="field">
+        <label class="field-label">Invite URL</label>
+        <div class="id-badge" id="inv-result-url" style="word-break:break-all;font-size:11px;line-height:1.6">--</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-invite-link')">Close</button>
+      <button class="btn btn-ghost" onclick="copyText('inv-result-url');closeModal('modal-invite-link')">&#128203; Copy &amp; Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- EDIT USER -->
 <div class="overlay" id="modal-edit-user">
   <div class="modal modal-wide">
@@ -430,6 +521,15 @@ html.light .client-check-name{color:var(--text)}
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
       </div>
       <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to</div>
+      <div class="divider"></div>
+      <div class="section-label" style="margin-bottom:10px">Custom claims (userinfo)</div>
+      <label class="client-check" style="margin-bottom:10px">
+        <input type="checkbox" id="eu-hsm-url-toggle">
+        <span class="client-check-name">Include <code>hsm_url</code> in userinfo</span>
+      </label>
+      <div id="eu-claims-list" style="margin-bottom:8px"></div>
+      <button class="btn btn-ghost btn-xs" onclick="addClaimRow()">+ Add claim</button>
+      <div class="field-hint" style="margin-top:6px">Custom key/value claims returned by /userinfo endpoint</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-user')">Cancel</button>

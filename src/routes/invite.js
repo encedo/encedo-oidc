@@ -1,0 +1,175 @@
+import { randomBytes, randomUUID } from 'crypto';
+import redis              from '../services/redis.js';
+import { logSecurity, SEC } from '../services/securityLog.js';
+import { validate, vEmail, vUsername, vDisplayName, vUrl } from '../middleware/validate.js';
+
+const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
+
+// --- POST /admin/invite ---------------------------------------
+export async function adminInviteHandler(req, res, next) {
+  try {
+    const { client_id, username, name, email } = req.body ?? {};
+
+    if (!client_id) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'client_id is required' });
+    }
+    const clientRaw = await redis.hGetAll(`client:${client_id}`);
+    if (!clientRaw?.client_id) {
+      return res.status(404).json({ error: 'client_not_found' });
+    }
+
+    const checks = [];
+    if (username !== undefined) checks.push(vUsername(username));
+    if (name     !== undefined) checks.push(vDisplayName(name));
+    if (email    !== undefined) checks.push(vEmail(email));
+    const err = checks.find(e => e) ?? null;
+    if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
+
+    const token = randomBytes(32).toString('hex');
+    await redis.set(`invite:${token}`, JSON.stringify({
+      client_id,
+      client_name: clientRaw.name || client_id,
+      username:    username?.trim() ?? '',
+      name:        name?.trim()     ?? '',
+      email:       email?.trim().toLowerCase() ?? '',
+    }), { EX: 86400 });
+
+    const invite_url = `${issuer()}/signup#token=${token}`;
+    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'invite_generated', client_id, ip: req.ip });
+
+    res.status(201).json({ invite_url, expires_in: 86400 });
+  } catch (err) { next(err); }
+}
+
+// --- GET /signup/prefill?token=... ----------------------------
+export async function signupPrefillHandler(req, res, next) {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'token_required' });
+
+    const raw = await redis.get(`invite:${token}`);
+    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+
+    const data = JSON.parse(raw);
+    res.json({
+      client_name: data.client_name,
+      username:    data.username,
+      name:        data.name,
+      email:       data.email,
+    });
+  } catch (err) { next(err); }
+}
+
+// --- GET /admin/invites ---------------------------------------
+export async function adminListInvitesHandler(_req, res, next) {
+  try {
+    const keys = await redis.keys('invite:*');
+    if (keys.length === 0) return res.json([]);
+
+    const pipeline = redis.multi();
+    for (const key of keys) {
+      pipeline.get(key);
+      pipeline.ttl(key);
+    }
+    const results = await pipeline.exec();
+
+    const invites = [];
+    for (let i = 0; i < keys.length; i++) {
+      const raw = results[i * 2];
+      const ttl = results[i * 2 + 1];
+      if (!raw) continue;
+      const data = JSON.parse(raw);
+      const token = keys[i].slice('invite:'.length);
+      invites.push({
+        token,
+        client_id:   data.client_id,
+        client_name: data.client_name,
+        username:    data.username,
+        email:       data.email,
+        ttl,
+      });
+    }
+    res.json(invites);
+  } catch (err) { next(err); }
+}
+
+// --- DELETE /admin/invites/:token -----------------------------
+export async function adminDeleteInviteHandler(req, res, next) {
+  try {
+    const { token } = req.params;
+    const deleted = await redis.del(`invite:${token}`);
+    if (!deleted) return res.status(404).json({ error: 'invite_not_found' });
+    res.status(204).send();
+  } catch (err) { next(err); }
+}
+
+// --- POST /signup/register ------------------------------------
+// Called only after HSM is verified (checkin + authorize succeed).
+// Creates user account + enrollment token; enrollment is completed
+// by the frontend using the returned token (no redirect needed).
+export async function signupRegisterHandler(req, res, next) {
+  try {
+    const { token, username, name, email, hsm_url } = req.body ?? {};
+
+    if (!token) return res.status(400).json({ error: 'token_required' });
+
+    const raw = await redis.get(`invite:${token}`);
+    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    const invite = JSON.parse(raw);
+
+    const err = validate(
+      vUsername(username),
+      vEmail(email),
+      vDisplayName(name),
+      vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true }),
+    );
+    if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
+
+    const uname = username.trim();
+    if (await redis.hGet('username_index', uname)) {
+      return res.status(409).json({ error: 'username_already_exists' });
+    }
+
+    // Derive client redirect origin for post-enrollment Close button
+    const clientRaw = await redis.hGetAll(`client:${invite.client_id}`);
+    const redirectUris = JSON.parse(clientRaw?.redirect_uris ?? '[]');
+    let client_redirect_origin = null;
+    if (redirectUris.length) {
+      try { client_redirect_origin = new URL(redirectUris[0]).origin; } catch { /* ignore */ }
+    }
+
+    const sub = randomUUID();
+    const record = {
+      sub,
+      username:   uname,
+      name:       (name ?? '').trim(),
+      email:      email.trim().toLowerCase(),
+      hsm_url:    hsm_url.trim(),
+      clients:    JSON.stringify([invite.client_id]),
+      created_at: new Date().toISOString(),
+    };
+
+    await redis.hSet(`user:${sub}`, record);
+    await redis.sAdd('users', sub);
+    await redis.hSet('username_index', uname, sub);
+
+    const enrollToken = randomBytes(32).toString('base64url');
+    await redis.set(`enrollment:${enrollToken}`, JSON.stringify({
+      sub,
+      username: uname,
+      hsm_url:  hsm_url.trim(),
+    }), { EX: 3600 }); // 1h — user is actively enrolling right now
+    await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
+
+    // Consume invite — one-time use
+    await redis.del(`invite:${token}`);
+
+    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'signup', sub, username: uname, client_id: invite.client_id, ip: req.ip });
+
+    res.status(201).json({
+      sub,
+      enrollment_token: enrollToken,
+      client_redirect_origin,
+    });
+  } catch (err) { next(err); }
+}

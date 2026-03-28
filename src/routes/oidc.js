@@ -491,11 +491,16 @@ async function userinfoHandler(req, res, next) {
       return res.status(400).json({ error: 'invalid_token', error_description: 'user not found' });
     }
 
+    const customClaims = JSON.parse(userRaw.custom_claims ?? '{}');
+    const hsmUrlInUserinfo = userRaw.hsm_url_in_userinfo !== '0';
+
     res.json({
       sub:                userRaw.sub,
       name:               userRaw.name,
       email:              userRaw.email,
       preferred_username: userRaw.username,
+      ...(hsmUrlInUserinfo && userRaw.hsm_url ? { hsm_url: userRaw.hsm_url } : {}),
+      ...customClaims,
     });
 
   } catch (err) { next(err); }

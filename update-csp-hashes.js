@@ -15,6 +15,8 @@ const FILES = [
   { file: 'signin.html',      label: 'signin.html' },
   { file: 'enrollment.html',  label: 'enrollment.html' },
   { file: 'admin-panel.html', label: 'admin-panel.html' },
+  { file: 'index.html',       label: 'index.html' },
+  { file: 'signup.html',      label: 'signup.html' },
 ];
 
 function styleHash(html) {

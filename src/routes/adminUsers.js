@@ -4,7 +4,7 @@ import redis from '../services/redis.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid } from '../middleware/validate.js';
+import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid, vClaimKey, vOptional } from '../middleware/validate.js';
 
 const router = Router();
 
@@ -14,7 +14,9 @@ function deserialize(raw) {
   const { enrollment_token, ...rest } = raw; // internal field -- never exposed via API
   return {
     ...rest,
-    clients: JSON.parse(rest.clients ?? '[]'),
+    clients:              JSON.parse(rest.clients       ?? '[]'),
+    custom_claims:        JSON.parse(rest.custom_claims ?? '{}'),
+    hsm_url_in_userinfo:  rest.hsm_url_in_userinfo !== '0', // default true
   };
 }
 
@@ -137,6 +139,10 @@ router.patch('/:sub', async (req, res, next) => {
       updates.clients = JSON.stringify(req.body.clients);
     }
 
+    if (req.body.hsm_url_in_userinfo !== undefined) {
+      updates.hsm_url_in_userinfo = req.body.hsm_url_in_userinfo ? '1' : '0';
+    }
+
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: 'no_valid_fields' });
     }
@@ -195,6 +201,53 @@ router.post('/:sub/enrollment', async (req, res, next) => {
 
     await logSecurity(SEC.ENROLL_REGEN, { sub, username: raw.username, ip: req.ip });
     res.json({ enrollment_url });
+  } catch (err) { next(err); }
+});
+
+// --- GET /admin/users/:sub/claims -----------------------------
+router.get('/:sub/claims', async (req, res, next) => {
+  try {
+    const raw = await redis.hGetAll(`user:${req.params.sub}`);
+    if (!raw?.sub) return res.status(404).json({ error: 'user_not_found' });
+    res.json({
+      custom_claims:       JSON.parse(raw.custom_claims ?? '{}'),
+      hsm_url_in_userinfo: raw.hsm_url_in_userinfo !== '0',
+    });
+  } catch (err) { next(err); }
+});
+
+// --- PUT /admin/users/:sub/claims -----------------------------
+// Replace entire custom_claims object.
+router.put('/:sub/claims', async (req, res, next) => {
+  try {
+    const { sub } = req.params;
+    const exists = await redis.sIsMember('users', sub);
+    if (!exists) return res.status(404).json({ error: 'user_not_found' });
+
+    const { custom_claims, hsm_url_in_userinfo } = req.body ?? {};
+
+    if (custom_claims !== undefined) {
+      if (typeof custom_claims !== 'object' || Array.isArray(custom_claims)) {
+        return res.status(400).json({ error: 'validation_error', error_description: 'custom_claims must be an object' });
+      }
+      for (const [k, v] of Object.entries(custom_claims)) {
+        const ke = vClaimKey(k);
+        if (ke) return res.status(400).json({ error: 'validation_error', error_description: ke });
+        const ve = vOptional(String(v), k, 256);
+        if (ve) return res.status(400).json({ error: 'validation_error', error_description: ve });
+      }
+    }
+
+    const updates = { updated_at: new Date().toISOString() };
+    if (custom_claims !== undefined)       updates.custom_claims        = JSON.stringify(custom_claims);
+    if (hsm_url_in_userinfo !== undefined) updates.hsm_url_in_userinfo  = hsm_url_in_userinfo ? '1' : '0';
+
+    await redis.hSet(`user:${sub}`, updates);
+    const raw = await redis.hGetAll(`user:${sub}`);
+    res.json({
+      custom_claims:       JSON.parse(raw.custom_claims ?? '{}'),
+      hsm_url_in_userinfo: raw.hsm_url_in_userinfo !== '0',
+    });
   } catch (err) { next(err); }
 });
 

@@ -82,6 +82,7 @@ function showPage(name, btn) {
   if (name === 'users')   loadUsers();
   if (name === 'clients') loadClients();
   if (name === 'audit')   loadAudit(true);
+  if (name === 'invites') loadInvites();
 }
 
 function openModal(id)  { $(id).classList.add('open'); }
@@ -207,6 +208,42 @@ async function openEditUser(idx) {
   openModal('modal-edit-user');
   setTimeout(() => $('eu-username').focus(), 60);
   await _renderClientsChecklist(u.clients || []);
+  // load claims
+  try {
+    const claims = await api(`/admin/users/${u.sub}/claims`);
+    $('eu-hsm-url-toggle').checked = claims.hsm_url_in_userinfo;
+    _renderClaimRows(claims.custom_claims);
+  } catch { _renderClaimRows({}); }
+}
+
+function _renderClaimRows(claims) {
+  const list = $('eu-claims-list');
+  list.innerHTML = '';
+  for (const [k, v] of Object.entries(claims)) _addClaimRow(k, v);
+}
+
+function _addClaimRow(k = '', v = '') {
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center;';
+  row.innerHTML = `
+    <input class="field-input claim-key" placeholder="claim_key" value="${esc(k)}"
+      style="width:160px;padding:7px 10px;font-size:12px;font-family:var(--mono);">
+    <input class="field-input claim-val" placeholder="value" value="${esc(v)}"
+      style="flex:1;padding:7px 10px;font-size:12px;font-family:var(--mono);">
+    <button class="btn btn-danger btn-xs" onclick="this.parentElement.remove()" style="flex-shrink:0">&#215;</button>`;
+  $('eu-claims-list').appendChild(row);
+}
+
+function addClaimRow() { _addClaimRow(); }
+
+function _getClaimsFromUI() {
+  const result = {};
+  for (const row of $('eu-claims-list').children) {
+    const k = row.querySelector('.claim-key').value.trim();
+    const v = row.querySelector('.claim-val').value;
+    if (k) result[k] = v;
+  }
+  return result;
 }
 
 async function _renderClientsChecklist(selectedIds) {
@@ -244,6 +281,10 @@ async function submitEditUser() {
   if (!updates.hsm_url)  return toast('HSM URL required', 'err');
   try {
     await api(`/admin/users/${sub}`, {method:'PATCH', body:JSON.stringify(updates)});
+    await api(`/admin/users/${sub}/claims`, {method:'PUT', body:JSON.stringify({
+      custom_claims:       _getClaimsFromUI(),
+      hsm_url_in_userinfo: $('eu-hsm-url-toggle').checked,
+    })});
     closeModal('modal-edit-user');
     toast('User updated');
     loadUsers();
@@ -259,6 +300,43 @@ async function requestEnrollment(sub, hasKey) {
     const data = await api(`/admin/users/${encodeURIComponent(sub)}/enrollment`, { method: 'POST' });
     document.getElementById('enroll-url').textContent = data.enrollment_url;
     openModal('modal-enrollment');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function openInviteUser() {
+  ['inv-username','inv-name','inv-email'].forEach(id => $(id).value = '');
+  const sel = $('inv-client');
+  sel.innerHTML = '<option value="">loading...</option>';
+  openModal('modal-invite-user');
+  try {
+    const clients = await api('/admin/clients');
+    if (!clients.length) {
+      sel.innerHTML = '<option value="">No clients defined</option>';
+      return;
+    }
+    sel.innerHTML = clients.map(c =>
+      `<option value="${esc(c.client_id)}">${esc(c.name)}</option>`
+    ).join('');
+  } catch (e) {
+    sel.innerHTML = `<option value="">Error: ${esc(e.message)}</option>`;
+  }
+}
+
+async function submitInviteUser() {
+  const client_id = $('inv-client').value;
+  if (!client_id) return toast('Select a client', 'err');
+  const body = { client_id };
+  const username = $('inv-username').value.trim();
+  const name     = $('inv-name').value.trim();
+  const email    = $('inv-email').value.trim();
+  if (username) body.username = username;
+  if (name)     body.name     = name;
+  if (email)    body.email    = email;
+  try {
+    const data = await api('/admin/invite', { method: 'POST', body: JSON.stringify(body) });
+    closeModal('modal-invite-user');
+    $('inv-result-url').textContent = data.invite_url;
+    openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -541,10 +619,13 @@ window.openModal        = openModal;
 window.closeModal       = closeModal;
 window.copyText         = copyText;
 window.toggleTheme      = toggleTheme;
+window.openInviteUser   = openInviteUser;
+window.submitInviteUser = submitInviteUser;
 window.openAddUser      = openAddUser;
 window.submitAddUser    = submitAddUser;
 window.openEditUser     = openEditUser;
 window.submitEditUser   = submitEditUser;
+window.addClaimRow      = addClaimRow;
 window.requestEnrollment = requestEnrollment;
 window.delUser          = delUser;
 window.openAddClient    = openAddClient;
@@ -569,6 +650,53 @@ async function connectAndSave() {
     setTimeout(() => location.reload(), 1200);
   } catch {
     $('status-text').textContent = 'unreachable — not saved';
+  }
+}
+
+/* ==================== INVITES ==================== */
+
+function fmtTtl(seconds) {
+  if (seconds < 0) return 'expired';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+async function loadInvites() {
+  const b = $('invites-body');
+  b.innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
+  try {
+    const list = await api('/admin/invites');
+    $('invites-sub').textContent = `${list.length} active invite${list.length !== 1 ? 's' : ''}`;
+    if (list.length === 0) {
+      b.innerHTML = '<div class="empty"><div class="empty-icon">✉</div>No active invites</div>';
+      return;
+    }
+    b.innerHTML = list.map(inv => `
+      <div class="table-row" style="grid-template-columns:110px 1fr 1.2fr 1.4fr 100px 42px;">
+        <div class="cell-mono">${esc(inv.token.slice(0, 8))}…</div>
+        <div class="cell-muted">${esc(inv.client_name)}</div>
+        <div class="cell-muted">${esc(inv.username) || '<span style="opacity:.4">—</span>'}</div>
+        <div class="cell-muted">${esc(inv.email) || '<span style="opacity:.4">—</span>'}</div>
+        <div class="cell-muted">${fmtTtl(inv.ttl)}</div>
+        <div class="cell-actions">
+          <button class="btn btn-danger btn-xs" onclick="deleteInvite('${esc(inv.token)}')">🗑</button>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    b.innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function deleteInvite(token) {
+  if (!confirm('Revoke this invite?')) return;
+  try {
+    await api(`/admin/invites/${encodeURIComponent(token)}`, { method: 'DELETE' });
+    toast('Invite revoked');
+    loadInvites();
+  } catch (e) {
+    toast(e.message, 'err');
   }
 }
 

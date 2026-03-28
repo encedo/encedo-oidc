@@ -137,6 +137,15 @@ export function vUuid(value, label = 'id') {
   return null;
 }
 
+/** Claim key: must start with letter/underscore, then letters/digits/underscore, max 64 chars. */
+const CLAIM_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/;
+export function vClaimKey(value, label = 'claim key') {
+  if (typeof value !== 'string' || !CLAIM_KEY_RE.test(value)) {
+    return `${label} must start with a letter or underscore and contain only letters, digits, underscores (max 64 chars)`;
+  }
+  return null;
+}
+
 // --- Batch helper ----------------------------------------------
 
 /**

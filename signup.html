@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
+<title>Encedo -- Sign Up</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+
+  :root {
+    --purple: #6E358C;
+    --navy:   #2A225E;
+    --text:   #222;
+    --muted:  #666;
+    --border: #ccc;
+    --white:  #fff;
+    --red:    #e74c3c;
+    --green:  #2ecc71;
+    --shadow: -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+  }
+
+  .screen { display: none; width: 100%; max-width: 480px; }
+  .screen.visible { display: block; }
+
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub { font-size: 11px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-top: 10px; }
+
+  .card { background: var(--white); border-radius: 28px; box-shadow: var(--shadow); padding: 36px 40px 40px; }
+
+  .rp-badge {
+    display: flex; align-items: center; gap: 9px;
+    background: rgba(110,53,140,.06); border: 1px solid rgba(110,53,140,.2);
+    border-radius: 10px; padding: 9px 14px; margin-bottom: 22px;
+    font-size: 13px; color: var(--muted);
+  }
+  .rp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .rp-label strong { color: var(--purple); font-weight: 600; }
+
+  .field { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+  .field-input {
+    display: block; width: 100%; padding: 13px 16px;
+    border: 1px solid var(--border); border-radius: 20px;
+    font-family: 'Inter', sans-serif; font-size: 15px; color: var(--text);
+    background: var(--white); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(110,53,140,.12); }
+  .field-input::placeholder { color: #aaa; }
+
+  .btn {
+    display: inline-block; padding: 14px 28px; border: none; border-radius: 22px;
+    font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: .03em; cursor: pointer;
+    transition: background .3s, box-shadow .3s, transform .15s;
+    text-align: center; line-height: 1;
+  }
+  .btn-full { display: block; width: 100%; margin-top: 6px; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
+  @keyframes gradient-shift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%; animation: gradient-shift 3s ease infinite;
+    color: var(--white); box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 22px; }
+  .btn-row .btn { flex: 1; }
+
+  .err-msg { font-size: 12px; color: var(--red); min-height: 18px; margin-top: 8px; text-align: center; }
+  .hint-row { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee; font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+
+  .icon-circle { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 22px; }
+  .icon-circle-ok  { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35);  }
+  .icon-circle-err { background: rgba(231,76,60,.1);   border: 1px solid rgba(231,76,60,.35);   }
+  .icon-circle-spin { background: rgba(110,53,140,.08); border: 1px solid rgba(110,53,140,.25); }
+
+  .card-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 5px; text-align: center; }
+  .card-sub   { font-size: 12px; color: var(--muted); margin-bottom: 20px; text-align: center; }
+  .card-sub strong { color: var(--purple); font-weight: 600; }
+
+  .info-box { background: #f9f7fc; border: 1px solid rgba(110,53,140,.15); border-radius: 14px; padding: 14px 16px; margin-bottom: 20px; }
+  .info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 7px; }
+  .info-row:last-child { margin-bottom: 0; }
+  .info-key { color: var(--muted); }
+  .info-value { color: var(--text); font-weight: 600; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid rgba(110,53,140,.2); border-top-color: var(--purple); border-radius: 50%; animation: spin .8s linear infinite; }
+
+  @media (max-width: 520px) { .card { padding: 28px 22px 30px; border-radius: 22px; } }
+</style>
+</head>
+<body>
+
+<!-- INVALID / EXPIRED -->
+<div class="screen" id="s-invalid">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign Up</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-err">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </div>
+    <p class="card-title" style="color:var(--red);">Invite invalid or expired</p>
+    <p class="card-sub">This link is no longer valid. Please contact your administrator for a new invite.</p>
+  </div>
+</div>
+
+<!-- STEP 1: PROFILE DATA -->
+<div class="screen" id="s-form">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign Up &mdash; Step 1 of 2</div>
+  </div>
+  <div class="card">
+    <div class="rp-badge">
+      <div class="rp-dot"></div>
+      <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name">Loading&hellip;</strong></div>
+    </div>
+    <div class="field">
+      <label class="field-label" for="su-username">Username</label>
+      <input class="field-input" id="su-username" type="text" autocomplete="username" placeholder="your.username">
+    </div>
+    <div class="field">
+      <label class="field-label" for="su-name">Full name</label>
+      <input class="field-input" id="su-name" type="text" autocomplete="name" placeholder="Jan Kowalski">
+    </div>
+    <div class="field">
+      <label class="field-label" for="su-email">Email</label>
+      <input class="field-input" id="su-email" type="email" autocomplete="email" placeholder="jan@example.com">
+    </div>
+    <button class="btn btn-primary btn-full" id="su-next-btn" onclick="doNext()">Next &rarr;</button>
+    <div class="err-msg" id="su-err"></div>
+    <div class="hint-row">next: connect your Encedo HSM</div>
+  </div>
+</div>
+
+<!-- STEP 2: HSM -->
+<div class="screen" id="s-hsm">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign Up &mdash; Step 2 of 2</div>
+  </div>
+  <div class="card">
+    <div class="rp-badge">
+      <div class="rp-dot"></div>
+      <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name2">Loading&hellip;</strong></div>
+    </div>
+    <div class="field">
+      <label class="field-label" for="su-hsm-url">HSM URL</label>
+      <input class="field-input" id="su-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="url">
+    </div>
+    <div class="field">
+      <label class="field-label" for="su-password">Passphrase</label>
+      <input class="field-input" id="su-password" type="password" placeholder="HSM passphrase" autocomplete="current-password">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="doBack()">Back</button>
+      <button class="btn btn-primary" id="su-enroll-btn" onclick="doEnroll()">Next &rarr;</button>
+    </div>
+    <div class="err-msg" id="hsm-err"></div>
+    <div class="hint-row">requires hardware key confirmation</div>
+  </div>
+</div>
+
+<!-- ENROLLING (spinner) -->
+<div class="screen" id="s-enrolling">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Enrolling&hellip;</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-spin">
+      <span class="spinner"></span>
+    </div>
+    <p class="card-title" id="enroll-status">Connecting to HSM&hellip;</p>
+    <p class="card-sub" style="margin-bottom:0">Please confirm on your device if prompted</p>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div class="screen" id="s-done">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign Up</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <p class="card-title">All done!</p>
+    <p class="card-sub">Your account is ready and your hardware key is enrolled.</p>
+    <div class="info-box" style="text-align:left;">
+      <div class="info-row"><span class="info-key">username</span><span class="info-value" id="done-username"></span></div>
+      <div class="info-row"><span class="info-key">service</span><span class="info-value" id="done-client"></span></div>
+    </div>
+    <button class="btn btn-primary btn-full" id="done-close-btn" onclick="doClose()">Go to service &rarr;</button>
+  </div>
+</div>
+
+<script type="module" src="/signup.js"></script>
+</body>
+</html>
