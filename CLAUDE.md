@@ -21,6 +21,9 @@ Read only when you need to know the HSM API.
 - Enrollment: challenge-response + hardware attestation via api.encedo.com
 - Security log: Redis ZSET + stderr dual-write
 - Audit log in admin panel: pagination, filtering
+- Invite flow (user): `POST /admin/invite` → one-time token → `GET /signup/prefill` + `POST /signup/register`
+- Invite flow (client): `POST /admin/invite-client` → one-time token → `GET /signup-client/prefill` + `POST /signup-client/register`
+- Invites admin API: `GET /admin/invites`, `DELETE /admin/invites/:token`, `DELETE /admin/client-invites/:token`
 
 ### Trusted App (`signin.js`) — 100%
 - Login screen — HSM URL only (no username/password fields)
@@ -67,7 +70,9 @@ encedo-oidc/
 │   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache
 │   │   ├── enrollment.js       ← HSM key enrollment
 │   │   ├── adminUsers.js       ← CRUD + audit log
-│   │   └── adminClients.js
+│   │   ├── adminClients.js
+│   │   ├── invite.js           ← user invite flow + admin invites list
+│   │   └── inviteClient.js     ← client invite flow
 │   ├── middleware/
 │   │   ├── auth.js             ← requireAdminAuth + requireAdminNetwork
 │   │   ├── rateLimit.js
@@ -83,9 +88,14 @@ encedo-oidc/
 ├── signin.html                 ← Trusted App shell
 ├── enrollment.js               ← Enrollment flow logic
 ├── enrollment.html
+├── signup.html                 ← User signup (invite flow)
+├── signup.js                   ← User signup JS
+├── signup-client.html          ← Client signup (invite flow, no HSM)
+├── signup-client.js            ← Client signup JS
 ├── admin-panel.js
 ├── admin-panel.html
 ├── hem-sdk.js                  ← Encedo HEM JavaScript SDK
+├── favicon.ico
 ├── nginx/docker-compose.yml    ← nginx container (shared, ports 80+443, oidc-net)
 └── tenants/docker-compose.yml  ← per-tenant template (TENANT env var)
 ```
@@ -197,6 +207,8 @@ access:{token}    JSON TTL = access_token_ttl
 user_tokens:{sub} Set  { access:{token}, ... }
 enrollment:{tok}  JSON TTL 24h → 30min after validate
 enroll_lock:{sub} String TTL 30s  (NX lock)
+invite:{token}    JSON TTL 24h  { client_id, client_name, username, name, email }
+client-invite:{token} JSON TTL 24h  { note }
 security:log      ZSet score=ms  value=JSON  (cap 20 000)
 security:events   Pub/Sub channel
 ```
@@ -276,6 +288,9 @@ Open (accepted or delegated):
 - Default API base = `window.location.origin` (not hardcoded localhost — critical for multi-tenant)
 - Version label in sidebar: `' v ' + commit` (space before v)
 - `ADMIN_ALLOWED_IPS` must include `172.16.0.0/12` for Docker nginx reverse proxy
+- **Invites page**: merged table of user + client invites from `GET /admin/invites`; TYPE badge (user=green, client=purple); Delete button uses `data-inv-type` + `data-inv-token` attributes (no XSS via onclick)
+- **Invite user button**: on Users page header; opens modal; sends `POST /admin/invite`; shows one-time URL
+- **Invite client button**: on Clients page header; opens modal with optional note; sends `POST /admin/invite-client`; shows one-time URL
 
 ## Multi-Tenant Docker Architecture
 
@@ -293,7 +308,7 @@ per-tenant/      (tenants/docker-compose.yml template)
 
 ## CSP Hashes
 
-Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 4 files: signin.html, enrollment.html, admin-panel.html, index.html.
+Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 6 files: signin.html, enrollment.html, admin-panel.html, index.html, signup.html, signup-client.html.
 Run `node update-csp-hashes.js` after any `<style>` block change.
 JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks.
 

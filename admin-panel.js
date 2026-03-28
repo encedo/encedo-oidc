@@ -677,9 +677,6 @@ async function loadInvites() {
     const typeBadge = t => t === 'client'
       ? '<span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(110,53,140,.12);color:var(--accent)">client</span>'
       : '<span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(52,216,154,.1);color:var(--green)">user</span>';
-    const deleteEndpoint = inv => inv.type === 'client'
-      ? `/admin/client-invites/${encodeURIComponent(inv.token)}`
-      : `/admin/invites/${encodeURIComponent(inv.token)}`;
     b.innerHTML = list.map(inv => `
       <div class="table-row" style="${cols}">
         <div class="cell-mono">${esc(inv.token.slice(0, 8))}…</div>
@@ -689,7 +686,7 @@ async function loadInvites() {
         <div class="cell-muted">${esc(inv.email) || '<span style="opacity:.4">—</span>'}</div>
         <div class="cell-muted">${fmtTtl(inv.ttl)}</div>
         <div class="cell-actions">
-          <button class="btn btn-danger btn-xs" onclick="deleteInvite('${esc(deleteEndpoint(inv))}')">🗑</button>
+          <button class="btn btn-danger btn-xs" data-inv-type="${inv.type}" data-inv-token="${esc(inv.token)}" onclick="deleteInvite(this)">🗑</button>
         </div>
       </div>`).join('');
   } catch (e) {
@@ -697,8 +694,13 @@ async function loadInvites() {
   }
 }
 
-async function deleteInvite(endpoint) {
+async function deleteInvite(btn) {
   if (!confirm('Revoke this invite?')) return;
+  const type  = btn.dataset.invType;
+  const token = btn.dataset.invToken;
+  const endpoint = type === 'client'
+    ? `/admin/client-invites/${encodeURIComponent(token)}`
+    : `/admin/invites/${encodeURIComponent(token)}`;
   try {
     await api(endpoint, { method: 'DELETE' });
     toast('Invite revoked');

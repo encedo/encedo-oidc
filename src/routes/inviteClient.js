@@ -6,6 +6,9 @@ import { vRequired }     from '../middleware/validate.js';
 const ALLOWED_SCOPES = ['openid', 'profile', 'email'];
 const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
+// Client-invite tokens: randomBytes(32).toString('hex') = 64 hex chars
+const TOKEN_RE = /^[a-f0-9]{64}$/;
+
 function generateClientSecret() { return randomBytes(32).toString('base64url'); }
 
 function validateRedirectUris(uris) {
@@ -49,7 +52,9 @@ export async function adminDeleteClientInviteHandler(req, res, next) {
 export async function signupClientPrefillHandler(req, res, next) {
   try {
     const { token } = req.query;
-    if (!token) return res.status(400).json({ error: 'token_required' });
+    if (!token || !TOKEN_RE.test(token)) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
     const raw = await redis.get(`client-invite:${token}`);
     if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
     res.json({ ok: true });
@@ -61,10 +66,11 @@ export async function signupClientRegisterHandler(req, res, next) {
   try {
     const { token, name, redirect_uris, scopes, pkce } = req.body ?? {};
 
-    if (!token) return res.status(400).json({ error: 'token_required' });
-    const raw = await redis.get(`client-invite:${token}`);
-    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    if (!token || !TOKEN_RE.test(token)) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
 
+    // Validate inputs before consuming invite — so a validation error doesn't burn the token
     const nameErr = vRequired(name, 'name', 128);
     if (nameErr) return res.status(400).json({ error: 'validation_error', error_description: nameErr });
 
@@ -74,12 +80,19 @@ export async function signupClientRegisterHandler(req, res, next) {
     const uriErr = validateRedirectUris(redirect_uris);
     if (uriErr) return res.status(400).json({ error: 'validation_error', error_description: uriErr });
 
+    if (scopes !== undefined && !Array.isArray(scopes)) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'scopes must be an array' });
+    }
     const validScopes = Array.isArray(scopes)
       ? scopes.filter(s => ALLOWED_SCOPES.includes(s))
       : ['openid', 'profile', 'email'];
     if (!validScopes.includes('openid')) validScopes.unshift('openid');
 
     const pkceEnabled = pkce !== false;
+
+    // Atomically consume invite — prevents race condition
+    const raw = await redis.getDel(`client-invite:${token}`);
+    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
 
     const client_id     = randomUUID();
     const client_secret = generateClientSecret();
@@ -98,9 +111,6 @@ export async function signupClientRegisterHandler(req, res, next) {
 
     await redis.hSet(`client:${client_id}`, record);
     await redis.sAdd('clients', client_id);
-
-    // Consume invite — one-time use
-    await redis.del(`client-invite:${token}`);
 
     await logSecurity(SEC.ADMIN_CLIENT_CREATE, { action: 'signup', client_id, name: name.trim(), ip: req.ip });
     res.status(201).json({ client_id, client_secret, name: name.trim() });

@@ -88,6 +88,14 @@ Redis-backed sliding window per endpoint (see `src/middleware/rateLimit.js`):
 
 Rate limiter is fail-closed by design: Redis outage means the OIDC service cannot function anyway (all session state is in Redis). `GET /authorize` is not rate-limited at application level — nginx `limit_req` should handle it upstream.
 
+The following endpoints are rate-limited **at nginx level only** (see README nginx config):
+
+| Endpoint | Zone | Limit |
+|----------|------|-------|
+| `GET /signup/prefill`, `GET /signup-client/prefill` | `oidc_signup` | 20 r/m, burst 5 |
+| `POST /signup/register`, `POST /signup-client/register` | `oidc_login` | 5 r/m, burst 2 |
+| `POST /admin/invite`, `POST /admin/invite-client` | `oidc_login` | 5 r/m, burst 2 |
+
 ---
 
 ## Admin API Security
@@ -111,7 +119,7 @@ Set on all responses via `src/app.js`:
 | `Referrer-Policy` | `no-referrer` |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` (production only) |
 
-JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`) — no inline `<script>` blocks. `script-src 'self'` is enforced without `'unsafe-inline'`. CSP style hashes cover exact `<style>` block content in HTML files.
+JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`, `signup.js`, `signup-client.js`, `index.js`) — no inline `<script>` blocks. `script-src 'self'` is enforced without `'unsafe-inline'`. CSP style hashes cover exact `<style>` block content in HTML files (6 files: signin, enrollment, admin-panel, index, signup, signup-client).
 
 ---
 
@@ -159,13 +167,23 @@ Logged events include: login attempts, signature verification results, token iss
 - Duplicate public key rejection: checked across all users before commit
 - Token invalidated on user delete: no orphaned enrollment tokens
 
+### Invite Flow Security
+
+- Invite tokens: `randomBytes(32).toString('hex')` — 64 hex chars, 256-bit entropy, 24 h TTL
+- Token delivered via admin panel as a URL fragment (`#token=...`) — not logged by server
+- Token format validated with `TOKEN_RE = /^[a-f0-9]{64}$/` before any Redis call
+- Inputs validated **before** token consumption — a validation error does not burn the invite
+- Token consumed atomically with `getDel` — race-safe, single use
+- User invite (`invite:{token}`) tied to a specific `client_id` — user is enrolled for that client
+- Client invite (`client-invite:{token}`) creates a new OIDC client with credentials shown once
+
 ---
 
 ## Known Limitations and Accepted Risks
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| `GET /authorize` not rate-limited at app level | Medium | Delegate to nginx `limit_req` |
+| `GET /authorize` not rate-limited at app level | Medium | Delegated to nginx `limit_req` (see README) |
 | id_token not revocable (JWT) | Low | Standard OIDC limitation; configure short `id_token_ttl` per client; JWKS key removed on user delete |
 | Admin panel has no browser logout | Low | Bearer token in browser memory; no persistent session |
 | Redis without TLS | Ops | Use `rediss://` URL in production; run Redis on loopback or VPN-protected network |

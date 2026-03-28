@@ -5,6 +5,9 @@ import { validate, vEmail, vUsername, vDisplayName, vUrl } from '../middleware/v
 
 const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
+// Invite tokens: randomBytes(32).toString('hex') = 64 hex chars
+const TOKEN_RE = /^[a-f0-9]{64}$/;
+
 // --- POST /admin/invite ---------------------------------------
 export async function adminInviteHandler(req, res, next) {
   try {
@@ -45,7 +48,9 @@ export async function adminInviteHandler(req, res, next) {
 export async function signupPrefillHandler(req, res, next) {
   try {
     const { token } = req.query;
-    if (!token) return res.status(400).json({ error: 'token_required' });
+    if (!token || !TOKEN_RE.test(token)) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
 
     const raw = await redis.get(`invite:${token}`);
     if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
@@ -61,11 +66,22 @@ export async function signupPrefillHandler(req, res, next) {
 }
 
 // --- GET /admin/invites ---------------------------------------
+async function scanKeys(pattern) {
+  const keys = [];
+  let cursor = 0;
+  do {
+    const result = await redis.scan(cursor, { MATCH: pattern, COUNT: 100 });
+    cursor = Number(result.cursor);
+    keys.push(...result.keys);
+  } while (cursor !== 0);
+  return keys;
+}
+
 export async function adminListInvitesHandler(_req, res, next) {
   try {
     const [userKeys, clientKeys] = await Promise.all([
-      redis.keys('invite:*'),
-      redis.keys('client-invite:*'),
+      scanKeys('invite:*'),
+      scanKeys('client-invite:*'),
     ]);
 
     const allKeys = [
@@ -122,12 +138,11 @@ export async function signupRegisterHandler(req, res, next) {
   try {
     const { token, username, name, email, hsm_url } = req.body ?? {};
 
-    if (!token) return res.status(400).json({ error: 'token_required' });
+    if (!token || !TOKEN_RE.test(token)) {
+      return res.status(400).json({ error: 'invalid_token' });
+    }
 
-    const raw = await redis.get(`invite:${token}`);
-    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
-    const invite = JSON.parse(raw);
-
+    // Validate inputs before consuming invite — so a validation error doesn't burn the token
     const err = validate(
       vUsername(username),
       vEmail(email),
@@ -140,6 +155,11 @@ export async function signupRegisterHandler(req, res, next) {
     if (await redis.hGet('username_index', uname)) {
       return res.status(409).json({ error: 'username_already_exists' });
     }
+
+    // Atomically consume invite — prevents race condition (two concurrent requests with same token)
+    const raw = await redis.getDel(`invite:${token}`);
+    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    const invite = JSON.parse(raw);
 
     // Derive client redirect origin for post-enrollment Close button
     const clientRaw = await redis.hGetAll(`client:${invite.client_id}`);
@@ -171,9 +191,6 @@ export async function signupRegisterHandler(req, res, next) {
       hsm_url:  hsm_url.trim(),
     }), { EX: 3600 }); // 1h — user is actively enrolling right now
     await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
-
-    // Consume invite — one-time use
-    await redis.del(`invite:${token}`);
 
     await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'signup', sub, username: uname, client_id: invite.client_id, ip: req.ip });
 
