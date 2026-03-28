@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
+<title>Encedo -- Register Application</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+
+  :root {
+    --purple: #6E358C;
+    --navy:   #2A225E;
+    --text:   #222;
+    --muted:  #666;
+    --border: #ccc;
+    --white:  #fff;
+    --red:    #e74c3c;
+    --green:  #2ecc71;
+    --amber:  #f39c12;
+    --shadow: -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+  }
+
+  .screen { display: none; width: 100%; max-width: 480px; }
+  .screen.visible { display: block; }
+
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub { font-size: 11px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-top: 10px; }
+
+  .card { background: var(--white); border-radius: 28px; box-shadow: var(--shadow); padding: 36px 40px 40px; }
+
+  .field { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+  .field-input, .field-textarea {
+    display: block; width: 100%; padding: 13px 16px;
+    border: 1px solid var(--border); border-radius: 20px;
+    font-family: 'Inter', sans-serif; font-size: 15px; color: var(--text);
+    background: var(--white); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .field-textarea { border-radius: 16px; resize: vertical; min-height: 90px; }
+  .field-input:focus, .field-textarea:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(110,53,140,.12); }
+  .field-input::placeholder, .field-textarea::placeholder { color: #aaa; }
+  .field-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+  .btn {
+    display: inline-block; padding: 14px 28px; border: none; border-radius: 22px;
+    font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: .03em; cursor: pointer;
+    transition: background .3s, box-shadow .3s, transform .15s;
+    text-align: center; line-height: 1;
+  }
+  .btn-full { display: block; width: 100%; margin-top: 6px; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
+  @keyframes gradient-shift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%; animation: gradient-shift 3s ease infinite;
+    color: var(--white); box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
+
+  .err-msg { font-size: 12px; color: var(--red); min-height: 18px; margin-top: 8px; text-align: center; }
+
+  .icon-circle { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 22px; }
+  .icon-circle-ok  { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35); }
+  .icon-circle-err { background: rgba(231,76,60,.1);   border: 1px solid rgba(231,76,60,.35); }
+
+  .card-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 5px; text-align: center; }
+  .card-sub   { font-size: 12px; color: var(--muted); margin-bottom: 20px; text-align: center; }
+
+  /* Scope / PKCE toggles */
+  .toggles-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .scope-tag {
+    padding: 7px 14px; border: 1px solid var(--border); border-radius: 20px;
+    font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer;
+    transition: all .12s; user-select: none; background: var(--white);
+  }
+  .scope-tag.required { opacity: .45; cursor: default; border-color: var(--purple); color: var(--purple); }
+  .scope-tag.on { background: rgba(110,53,140,.08); border-color: var(--purple); color: var(--purple); }
+
+  .pkce-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border: 1px solid var(--border); border-radius: 16px;
+    cursor: pointer; transition: all .12s; user-select: none; margin-bottom: 4px;
+  }
+  .pkce-row.on { background: rgba(110,53,140,.06); border-color: var(--purple); }
+  .pkce-check {
+    width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0;
+    background: #eee; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; transition: all .12s;
+  }
+  .pkce-row.on .pkce-check { background: var(--purple); border-color: var(--navy); }
+  .pkce-label { font-size: 13px; font-weight: 600; color: var(--text); }
+  .pkce-hint  { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  /* Credential box */
+  .cred-box { background: #f9f7fc; border: 1px solid rgba(110,53,140,.2); border-radius: 16px; padding: 16px 18px; margin-bottom: 18px; }
+  .cred-label { font-size: 10px; font-weight: 600; letter-spacing: .15em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .cred-value { font-family: monospace; font-size: 13px; color: var(--purple); word-break: break-all; line-height: 1.6; }
+  .cred-copy { font-size: 11px; color: var(--muted); cursor: pointer; float: right; margin-top: -2px; }
+  .cred-copy:hover { color: var(--purple); }
+
+  .warn-box { display: flex; align-items: flex-start; gap: 9px; background: rgba(243,156,18,.07); border: 1px solid rgba(243,156,18,.3); border-radius: 12px; padding: 11px 14px; margin-bottom: 18px; font-size: 12px; color: var(--amber); line-height: 1.5; }
+
+  @media (max-width: 520px) { .card { padding: 28px 22px 30px; border-radius: 22px; } }
+</style>
+</head>
+<body>
+
+<!-- INVALID / EXPIRED -->
+<div class="screen" id="s-invalid">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Register Application</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-err">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </div>
+    <p class="card-title" style="color:var(--red);">Invite invalid or expired</p>
+    <p class="card-sub">This link is no longer valid. Please contact your administrator for a new invite.</p>
+  </div>
+</div>
+
+<!-- FORM -->
+<div class="screen" id="s-form">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Register Application</div>
+  </div>
+  <div class="card">
+    <div class="field">
+      <label class="field-label" for="sc-name">Application name</label>
+      <input class="field-input" id="sc-name" type="text" placeholder="My App" autocomplete="off">
+    </div>
+    <div class="field">
+      <label class="field-label" for="sc-uris">Redirect URI(s)</label>
+      <textarea class="field-textarea" id="sc-uris" placeholder="https://myapp.example.com/callback&#10;https://myapp.example.com/silent"></textarea>
+      <div class="field-hint">One URI per line &middot; must be https (or http://localhost)</div>
+    </div>
+    <div class="field">
+      <label class="field-label">Scopes</label>
+      <div class="toggles-row">
+        <div class="scope-tag required">openid</div>
+        <div class="scope-tag on" data-scope="profile" onclick="toggleScope(this)">profile</div>
+        <div class="scope-tag on" data-scope="email" onclick="toggleScope(this)">email</div>
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label">PKCE</label>
+      <div class="pkce-row on" id="pkce-row" onclick="togglePkce()">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.2"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+        <span class="pkce-label">Require PKCE</span>
+        <span class="pkce-hint">recommended</span>
+      </div>
+      <div class="field-hint">PKCE (S256) protects against authorization code interception</div>
+    </div>
+    <button class="btn btn-primary btn-full" id="sc-register-btn" onclick="doRegister()">Register &rarr;</button>
+    <div class="err-msg" id="sc-err"></div>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div class="screen" id="s-done">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Register Application</div>
+  </div>
+  <div class="card">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <p class="card-title">Application registered!</p>
+    <p class="card-sub" style="margin-bottom:18px">Save these credentials — the secret will not be shown again.</p>
+    <div class="warn-box">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Copy and store the client secret now. It cannot be retrieved later.
+    </div>
+    <div class="cred-box">
+      <div class="cred-label">Client ID <span class="cred-copy" onclick="copyVal('done-client-id')">copy</span></div>
+      <div class="cred-value" id="done-client-id"></div>
+    </div>
+    <div class="cred-box">
+      <div class="cred-label">Client Secret <span class="cred-copy" onclick="copyVal('done-client-secret')">copy</span></div>
+      <div class="cred-value" id="done-client-secret"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/signup-client.js"></script>
+</body>
+</html>

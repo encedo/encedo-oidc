@@ -673,15 +673,23 @@ async function loadInvites() {
       b.innerHTML = '<div class="empty"><div class="empty-icon">✉</div>No active invites</div>';
       return;
     }
+    const cols = 'grid-template-columns:110px 70px 1fr 1.1fr 1.3fr 90px 42px;';
+    const typeBadge = t => t === 'client'
+      ? '<span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(110,53,140,.12);color:var(--accent)">client</span>'
+      : '<span style="font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:5px;background:rgba(52,216,154,.1);color:var(--green)">user</span>';
+    const deleteEndpoint = inv => inv.type === 'client'
+      ? `/admin/client-invites/${encodeURIComponent(inv.token)}`
+      : `/admin/invites/${encodeURIComponent(inv.token)}`;
     b.innerHTML = list.map(inv => `
-      <div class="table-row" style="grid-template-columns:110px 1fr 1.2fr 1.4fr 100px 42px;">
+      <div class="table-row" style="${cols}">
         <div class="cell-mono">${esc(inv.token.slice(0, 8))}…</div>
-        <div class="cell-muted">${esc(inv.client_name)}</div>
+        <div>${typeBadge(inv.type)}</div>
+        <div class="cell-muted">${esc(inv.client_name) || '<span style="opacity:.4">—</span>'}</div>
         <div class="cell-muted">${esc(inv.username) || '<span style="opacity:.4">—</span>'}</div>
         <div class="cell-muted">${esc(inv.email) || '<span style="opacity:.4">—</span>'}</div>
         <div class="cell-muted">${fmtTtl(inv.ttl)}</div>
         <div class="cell-actions">
-          <button class="btn btn-danger btn-xs" onclick="deleteInvite('${esc(inv.token)}')">🗑</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteInvite('${esc(deleteEndpoint(inv))}')">🗑</button>
         </div>
       </div>`).join('');
   } catch (e) {
@@ -689,16 +697,37 @@ async function loadInvites() {
   }
 }
 
-async function deleteInvite(token) {
+async function deleteInvite(endpoint) {
   if (!confirm('Revoke this invite?')) return;
   try {
-    await api(`/admin/invites/${encodeURIComponent(token)}`, { method: 'DELETE' });
+    await api(endpoint, { method: 'DELETE' });
     toast('Invite revoked');
     loadInvites();
   } catch (e) {
     toast(e.message, 'err');
   }
 }
+
+window.openInviteClient = function() {
+  $('invc-note').value = '';
+  openModal('modal-invite-client');
+};
+
+window.submitInviteClient = async function() {
+  try {
+    const note = $('invc-note').value.trim();
+    const data = await api('/admin/invite-client', {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+    closeModal('modal-invite-client');
+    $('invc-result-url').textContent = data.invite_url;
+    openModal('modal-invite-client-link');
+    loadInvites();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+};
 
 // Restore theme
 if (localStorage.getItem('encedo-theme') === 'light')

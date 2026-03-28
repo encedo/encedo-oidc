@@ -63,29 +63,40 @@ export async function signupPrefillHandler(req, res, next) {
 // --- GET /admin/invites ---------------------------------------
 export async function adminListInvitesHandler(_req, res, next) {
   try {
-    const keys = await redis.keys('invite:*');
-    if (keys.length === 0) return res.json([]);
+    const [userKeys, clientKeys] = await Promise.all([
+      redis.keys('invite:*'),
+      redis.keys('client-invite:*'),
+    ]);
+
+    const allKeys = [
+      ...userKeys.map(k => ({ key: k, type: 'user',   prefix: 'invite:' })),
+      ...clientKeys.map(k => ({ key: k, type: 'client', prefix: 'client-invite:' })),
+    ];
+
+    if (allKeys.length === 0) return res.json([]);
 
     const pipeline = redis.multi();
-    for (const key of keys) {
+    for (const { key } of allKeys) {
       pipeline.get(key);
       pipeline.ttl(key);
     }
     const results = await pipeline.exec();
 
     const invites = [];
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0; i < allKeys.length; i++) {
+      const { key, type, prefix } = allKeys[i];
       const raw = results[i * 2];
       const ttl = results[i * 2 + 1];
       if (!raw) continue;
       const data = JSON.parse(raw);
-      const token = keys[i].slice('invite:'.length);
+      const token = key.slice(prefix.length);
       invites.push({
         token,
-        client_id:   data.client_id,
-        client_name: data.client_name,
-        username:    data.username,
-        email:       data.email,
+        type,
+        client_id:   data.client_id   ?? null,
+        client_name: data.client_name ?? data.note ?? '',
+        username:    data.username    ?? '',
+        email:       data.email       ?? '',
         ttl,
       });
     }

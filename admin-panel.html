@@ -281,9 +281,10 @@ html.light .client-check-name{color:var(--text)}
         <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadInvites()">&#8635;</button>
       </div>
       <div class="table">
-        <div class="table-head" style="grid-template-columns:110px 1fr 1.2fr 1.4fr 100px 42px;">
+        <div class="table-head" style="grid-template-columns:110px 70px 1fr 1.1fr 1.3fr 90px 42px;">
           <div class="table-head-cell">TOKEN</div>
-          <div class="table-head-cell">CLIENT</div>
+          <div class="table-head-cell">TYPE</div>
+          <div class="table-head-cell">CLIENT / NOTE</div>
           <div class="table-head-cell">USERNAME</div>
           <div class="table-head-cell">EMAIL</div>
           <div class="table-head-cell">EXPIRES IN</div>
@@ -347,6 +348,7 @@ html.light .client-check-name{color:var(--text)}
           <div class="page-sub" id="clients-sub">loading...</div>
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" onclick="openInviteClient()">&#9993; Invite client</button>
           <button class="btn btn-primary" onclick="openAddClient()">+ Add client</button>
           <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadClients()">&#8635;</button>
         </div>
@@ -441,6 +443,50 @@ html.light .client-check-name{color:var(--text)}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-invite-user')">Cancel</button>
       <button class="btn btn-primary" onclick="submitInviteUser()">Generate link</button>
+    </div>
+  </div>
+</div>
+
+<!-- INVITE CLIENT -->
+<div class="overlay" id="modal-invite-client">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Invite client</div>
+      <button class="modal-close" onclick="closeModal('modal-invite-client')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label class="field-label" for="invc-note">Note (optional)</label>
+        <input class="field-input" id="invc-note" type="text" placeholder="e.g. Nextcloud, partner app…">
+        <div class="field-hint">For your reference only — not shown to the client</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-invite-client')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitInviteClient()">Generate link</button>
+    </div>
+  </div>
+</div>
+
+<!-- INVITE CLIENT LINK -->
+<div class="overlay" id="modal-invite-client-link">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Client invite link generated</div>
+      <button class="modal-close" onclick="closeModal('modal-invite-client-link')">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">
+        Send this link to the application owner. It expires in 24 hours and can only be used once.
+      </p>
+      <div class="field">
+        <label class="field-label">Invite URL</label>
+        <div class="id-badge" id="invc-result-url" style="word-break:break-all;font-size:11px;line-height:1.6">--</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-invite-client-link')">Close</button>
+      <button class="btn btn-ghost" onclick="copyText('invc-result-url');closeModal('modal-invite-client-link')">&#128203; Copy &amp; Close</button>
     </div>
   </div>
 </div>

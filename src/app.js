@@ -17,6 +17,7 @@ import adminClients                              from './routes/adminClients.js'
 import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
 import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler } from './routes/invite.js';
+import { adminInviteClientHandler, adminDeleteClientInviteHandler, signupClientPrefillHandler, signupClientRegisterHandler } from './routes/inviteClient.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT      = resolve(__dirname, '..');
@@ -40,6 +41,7 @@ const STYLE_HASHES = [
   "'sha256-MWnX7fnv+mswI1mJVjZyvWCikal94QvQajDilWxLKnE='", // admin-panel.html
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
   "'sha256-YMgnaZvmyACAOqjECMMDby0VyYzGTpar50q5kAdzAyk='", // signup.html
+  "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",
@@ -97,7 +99,8 @@ app.get('/health', (_req, res) => {
 app.get('/',                (_req, res) => res.sendFile(resolve(ROOT, 'index.html')));
 app.get('/admin',           (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.html')));
 app.get('/enrollment',      (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.html')));
-app.get('/signup.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signup.js')));
+app.get('/signup.js',            (_req, res) => res.sendFile(resolve(ROOT, 'signup.js')));
+app.get('/signup-client.js',     (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.js')));
 app.get('/logo.png',        (_req, res) => res.sendFile(resolve(ROOT, 'logo.png')));
 app.get('/favicon.ico',    (_req, res) => res.sendFile(resolve(ROOT, 'favicon.ico')));
 app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js')));
@@ -116,9 +119,14 @@ app.use('/', oidc);
 app.use('/enrollment', enrollment);
 
 // --- Signup (invite flow, public) ---------------------------------------------
-app.get('/signup',                (_req, res) => res.sendFile(resolve(ROOT, 'signup.html')));
-app.get('/signup/prefill',        signupPrefillHandler);
-app.post('/signup/register',      signupRegisterHandler);
+app.get('/signup',                 (_req, res) => res.sendFile(resolve(ROOT, 'signup.html')));
+app.get('/signup/prefill',         signupPrefillHandler);
+app.post('/signup/register',       signupRegisterHandler);
+
+// --- Signup client (client invite flow, public) --------------------------------
+app.get('/signup-client',          (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.html')));
+app.get('/signup-client/prefill',  signupClientPrefillHandler);
+app.post('/signup-client/register', signupClientRegisterHandler);
 
 // --- Admin API -- network check + auth -----------------------------------------
 app.use('/admin',
@@ -130,8 +138,10 @@ app.use('/admin/users',   adminUsers);
 app.use('/admin/clients', adminClients);
 app.get('/admin/audit-log', getAuditLog);
 app.post('/admin/invite', adminInviteHandler);
+app.post('/admin/invite-client', adminInviteClientHandler);
 app.get('/admin/invites', adminListInvitesHandler);
 app.delete('/admin/invites/:token', adminDeleteInviteHandler);
+app.delete('/admin/client-invites/:token', adminDeleteClientInviteHandler);
 
 // --- 404 ----------------------------------------------------------------------
 app.use((_req, res) => res.status(404).json({ error: 'not_found' }));

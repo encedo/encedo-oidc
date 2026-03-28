@@ -17,6 +17,7 @@ const FILES = [
   { file: 'admin-panel.html', label: 'admin-panel.html' },
   { file: 'index.html',       label: 'index.html' },
   { file: 'signup.html',      label: 'signup.html' },
+  { file: 'signup-client.html', label: 'signup-client.html' },
 ];
 
 function styleHash(html) {
