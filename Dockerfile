@@ -9,6 +9,8 @@ COPY index.html     index.js     \
      signin.html    signin.js    \
      enrollment.html enrollment.js \
      admin-panel.html admin-panel.js \
+     signup.html     signup.js    \
+     signup-client.html signup-client.js \
      hem-sdk.js      logo.png    ./
 
 ARG GIT_COMMIT=unknown
