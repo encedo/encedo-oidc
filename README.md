@@ -62,16 +62,18 @@ sudo apt install -y nodejs redis-server
 sudo systemctl enable --now redis-server
 ```
 
-#### 2. Clone the repo and install dependencies
+#### 2. Download and extract release
 
 ```
 sudo useradd -r -s /usr/sbin/nologin -d /opt/encedo-oidc encedo
 sudo mkdir -p /opt/encedo-oidc
 sudo chown encedo:encedo /opt/encedo-oidc
 
-sudo -u encedo git clone https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc
-cd /opt/encedo-oidc
-sudo -u encedo npm install --omit=dev
+VERSION=v0.1.0
+curl -fsSL https://github.com/encedo/encedo-oidc/releases/download/${VERSION}/encedo-oidc-${VERSION}.zip \
+  -o /tmp/encedo-oidc.zip
+sudo unzip /tmp/encedo-oidc.zip -d /opt/encedo-oidc
+sudo chown -R encedo:encedo /opt/encedo-oidc
 ```
 
 #### 3. Configure
