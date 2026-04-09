@@ -323,3 +323,32 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
 7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s)
+
+---
+
+## Release Process
+
+Automated via GitHub Actions (`.github/workflows/release.yml`).
+
+**To release a new version:**
+
+```bash
+git tag v1.0.0
+git push --tags
+```
+
+**What happens:**
+1. GitHub Actions detects tag `v*`
+2. Builds ZIP with `npm ci --omit=dev` + `node_modules` + `src/` + all HTML/JS/config files
+3. Creates **Release** on GitHub with `encedo-oidc-v1.0.0.zip` attached
+4. Auto-generates release notes from commits
+
+**Installation:**
+```bash
+VERSION=v1.0.0
+curl -fsSL https://github.com/encedo/encedo-oidc/releases/download/${VERSION}/encedo-oidc-${VERSION}.zip \
+  -o /tmp/encedo-oidc.zip
+sudo unzip /tmp/encedo-oidc.zip -d /opt/encedo-oidc
+```
+
+**Versioning:** Use semantic versioning (v0.1.0, v1.0.0, v1.1.0, etc.).
