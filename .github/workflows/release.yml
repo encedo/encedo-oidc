@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install production dependencies
+        run: npm ci --omit=dev
+
+      - name: Build ZIP archive
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          ARCHIVE="encedo-oidc-${VERSION}.zip"
+          zip -r "$ARCHIVE" \
+            src/ \
+            node_modules/ \
+            index.html index.js \
+            signin.html signin.js \
+            enrollment.html enrollment.js \
+            admin-panel.html admin-panel.js \
+            signup.html signup.js \
+            signup-client.html signup-client.js \
+            hem-sdk.js favicon.ico \
+            package.json .env.example
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
+          generate_release_notes: true
