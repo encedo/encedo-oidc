@@ -406,6 +406,15 @@ html.light .client-check-name{color:var(--text)}
         <label class="field-label">HSM URL</label>
         <input class="field-input" id="u-hsm" placeholder="https://my.ence.do">
       </div>
+      <div class="field">
+        <label class="field-label">Key algorithm</label>
+        <select class="field-input" id="u-key-type" style="appearance:auto;cursor:pointer;">
+          <option value="Ed25519">Ed25519 (EdDSA)</option>
+          <option value="P256">P-256 (ECDSA / ES256)</option>
+          <option value="P384">P-384 (ECDSA / ES384)</option>
+          <option value="P521">P-521 (ECDSA / ES512)</option>
+        </select>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>
@@ -438,6 +447,16 @@ html.light .client-check-name{color:var(--text)}
       <div class="field">
         <label class="field-label" for="inv-email">Email</label>
         <input class="field-input" id="inv-email" type="email" placeholder="">
+      </div>
+      <div class="field">
+        <label class="field-label" for="inv-key-type">Key algorithm (optional — leave blank to let user choose)</label>
+        <select class="field-input" id="inv-key-type" style="appearance:auto;cursor:pointer;">
+          <option value="">User chooses</option>
+          <option value="Ed25519">Ed25519 (EdDSA)</option>
+          <option value="P256">P-256 (ECDSA / ES256)</option>
+          <option value="P384">P-384 (ECDSA / ES384)</option>
+          <option value="P521">P-521 (ECDSA / ES512)</option>
+        </select>
       </div>
     </div>
     <div class="modal-footer">
@@ -557,8 +576,8 @@ html.light .client-check-name{color:var(--text)}
         <div class="id-badge" id="eu-kid">--</div>
       </div>
       <div class="field">
-        <label class="field-label">Public key (Ed25519)</label>
-        <div class="id-badge" id="eu-pubkey-preview" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">--</div>
+        <label class="field-label">Public key</label>
+        <div class="id-badge" id="eu-pubkey-preview" style="word-break:break-all;white-space:normal">--</div>
         <div class="field-hint">Key type: <span style="color:var(--green)" id="eu-key-type">EdDSA</span></div>
       </div>
       <div class="divider"></div>

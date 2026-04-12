@@ -4,7 +4,9 @@ import redis from '../services/redis.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid, vClaimKey, vOptional } from '../middleware/validate.js';
+import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid, vClaimKey, vOptional, vKeyType } from '../middleware/validate.js';
+
+const DEFAULT_KEY_TYPE = 'Ed25519';
 
 const router = Router();
 
@@ -47,15 +49,18 @@ router.get('/:sub', async (req, res, next) => {
 // --- POST /admin/users ----------------------------------------
 router.post('/', async (req, res, next) => {
   try {
-    const { username, name, email, hsm_url } = req.body ?? {};
+    const { username, name, email, hsm_url, key_type } = req.body ?? {};
 
     const err = validate(
       vUsername(username),
       vEmail(email),
       vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true }),
       vDisplayName(name),
+      vKeyType(key_type),
     );
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
+
+    const resolvedKeyType = key_type ?? DEFAULT_KEY_TYPE;
 
     // username must be unique -- O(1) index lookup
     const uname = username.trim();
@@ -83,7 +88,8 @@ router.post('/', async (req, res, next) => {
     const token = randomBytes(32).toString('base64url');
     await redis.set(`enrollment:${token}`, JSON.stringify({
       sub,
-      username: record.username,
+      username:        record.username,
+      forced_key_type: resolvedKeyType,
     }), { EX: 86400 });
     await redis.hSet(`user:${sub}`, { enrollment_token: token });
 
@@ -184,6 +190,12 @@ router.post('/:sub/enrollment', async (req, res, next) => {
     const user = deserialize(raw);
     if (!user) return res.status(404).json({ error: 'user_not_found' });
 
+    const { key_type } = req.body ?? {};
+    const ktErr = vKeyType(key_type);
+    if (ktErr) return res.status(400).json({ error: 'validation_error', error_description: ktErr });
+    // If not specified, preserve existing key_type or fall back to default
+    const resolvedKeyType = key_type ?? raw.key_type ?? DEFAULT_KEY_TYPE;
+
     // Invalidate previous enrollment token if present
     if (raw.enrollment_token) {
       await redis.del(`enrollment:${raw.enrollment_token}`);
@@ -192,7 +204,8 @@ router.post('/:sub/enrollment', async (req, res, next) => {
     const token = randomBytes(32).toString('base64url');
     await redis.set(`enrollment:${token}`, JSON.stringify({
       sub,
-      username: raw.username,
+      username:        raw.username,
+      forced_key_type: resolvedKeyType,
     }), { EX: 86400 });
     await redis.hSet(`user:${sub}`, { enrollment_token: token });
 

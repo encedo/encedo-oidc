@@ -408,12 +408,15 @@ export class HEM {
    *
    * @param {string} token   Bearer JWT
    * @param {string} label   Human-readable key label
-   * @param {string} type    Key type, e.g. 'ED25519'
+   * @param {string} type    Key type, e.g. 'ED25519', 'SECP256R1'
    * @param {string} descr   Base64-encoded description (128-byte field)
+   * @param {string} [mode]  Optional key mode, e.g. 'ExDSA' for ECDSA keys
    * @returns {Promise<{kid: string}>}
    */
-  async createKeyPair(token, label, type, descr) { // label max 32 chars, descr base64-encoded (max 64 chars)
-    return this.#req('POST', `${this.#baseUrl}/api/keymgmt/create`, { label, type, descr }, token);
+  async createKeyPair(token, label, type, descr, mode) { // label max 32 chars, descr base64-encoded (max 64 chars)
+    const body = { label, type, descr };
+    if (mode) body.mode = mode;
+    return this.#req('POST', `${this.#baseUrl}/api/keymgmt/create`, body, token);
   }
 
   /**

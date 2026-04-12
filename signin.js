@@ -1,5 +1,43 @@
 import { HEM, HemError } from '/hem-sdk.js';
 
+// --- Key type helpers -----------------------------------------
+
+/** Maps key_type to exdsaSign alg string for Encedo HSM API. */
+function exdsaAlg(keyType) {
+  if (keyType === 'P256') return 'SHA256WithECDSA';
+  if (keyType === 'P384') return 'SHA384WithECDSA';
+  if (keyType === 'P521') return 'SHA512WithECDSA';
+  return 'Ed25519'; // Ed25519 (default / legacy)
+}
+
+function derToP1363(derBytes, keyType) {
+  const n = { P256: 32, P384: 48, P521: 66 }[keyType];
+  let pos = 1;
+  pos += derBytes[pos] & 0x80 ? 1 + (derBytes[pos] & 0x7f) : 1;
+  function readInt() {
+    pos++;
+    const len = derBytes[pos++];
+    const val = derBytes.slice(pos, pos + len);
+    pos += len;
+    const trimmed = val[0] === 0 ? val.slice(1) : val;
+    const out = new Uint8Array(n);
+    out.set(trimmed, n - trimmed.length);
+    return out;
+  }
+  const r = readInt(), s = readInt();
+  const out = new Uint8Array(n * 2);
+  out.set(r, 0); out.set(s, n);
+  return out;
+}
+
+/** Human-readable algorithm label for UI. */
+function keyTypeDisplay(keyType) {
+  if (keyType === 'P256') return 'ES256 / P-256';
+  if (keyType === 'P384') return 'ES384 / P-384';
+  if (keyType === 'P521') return 'ES512 / P-521';
+  return 'EdDSA / Ed25519';
+}
+
 // --- OIDC params --------------------------------------
 const params = new URLSearchParams(window.location.search);
 const OIDC = {
@@ -451,6 +489,7 @@ async function doApproveSign() {
       document.getElementById('sign-status').textContent    = 'Confirm on your mobile device';
       document.getElementById('sign-username').textContent  = loginData.user_username;
       document.getElementById('sign-keysource').textContent = `HSM \u00b7 ${label}`;
+      document.getElementById('sign-algorithm').textContent = keyTypeDisplay(loginData.key_type);
       document.getElementById('cancel-mobile-btn').style.display  = '';
       document.getElementById('cancel-redirect-btn').style.display = 'none';
       showScreen('s-signing');
@@ -494,12 +533,14 @@ async function doCompleteSign(useToken, kid, label, loginData) {
   document.getElementById('sign-status').textContent    = 'Generating cryptographic signature\u2026';
   document.getElementById('sign-username').textContent  = loginData.user_username;
   document.getElementById('sign-keysource').textContent = `HSM \u00b7 ${label}`;
+  document.getElementById('sign-algorithm').textContent = keyTypeDisplay(loginData.key_type);
   document.getElementById('cancel-mobile-btn').style.display  = 'none';
   document.getElementById('cancel-redirect-btn').style.display = 'none';
   showScreen('s-signing');
 
   try {
-    const sigBytes  = await session.hem.exdsaSign(useToken, kid, loginData.signing_input);
+    const rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, exdsaAlg(loginData.key_type));
+    const sigBytes  = loginData.key_type !== 'Ed25519' ? derToP1363(rawSigBytes, loginData.key_type) : rawSigBytes;
     const signature = bytesToBase64url(sigBytes);
 
     const confirmRes = await fetch('/authorize/confirm', {

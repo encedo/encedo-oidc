@@ -6,6 +6,58 @@ const params = new URLSearchParams(window.location.hash.slice(1));
 const token  = params.get('token') || '';
 
 let userData = { sub: '', username: '' };
+let clientRedirectOrigin = null;
+
+// --- Key type helpers -----------------------------------------
+
+/** Maps key_type to HSM createKeyPair type string. */
+function hsmKeyType(keyType) {
+  if (keyType === 'P256') return 'SECP256R1';
+  if (keyType === 'P384') return 'SECP384R1';
+  if (keyType === 'P521') return 'SECP521R1';
+  return 'ED25519';
+}
+
+/** Maps key_type to exdsaSign alg string. */
+function exdsaAlg(keyType) {
+  if (keyType === 'P256') return 'SHA256WithECDSA';
+  if (keyType === 'P384') return 'SHA384WithECDSA';
+  if (keyType === 'P521') return 'SHA512WithECDSA';
+  return 'Ed25519';
+}
+
+/**
+ * Convert DER-encoded ECDSA signature to IEEE P1363 (r||s, fixed-width).
+ * HSM returns DER; JWT and our backend expect P1363.
+ */
+function derToP1363(derBytes, keyType) {
+  const n = { P256: 32, P384: 48, P521: 66 }[keyType];
+  // Skip SEQUENCE header: tag (1) + length (1 or 2 bytes for P-521 where len > 127)
+  let pos = 1;
+  pos += derBytes[pos] & 0x80 ? 1 + (derBytes[pos] & 0x7f) : 1;
+  function readInt() {
+    pos++;                              // skip 0x02 INTEGER tag
+    const len = derBytes[pos++];
+    const val = derBytes.slice(pos, pos + len);
+    pos += len;
+    const trimmed = val[0] === 0 ? val.slice(1) : val; // strip sign byte
+    const out = new Uint8Array(n);
+    out.set(trimmed, n - trimmed.length);               // right-align
+    return out;
+  }
+  const r = readInt(), s = readInt();
+  const out = new Uint8Array(n * 2);
+  out.set(r, 0); out.set(s, n);
+  return out;
+}
+
+/** Human-readable label for key type. */
+function keyTypeLabel(keyType) {
+  if (keyType === 'P256') return 'P-256 (ECDSA)';
+  if (keyType === 'P384') return 'P-384 (ECDSA)';
+  if (keyType === 'P521') return 'P-521 (ECDSA)';
+  return 'Ed25519 (EdDSA)';
+}
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
@@ -33,11 +85,30 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     userData = data;
+    clientRedirectOrigin = data.client_redirect_origin ?? null;
     document.getElementById('f-username').textContent = data.username;
     document.getElementById('f-sub').textContent      = data.sub;
     if (data.hsm_url) document.getElementById('f-hsm-url').value = data.hsm_url;
-    // challenge stored for use during submit -- must be signed with the new key
     userData.challenge = data.challenge;
+
+    // Key type: if admin forced it, hide selector and show info label
+    const forcedKeyType = data.forced_key_type;
+    const ktField  = document.getElementById('key-type-field');
+    const ktSelect = document.getElementById('f-key-type');
+    const ktForced = document.getElementById('key-type-forced');
+
+    if (forcedKeyType) {
+      ktField.style.display  = 'none';
+      ktForced.style.display = '';
+      document.getElementById('key-type-forced-label').textContent = keyTypeLabel(forcedKeyType);
+      userData.key_type = forcedKeyType;
+    } else {
+      ktField.style.display  = '';
+      ktForced.style.display = 'none';
+      userData.key_type = ktSelect.value; // default from select
+      ktSelect.addEventListener('change', () => { userData.key_type = ktSelect.value; });
+    }
+
     showScreen('s-form');
 
   } catch {
@@ -54,6 +125,7 @@ async function doSubmit() {
   const enrollToken = new URLSearchParams(location.hash.slice(1)).get('token');
   const formErr     = document.getElementById('form-err');
   const btn         = document.getElementById('submit-btn');
+  const key_type    = userData.key_type || 'Ed25519';
 
   if (!hsm_url) {
     formErr.textContent = 'Please enter the Encedo HSM URL.';
@@ -89,13 +161,12 @@ async function doSubmit() {
     const genToken = await authorize('keymgmt:gen', 'Authorizing key generation...');
 
     // -- Step 2: create key pair -----------------------------------
-    btn.textContent = 'Creating key...';
+    btn.textContent = `Creating ${keyTypeLabel(key_type)} key...`;
     const label    = `Encedo OIDC - ${username}`.slice(0, 32);
-    const descrB64 = btoa(`ETSOIDC${sub}`);            // max 64 chars as base64
-    const created  = await hem.createKeyPair(genToken, label, 'ED25519', descrB64);
+    const descrB64 = btoa(`ETSOIDC${sub}`);
+    const hsmMode  = key_type !== 'Ed25519' ? 'ExDSA' : undefined;
+    const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), descrB64, hsmMode);
     const kid      = created.kid;
-    // For asymmetric keys, HSM derives kid = SHA-1(public key bytes) -- same as OIDC kid.
-    // No separate derivation needed; backend will verify kid === SHA1(pubkey).
     if (!kid) throw new Error('No kid in createKeyPair response');
 
     // -- Step 3: authorize keymgmt:use:<kid> ----------------------
@@ -105,27 +176,20 @@ async function doSubmit() {
     btn.textContent = 'Fetching public key...';
     const keyInfo = await hem.getPubKey(useToken, kid);
     if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
-    // HSM returns pubkey as standard base64 -- backend expects raw 32-byte hex
+    // HSM returns pubkey as standard base64 -- convert to hex
     const pubkeyBytes = Uint8Array.from(atob(keyInfo.pubkey), c => c.charCodeAt(0));
     const pubkey      = Array.from(pubkeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
     // -- Step 5: sign the challenge -- key-possession proof ---------
-    // Backend issued a challenge at /enrollment/validate.
-    // Signing it proves we hold the private key, not just the public key.
-    // HSM returns standard base64 -- convert to base64url for backend.
     btn.textContent = 'Signing challenge...';
     const challenge  = userData.challenge;
     if (!challenge) throw new Error('No challenge received from server -- call validate first');
-    // exdsaSign returns Uint8Array (raw bytes) -- convert to base64url for backend
-    const sigBytes  = await hem.exdsaSign(useToken, kid, challenge);
+    const rawSigBytes = await hem.exdsaSign(useToken, kid, challenge, exdsaAlg(key_type));
+    const sigBytes  = key_type !== 'Ed25519' ? derToP1363(rawSigBytes, key_type) : rawSigBytes;
     const signature = btoa(String.fromCharCode(...sigBytes))
                         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
     // -- Step 6: HSM attestation -- hardware origin proof -----------
-    // Any valid token accepted (scope irrelevant) -- useToken qualifies.
-    // Returns { genuine, ... } where genuine is device attestation blob.
-    // Backend validates genuine via api.encedo.com/attest (see src/services/attestation.js).
-    // Failure is non-fatal: enrollment proceeds, hw_attested = false.
     btn.textContent = 'Fetching attestation...';
     let genuine = null;
     let crt     = null;
@@ -142,7 +206,7 @@ async function doSubmit() {
     const res  = await fetch('/enrollment/submit', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, signature, genuine, crt }),
+      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt }),
     });
     const data = await res.json();
 
@@ -158,12 +222,17 @@ async function doSubmit() {
 
     document.getElementById('s-username').textContent = data.username;
     document.getElementById('s-hsm').textContent      = hsm_url;
+    if (!clientRedirectOrigin) {
+      document.getElementById('s-done-btn').style.display = 'none';
+    }
     showScreen('s-success');
 
   } catch (err) {
     console.error('[HEM] enrollment failed:', err);
-    formErr.textContent = err instanceof HemError
-      ? `HSM error (${err.code}): ${err.message}`
+    formErr.textContent = err instanceof HemError && err.code === 'http_401'
+      ? 'Incorrect HSM passphrase.'
+      : err instanceof HemError
+      ? `HSM error: ${err.message}`
       : `Error: ${err.message}`;
     btn.disabled = false;
     btn.textContent = 'Link HSM ->';
@@ -171,3 +240,7 @@ async function doSubmit() {
 }
 
 window.doSubmit = doSubmit;
+
+window.doGoToService = function() {
+  if (clientRedirectOrigin) window.location.href = clientRedirectOrigin;
+};

@@ -110,12 +110,26 @@ export function vNonce(value, label = 'nonce') {
   return vOptional(value, label, 256);
 }
 
-/** Ed25519 signature in base64url: 64 bytes -> ~86 base64url chars. */
-const SIG_RE = /^[A-Za-z0-9\-_]{86}={0,2}$/;
+/**
+ * Signature in base64url (no padding).
+ * Ed25519: 64B → 86 chars; ECDSA P-256: 64B → 86 chars;
+ * ECDSA P-384: 96B → 128 chars; ECDSA P-521: 132B → 176 chars.
+ */
+const SIG_RE = /^[A-Za-z0-9\-_]{64,200}$/;
 export function vSignature(value, label = 'signature') {
-  const base = vRequired(value, label, 90);
+  const base = vRequired(value, label, 200);
   if (base) return base;
-  if (!SIG_RE.test(value)) return `${label} is not a valid base64url Ed25519 signature`;
+  if (!SIG_RE.test(value)) return `${label} is not a valid base64url signature`;
+  return null;
+}
+
+/** Key type: one of the supported algorithm families. */
+const KEY_TYPES_SET = new Set(['Ed25519', 'P256', 'P384', 'P521']);
+export function vKeyType(value, label = 'key_type') {
+  if (!value) return null; // optional -- caller sets default
+  if (typeof value !== 'string' || !KEY_TYPES_SET.has(value)) {
+    return `${label} must be one of: Ed25519, P256, P384, P521`;
+  }
   return null;
 }
 

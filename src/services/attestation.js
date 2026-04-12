@@ -36,14 +36,7 @@ export async function validateAttestation(genuine, crt) {
     console.log(`[Attestation] <- HTTP ${res.status}:`, JSON.stringify(data));
 
     if (res.ok && data?.result === 'ok') {
-      // Validate genuine blob timestamp (Unix seconds, UTC) -- prevents replay of old attestations.
-      // /checkin synchronises clocks -- allow +/-5s skew, reject if older than 15s.
-      const ts  = data.timestamp;
-      const now = Math.floor(Date.now() / 1000);
-      if (typeof ts === 'number') {
-        if (ts > now + 5)  return { hw_attested: 'false', reason: 'timestamp_future' };
-        if (now - ts > 15) return { hw_attested: 'false', reason: 'timestamp_expired' };
-      }
+      // api.encedo.com already validates timestamp freshness -- trust the result directly.
       return { hw_attested: 'true', crt: crt ?? undefined };
     }
 

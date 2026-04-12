@@ -15,15 +15,18 @@
   ::-webkit-scrollbar-thumb { background: #6E358C; }
 
   :root {
-    --purple: #6E358C;
-    --navy:   #2A225E;
-    --text:   #222;
-    --muted:  #666;
-    --border: #ccc;
-    --white:  #fff;
-    --red:    #e74c3c;
-    --green:  #2ecc71;
-    --shadow: -10px -1px 82px 43px rgba(0,0,0,.09);
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --border:  #ccc;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --panel:   #f8f6fc;
+    --green:   #2ecc71;
+    --red:     #e74c3c;
+    --amber:   #f39c12;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
   }
 
   body {
@@ -36,17 +39,29 @@
     justify-content: center;
     padding: 30px 16px;
     color: var(--text);
+    overflow-x: hidden;
   }
 
   .screen { display: none; width: 100%; max-width: 480px; }
   .screen.visible { display: block; }
 
+  /* -- Card -- */
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 36px 40px 40px;
+  }
+
+  /* -- Logo -- */
   .logo-block { text-align: center; margin-bottom: 28px; }
   .logo-block img { height: 48px; border-radius: 14px; }
-  .logo-sub { font-size: 11px; letter-spacing: .2em; color: var(--muted); text-transform: uppercase; margin-top: 10px; }
+  .logo-sub {
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase; margin-top: 10px;
+  }
 
-  .card { background: var(--white); border-radius: 28px; box-shadow: var(--shadow); padding: 36px 40px 40px; }
-
+  /* -- RP badge -- */
   .rp-badge {
     display: flex; align-items: center; gap: 9px;
     background: rgba(110,53,140,.06); border: 1px solid rgba(110,53,140,.2);
@@ -56,98 +71,149 @@
   .rp-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
   .rp-label strong { color: var(--purple); font-weight: 600; }
 
+  /* -- Fields -- */
   .field { margin-bottom: 16px; }
-  .field-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
-  .field-input {
-    display: block; width: 100%; padding: 13px 16px;
-    border: 1px solid var(--border); border-radius: 20px;
-    font-family: 'Inter', sans-serif; font-size: 15px; color: var(--text);
-    background: var(--white); outline: none;
-    transition: border-color .15s, box-shadow .15s;
+  .field-label {
+    display: block; font-size: 11px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 7px;
   }
-  .field-input:focus { border-color: var(--purple); box-shadow: 0 0 0 3px rgba(110,53,140,.12); }
+  .field-input {
+    display: block; width: 100%;
+    padding: 13px 16px; border: 1px solid var(--border);
+    border-radius: 20px; font-family: 'Inter', sans-serif;
+    font-size: 15px; color: var(--text); background: var(--white);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .field-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(110,53,140,.12);
+  }
   .field-input::placeholder { color: #aaa; }
+  .field-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
 
+  /* -- Locked field -- */
+  .field-locked {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 20px;
+  }
+  .field-locked-val { font-size: 15px; color: var(--text); }
+  .field-locked-badge {
+    margin-left: auto; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  /* -- Divider -- */
+  .divider { height: 1px; background: #eee; margin: 20px 0; }
+
+  /* -- Buttons -- */
+  @keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
   .btn {
-    display: inline-block; padding: 14px 28px; border: none; border-radius: 22px;
+    display: inline-block; padding: 14px 28px;
+    border: none; border-radius: 22px;
     font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
     letter-spacing: .03em; cursor: pointer;
-    transition: background .3s, box-shadow .3s, transform .15s;
-    text-align: center; line-height: 1;
+    transition: box-shadow .3s, transform .15s; text-align: center; line-height: 1;
   }
   .btn-full { display: block; width: 100%; margin-top: 6px; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
-  .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
-  @keyframes gradient-shift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
   .btn-primary {
     background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
-    background-size: 400% 400%; animation: gradient-shift 3s ease infinite;
-    color: var(--white); box-shadow: 0 6px 24px rgba(110,53,140,.3);
+    background-size: 400% 400%;
+    animation: gradient-shift 3s ease infinite;
+    color: var(--white);
+    box-shadow: 0 6px 24px rgba(110,53,140,.3);
   }
   .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
   .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
 
-  .btn-row { display: flex; gap: 10px; margin-top: 22px; }
-  .btn-row .btn { flex: 1; }
+  /* -- Error -- */
+  .err-msg {
+    font-size: 12px; color: var(--red);
+    min-height: 18px; margin-top: 8px; text-align: center;
+  }
 
-  .err-msg { font-size: 12px; color: var(--red); min-height: 18px; margin-top: 8px; text-align: center; }
-  .hint-row { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee; font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .05em; }
+  /* -- Hint row -- */
+  .hint-row {
+    margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee;
+    font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .05em;
+  }
 
-  .icon-circle { width: 72px; height: 72px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 22px; }
-  .icon-circle-ok  { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35);  }
-  .icon-circle-err { background: rgba(231,76,60,.1);   border: 1px solid rgba(231,76,60,.35);   }
+  /* -- Icon circle -- */
+  .icon-circle {
+    width: 72px; height: 72px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 22px;
+  }
+  .icon-circle-ok   { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35); }
+  .icon-circle-warn { background: rgba(243,156,18,.1);  border: 1px solid rgba(243,156,18,.35); }
   .icon-circle-spin { background: rgba(110,53,140,.08); border: 1px solid rgba(110,53,140,.25); }
 
-  .card-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 5px; text-align: center; }
-  .card-sub   { font-size: 12px; color: var(--muted); margin-bottom: 20px; text-align: center; }
-  .card-sub strong { color: var(--purple); font-weight: 600; }
+  /* -- Success info -- */
+  .success-info {
+    background: var(--panel); border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px; padding: 14px 16px; text-align: left;
+  }
+  .identity-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; margin-bottom: 7px; gap: 12px;
+  }
+  .identity-row:last-child { margin-bottom: 0; }
+  .identity-key { color: var(--muted); flex-shrink: 0; }
+  .identity-val { color: var(--purple); font-weight: 600; text-align: right; white-space: nowrap; font-size: 11px; }
 
-  .info-box { background: #f9f7fc; border: 1px solid rgba(110,53,140,.15); border-radius: 14px; padding: 14px 16px; margin-bottom: 20px; }
-  .info-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 7px; }
-  .info-row:last-child { margin-bottom: 0; }
-  .info-key { color: var(--muted); }
-  .info-value { color: var(--text); font-weight: 600; }
-
+  /* -- Loading / spinner -- */
   @keyframes spin { to { transform: rotate(360deg); } }
   .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid rgba(110,53,140,.2); border-top-color: var(--purple); border-radius: 50%; animation: spin .8s linear infinite; }
+  .loading-text { text-align: center; font-size: 13px; color: var(--muted); padding: 8px 0; }
 
   @media (max-width: 520px) { .card { padding: 28px 22px 30px; border-radius: 22px; } }
+  @media (max-width: 360px) { body { font-size: 14px; padding: 16px 10px; } .card { padding: 22px 16px 24px; } }
 </style>
 </head>
 <body>
 
-<!-- INVALID / EXPIRED -->
-<div class="screen" id="s-invalid">
+<!-- LOADING -->
+<div class="screen visible" id="s-loading">
   <div class="logo-block">
     <img src="/logo.png" alt="Encedo">
     <div class="logo-sub">Sign Up</div>
   </div>
-  <div class="card" style="text-align:center;">
-    <div class="icon-circle icon-circle-err">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
-    </div>
-    <p class="card-title" style="color:var(--red);">Invite invalid or expired</p>
-    <p class="card-sub">This link is no longer valid. Please contact your administrator for a new invite.</p>
+  <div class="card">
+    <p class="loading-text">Validating invite link&hellip;</p>
   </div>
 </div>
 
-<!-- STEP 1: PROFILE DATA -->
+<!-- FORM -->
 <div class="screen" id="s-form">
   <div class="logo-block">
     <img src="/logo.png" alt="Encedo">
-    <div class="logo-sub">Sign Up &mdash; Step 1 of 2</div>
+    <div class="logo-sub">Sign Up</div>
   </div>
   <div class="card">
     <div class="rp-badge">
       <div class="rp-dot"></div>
       <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name">Loading&hellip;</strong></div>
     </div>
-    <div class="field">
+
+    <!-- Username: editable or locked by admin -->
+    <div class="field" id="su-username-row">
       <label class="field-label" for="su-username">Username</label>
       <input class="field-input" id="su-username" type="text" autocomplete="username" placeholder="your.username">
     </div>
+    <div class="field" id="su-username-locked-row" style="display:none;">
+      <label class="field-label">Username</label>
+      <div class="field-locked">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span id="su-username-locked-val" class="field-locked-val"></span>
+        <span class="field-locked-badge">set by admin</span>
+      </div>
+    </div>
+
     <div class="field">
       <label class="field-label" for="su-name">Full name</label>
       <input class="field-input" id="su-name" type="text" autocomplete="name" placeholder="Jan Kowalski">
@@ -156,37 +222,42 @@
       <label class="field-label" for="su-email">Email</label>
       <input class="field-input" id="su-email" type="email" autocomplete="email" placeholder="jan@example.com">
     </div>
-    <button class="btn btn-primary btn-full" id="su-next-btn" onclick="doNext()">Next &rarr;</button>
-    <div class="err-msg" id="su-err"></div>
-    <div class="hint-row">next: connect your Encedo HSM</div>
-  </div>
-</div>
 
-<!-- STEP 2: HSM -->
-<div class="screen" id="s-hsm">
-  <div class="logo-block">
-    <img src="/logo.png" alt="Encedo">
-    <div class="logo-sub">Sign Up &mdash; Step 2 of 2</div>
-  </div>
-  <div class="card">
-    <div class="rp-badge">
-      <div class="rp-dot"></div>
-      <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name2">Loading&hellip;</strong></div>
+    <!-- Key algorithm: selectable or locked by admin -->
+    <div class="field" id="su-key-type-row">
+      <label class="field-label" for="su-key-type">Key algorithm</label>
+      <select class="field-input" id="su-key-type" style="appearance:auto;cursor:pointer;">
+        <option value="Ed25519">Ed25519 (EdDSA)</option>
+        <option value="P256">P-256 (ECDSA / ES256)</option>
+        <option value="P384">P-384 (ECDSA / ES384)</option>
+        <option value="P521">P-521 (ECDSA / ES512)</option>
+      </select>
     </div>
+    <div class="field" id="su-key-type-forced-row" style="display:none;">
+      <label class="field-label">Key algorithm</label>
+      <div class="field-locked">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2.2" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span id="su-key-type-forced-label" class="field-locked-val"></span>
+        <span class="field-locked-badge">set by admin</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
     <div class="field">
-      <label class="field-label" for="su-hsm-url">HSM URL</label>
+      <label class="field-label" for="su-hsm-url">Encedo HSM URL</label>
       <input class="field-input" id="su-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="url">
     </div>
     <div class="field">
-      <label class="field-label" for="su-password">Passphrase</label>
-      <input class="field-input" id="su-password" type="password" placeholder="HSM passphrase" autocomplete="current-password">
+      <label class="field-label" for="su-password">
+        HSM passphrase <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span>
+      </label>
+      <input class="field-input" id="su-password" type="password" placeholder="Leave empty if not set" autocomplete="current-password">
     </div>
-    <div class="btn-row">
-      <button class="btn btn-ghost" onclick="doBack()">Back</button>
-      <button class="btn btn-primary" id="su-enroll-btn" onclick="doEnroll()">Next &rarr;</button>
-    </div>
-    <div class="err-msg" id="hsm-err"></div>
-    <div class="hint-row">requires hardware key confirmation</div>
+
+    <button class="btn btn-primary btn-full" id="su-submit-btn" onclick="doSubmit()">Create account &amp; link HSM &rarr;</button>
+    <div class="err-msg" id="su-err"></div>
+    <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
   </div>
 </div>
 
@@ -194,36 +265,59 @@
 <div class="screen" id="s-enrolling">
   <div class="logo-block">
     <img src="/logo.png" alt="Encedo">
-    <div class="logo-sub">Enrolling&hellip;</div>
+    <div class="logo-sub">Creating account&hellip;</div>
   </div>
   <div class="card" style="text-align:center;">
     <div class="icon-circle icon-circle-spin">
       <span class="spinner"></span>
     </div>
-    <p class="card-title" id="enroll-status">Connecting to HSM&hellip;</p>
-    <p class="card-sub" style="margin-bottom:0">Please confirm on your device if prompted</p>
+    <p class="loading-text" id="su-status">Connecting to HSM&hellip;</p>
   </div>
 </div>
 
 <!-- SUCCESS -->
-<div class="screen" id="s-done">
+<div class="screen" id="s-success">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign Up Complete</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <p style="font-size:16px;font-weight:700;color:#2ecc71;margin-bottom:18px;">Account created successfully</p>
+    <div class="success-info">
+      <div class="identity-row">
+        <span class="identity-key">username</span>
+        <span class="identity-val" id="s-username"></span>
+      </div>
+      <div class="identity-row" style="margin-bottom:0">
+        <span class="identity-key">service</span>
+        <span class="identity-val" id="s-client"></span>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="su-done-btn" style="margin-top:22px;" onclick="doGoToService()">Go to service &rarr;</button>
+  </div>
+</div>
+
+<!-- INVALID / EXPIRED -->
+<div class="screen" id="s-invalid">
   <div class="logo-block">
     <img src="/logo.png" alt="Encedo">
     <div class="logo-sub">Sign Up</div>
   </div>
   <div class="card" style="text-align:center;">
-    <div class="icon-circle icon-circle-ok">
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5">
-        <polyline points="20 6 9 17 4 12"/>
+    <div class="icon-circle icon-circle-warn">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
     </div>
-    <p class="card-title">All done!</p>
-    <p class="card-sub">Your account is ready and your hardware key is enrolled.</p>
-    <div class="info-box" style="text-align:left;">
-      <div class="info-row"><span class="info-key">username</span><span class="info-value" id="done-username"></span></div>
-      <div class="info-row"><span class="info-key">service</span><span class="info-value" id="done-client"></span></div>
-    </div>
-    <button class="btn btn-primary btn-full" id="done-close-btn" onclick="doClose()">Go to service &rarr;</button>
+    <p style="font-size:16px;font-weight:700;color:#f39c12;margin-bottom:10px;">Invite invalid or expired</p>
+    <p style="font-size:13px;color:var(--muted);line-height:1.7;" id="su-invalid-msg">This link may be expired or already used. Please contact your administrator.</p>
   </div>
 </div>
 

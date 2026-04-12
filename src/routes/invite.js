@@ -1,7 +1,9 @@
 import { randomBytes, randomUUID } from 'crypto';
 import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { validate, vEmail, vUsername, vDisplayName, vUrl } from '../middleware/validate.js';
+import { validate, vEmail, vUsername, vDisplayName, vUrl, vKeyType } from '../middleware/validate.js';
+
+const DEFAULT_KEY_TYPE = 'Ed25519';
 
 const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
@@ -11,7 +13,7 @@ const TOKEN_RE = /^[a-f0-9]{64}$/;
 // --- POST /admin/invite ---------------------------------------
 export async function adminInviteHandler(req, res, next) {
   try {
-    const { client_id, username, name, email } = req.body ?? {};
+    const { client_id, username, name, email, key_type } = req.body ?? {};
 
     if (!client_id) {
       return res.status(400).json({ error: 'validation_error', error_description: 'client_id is required' });
@@ -25,6 +27,7 @@ export async function adminInviteHandler(req, res, next) {
     if (username !== undefined) checks.push(vUsername(username));
     if (name     !== undefined) checks.push(vDisplayName(name));
     if (email    !== undefined) checks.push(vEmail(email));
+    checks.push(vKeyType(key_type));
     const err = checks.find(e => e) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
@@ -35,6 +38,7 @@ export async function adminInviteHandler(req, res, next) {
       username:    username?.trim() ?? '',
       name:        name?.trim()     ?? '',
       email:       email?.trim().toLowerCase() ?? '',
+      key_type:    key_type ?? null, // null = user can choose during enrollment
     }), { EX: 86400 });
 
     const invite_url = `${issuer()}/signup#token=${token}`;
@@ -61,6 +65,7 @@ export async function signupPrefillHandler(req, res, next) {
       username:    data.username,
       name:        data.name,
       email:       data.email,
+      key_type:    data.key_type ?? null, // null = user chooses during enrollment
     });
   } catch (err) { next(err); }
 }
@@ -136,7 +141,7 @@ export async function adminDeleteInviteHandler(req, res, next) {
 // by the frontend using the returned token (no redirect needed).
 export async function signupRegisterHandler(req, res, next) {
   try {
-    const { token, username, name, email, hsm_url } = req.body ?? {};
+    const { token, username, name, email, hsm_url, key_type: reqKeyType } = req.body ?? {};
 
     if (!token || !TOKEN_RE.test(token)) {
       return res.status(400).json({ error: 'invalid_token' });
@@ -184,11 +189,16 @@ export async function signupRegisterHandler(req, res, next) {
     await redis.sAdd('users', sub);
     await redis.hSet('username_index', uname, sub);
 
+    // key_type priority: invite-forced > user-choice > default
+    const forcedKeyType = invite.key_type ?? reqKeyType ?? DEFAULT_KEY_TYPE;
+
     const enrollToken = randomBytes(32).toString('base64url');
     await redis.set(`enrollment:${enrollToken}`, JSON.stringify({
       sub,
-      username: uname,
-      hsm_url:  hsm_url.trim(),
+      username:          uname,
+      hsm_url:           hsm_url.trim(),
+      forced_key_type:   forcedKeyType,
+      client_redirect_origin,
     }), { EX: 3600 }); // 1h — user is actively enrolling right now
     await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
 

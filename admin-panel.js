@@ -157,6 +157,7 @@ async function loadUsers() {
 function openAddUser() {
   ['u-username','u-firstname','u-lastname','u-email'].forEach(id => $(id).value = '');
   $('u-hsm').value = 'https://my.ence.do';
+  $('u-key-type').value = 'Ed25519';
   openModal('modal-add-user');
   setTimeout(() => $('u-username').focus(), 60);
 }
@@ -168,6 +169,7 @@ async function submitAddUser() {
   const name      = [firstname, lastname].filter(Boolean).join(' ');
   const email     = $('u-email').value.trim();
   const hsm_url   = $('u-hsm').value.trim();
+  const key_type  = $('u-key-type').value || 'Ed25519';
 
   if (!username)  return toast('Username required', 'err');
   if (!firstname) return toast('First name required', 'err');
@@ -176,7 +178,7 @@ async function submitAddUser() {
   if (!hsm_url)   return toast('HSM URL required', 'err');
 
   try {
-    const user = await api('/admin/users', {method:'POST', body:JSON.stringify({username, name, email, hsm_url})});
+    const user = await api('/admin/users', {method:'POST', body:JSON.stringify({username, name, email, hsm_url, key_type})});
     closeModal('modal-add-user');
 
     const { enrollment_url } = user;
@@ -305,6 +307,7 @@ async function requestEnrollment(sub, hasKey) {
 
 async function openInviteUser() {
   ['inv-username','inv-name','inv-email'].forEach(id => $(id).value = '');
+  $('inv-key-type').value = '';
   const sel = $('inv-client');
   sel.innerHTML = '<option value="">loading...</option>';
   openModal('modal-invite-user');
@@ -329,9 +332,11 @@ async function submitInviteUser() {
   const username = $('inv-username').value.trim();
   const name     = $('inv-name').value.trim();
   const email    = $('inv-email').value.trim();
+  const key_type = $('inv-key-type').value;
   if (username) body.username = username;
   if (name)     body.name     = name;
   if (email)    body.email    = email;
+  if (key_type) body.key_type = key_type;
   try {
     const data = await api('/admin/invite', { method: 'POST', body: JSON.stringify(body) });
     closeModal('modal-invite-user');

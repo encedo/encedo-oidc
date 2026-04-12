@@ -13,18 +13,85 @@ const router = Router();
 const __dirname   = dirname(fileURLToPath(import.meta.url));
 const TRUSTED_APP = resolve(__dirname, '../../signin.html');
 
+// --- Key type configuration -----------------------------------
+
+/** JWT alg value per key type. */
+const JWT_ALG = {
+  Ed25519: 'EdDSA',
+  P256:    'ES256',
+  P384:    'ES384',
+  P521:    'ES512',
+};
+
+/** Node.js hash for ECDSA verify. */
+const ECDSA_HASH = { P256: 'sha256', P384: 'sha384', P521: 'sha512' };
+
+/** JWK crv name for EC keys. */
+const EC_CRV = { P256: 'P-256', P384: 'P-384', P521: 'P-521' };
+
 // --- Helpers --------------------------------------------------
 
 const b64url    = buf => Buffer.from(buf).toString('base64url');
 const b64urlStr = str => Buffer.from(str).toString('base64url');
 
-/** Verify Ed25519 signature. pubkeyHex = 32-byte raw public key (hex). */
-function verifyEdDSA(pubkeyHex, signingInput, signatureB64url) {
-  const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
-  const pubkeyDer  = Buffer.concat([spkiPrefix, Buffer.from(pubkeyHex, 'hex')]);
-  const publicKey  = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
-  const sigBuf     = Buffer.from(signatureB64url, 'base64url');
-  return verify(null, Buffer.from(signingInput), publicKey, sigBuf);
+/**
+ * Verify signature -- type-aware.
+ * key_type  : 'Ed25519' | 'P256' | 'P384' | 'P521' (defaults to Ed25519)
+ * pubkeyHex : hex-encoded raw public key bytes
+ * message   : string that was signed
+ * sigB64url : base64url signature from HSM
+ */
+function verifySignature(key_type, pubkeyHex, message, sigB64url) {
+  const pubBytes = Buffer.from(pubkeyHex, 'hex');
+  const sigBuf   = Buffer.from(sigB64url, 'base64url');
+  const msgBuf   = Buffer.from(message);
+
+  if (!key_type || key_type === 'Ed25519') {
+    const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+    const pubkeyDer  = Buffer.concat([spkiPrefix, pubBytes]);
+    const publicKey  = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
+    return verify(null, msgBuf, publicKey, sigBuf);
+  }
+
+  // ECDSA: pubBytes = raw X||Y (no 04 prefix)
+  const half = pubBytes.length / 2;
+  const x    = pubBytes.subarray(0, half).toString('base64url');
+  const y    = pubBytes.subarray(half).toString('base64url');
+  const crv  = EC_CRV[key_type];
+  const publicKey = createPublicKey({ key: { kty: 'EC', crv, x, y }, format: 'jwk' });
+  return verify(ECDSA_HASH[key_type], msgBuf, { key: publicKey, dsaEncoding: 'ieee-p1363' }, sigBuf);
+}
+
+/**
+ * Build a JWK entry from a user record.
+ * key_type defaults to 'Ed25519' for backwards compatibility with old enrollments.
+ */
+function buildJwk(u) {
+  const kt = u.key_type || 'Ed25519';
+  const pubBytes = Buffer.from(u.pubkey, 'hex');
+
+  if (kt === 'Ed25519') {
+    return {
+      kty: 'OKP',
+      crv: 'Ed25519',
+      x:   b64url(pubBytes),
+      kid: u.kid,
+      alg: 'EdDSA',
+      use: 'sig',
+    };
+  }
+
+  // ECDSA: pubBytes = raw X||Y
+  const half = pubBytes.length / 2;
+  return {
+    kty: 'EC',
+    crv: EC_CRV[kt],
+    x:   b64url(pubBytes.subarray(0, half)),
+    y:   b64url(pubBytes.subarray(half)),
+    kid: u.kid,
+    alg: JWT_ALG[kt],
+    use: 'sig',
+  };
 }
 
 // --- JWKS in-memory cache (60s TTL) ---------------------------
@@ -64,7 +131,7 @@ export function discoveryHandler(_req, res) {
     scopes_supported:                       ['openid', 'email', 'profile'],
     response_types_supported:               ['code'],
     subject_types_supported:               ['public'],
-    id_token_signing_alg_values_supported:  ['EdDSA'],
+    id_token_signing_alg_values_supported:  ['EdDSA', 'ES256', 'ES384', 'ES512'],
     userinfo_signing_alg_values_supported:  ['none'],
     token_endpoint_auth_methods_supported:  ['client_secret_basic', 'client_secret_post', 'none'],
     code_challenge_methods_supported:       ['S256'],
@@ -81,14 +148,7 @@ router.get('/jwks.json', async (req, res, next) => {
       jwksCache = {
         keys: users
           .filter(u => u.pubkey && u.kid)
-          .map(u => ({
-            kty: 'OKP',
-            crv: 'Ed25519',
-            x:   b64url(Buffer.from(u.pubkey, 'hex')),
-            kid: u.kid,
-            alg: 'EdDSA',
-            use: 'sig',
-          })),
+          .map(u => buildJwk(u)),
         expiresAt: Date.now() + 60_000,
       };
     }
@@ -226,7 +286,8 @@ router.post('/authorize/login',
       const now        = Math.floor(Date.now() / 1000);
       const idTokenTtl = parseInt(clientRaw.id_token_ttl, 10) || 3600;
 
-      const header  = { alg: 'EdDSA', kid: user.kid };
+      const keyType = user.key_type || 'Ed25519';
+      const header  = { alg: JWT_ALG[keyType] ?? 'EdDSA', kid: user.kid };
       const payload = {
         iss:                process.env.ISSUER,
         sub:                user.sub,
@@ -266,6 +327,7 @@ router.post('/authorize/login',
         user_name:     user.name,
         user_username: user.username,
         client_name:   clientRaw.name || client_id,
+        key_type:      keyType,
       });
 
     } catch (err) { next(err); }
@@ -306,10 +368,10 @@ router.post('/authorize/confirm',
         return res.status(400).json({ error: 'invalid_session', error_description: 'key mismatch' });
       }
 
-      // Verify Ed25519 signature -- pubkey always from Redis, never from frontend
+      // Verify signature -- pubkey always from Redis, never from frontend
       let valid = false;
       try {
-        valid = verifyEdDSA(userRaw.pubkey, pending.signing_input, signature);
+        valid = verifySignature(userRaw.key_type, userRaw.pubkey, pending.signing_input, signature);
       } catch {
         valid = false;
       }
@@ -320,7 +382,6 @@ router.post('/authorize/confirm',
         return res.status(400).json({ error: 'invalid_signature' });
       }
 
-      // Assemble final signed JWT
       const id_token = `${pending.signing_input}.${signature}`;
 
       // Emit auth code -- id_token stored here, /token just retrieves it
@@ -560,7 +621,7 @@ router.get('/logout',
       // Verify JWT signature -- prevents one user from logging out another
       let valid = false;
       try {
-        valid = verifyEdDSA(userRaw.pubkey, `${parts[0]}.${parts[1]}`, parts[2]);
+        valid = verifySignature(userRaw.key_type, userRaw.pubkey, `${parts[0]}.${parts[1]}`, parts[2]);
       } catch { valid = false; }
 
       if (!valid) {
