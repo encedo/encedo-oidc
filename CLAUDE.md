@@ -47,6 +47,16 @@ Read only when you need to know the HSM API.
 - Fetches attestation `{genuine, crt}` from HSM, sends to backend
 - Backend validates via `POST api.encedo.com/attest`
 - `hsm_crt` stored in Redis for audit
+- ECC keys: `createKeyPair` called with `mode: 'ExDSA'`; DER→P1363 conversion immediately after `exdsaSign`
+- `derToP1363(derBytes, keyType)` handles both short-form and long-form DER length (P-521 uses 3-byte header)
+- Success screen: "Go to service" button (redirects to `client_redirect_origin`; hidden if not available)
+
+### signup.js — 100%
+- Single-step flow: prefill → HSM enrollment → account creation in one pass
+- Calls `/signup/register` (creates user) then `/enrollment/validate` + `/enrollment/submit`
+- Locked username and locked key type supported (same UI pattern as enrollment.html)
+- Same `derToP1363` + `mode: 'ExDSA'` as enrollment.js
+- "Go to service" redirects to `client_redirect_origin` from `/signup/register` response
 
 ---
 
@@ -117,6 +127,25 @@ const publicKey   = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki
 verify(null, Buffer.from(signing_input), publicKey, Buffer.from(signature, 'base64url'));
 ```
 
+### ECC P-256/P-384/P-521 verification in backend
+```javascript
+// pubkey in Redis: hex-encoded uncompressed X||Y (64/96/132 bytes)
+// SPKI prefixes per curve (uncompressed point: 04 || X || Y):
+const EC_SPKI_COMPRESSED_PREFIX = {
+  P256: Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex'),
+  P384: Buffer.from('3076301006072a8648ce3d020106052b8104002203620004',     'hex'),
+  P521: Buffer.from('30819b301006072a8648ce3d020106052b810400230381860004', 'hex'),
+};
+// stored as uncompressed X||Y hex → prepend 04 for DER SPKI
+const pubkeyDer = Buffer.concat([EC_SPKI_COMPRESSED_PREFIX[key_type],
+                                  Buffer.from('04', 'hex'),
+                                  Buffer.from(pubkeyHex, 'hex')]);
+const publicKey = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
+verify(null, Buffer.from(signing_input), publicKey, Buffer.from(signature, 'base64url'),
+  { dsaEncoding: 'ieee-p1363' });
+// Frontend always sends P1363 (r||s fixed-width) — converted from DER right after exdsaSign
+```
+
 ### exdsaSign in hem-sdk.js
 ```javascript
 // msg = base64 of UTF-8 bytes of signing_input — must be this way, do not change
@@ -126,8 +155,12 @@ body.msg = toB64(strToBytes(msg));
 
 ### pubkey encoding
 - HSM returns pubkey as **standard base64**
-- Backend stores as **hex** (32 raw bytes)
-- enrollment.js converts: `atob(keyInfo.pubkey)` → bytes → hex
+- enrollment.js converts: `atob(keyInfo.pubkey)` → bytes → hex and sends to backend
+- **Ed25519**: backend stores raw 32 bytes as hex (64 hex chars)
+- **EC (P-256/P-384/P-521)**: HSM returns compressed point (`02`/`03` + X, 33/49/67 bytes)
+  - Backend decompresses to uncompressed X||Y (64/96/132 bytes) via `decompressEcKey()` in `enrollment.js`
+  - Stored as hex 64/96/132 bytes; JWKS `x`+`y` coordinates extracted from stored uncompressed form
+- Compressed pubkey hex lengths: P256=66, P384=98, P521=134 (validated on submit)
 
 ### Key description format
 ```javascript
@@ -179,7 +212,7 @@ Module-level `jwksCache` variable in `oidc.js`, 60s TTL. Invalidated immediately
 
 ### Attestation validation
 `src/services/attestation.js` POSTs `{genuine, crt}` to `https://api.encedo.com/attest`.
-Checks: `result === 'ok'`, timestamp not in future (±5s), not older than 15s.
+Checks `result === 'ok'` — timestamp validation delegated entirely to `api.encedo.com` (local check removed to avoid clock-skew false negatives).
 `crt` (X.509 PEM) stored as `hsm_crt` in Redis. Debug logging active (intended — useful in production for tracing).
 
 ---
@@ -188,9 +221,11 @@ Checks: `result === 'ok'`, timestamp not in future (±5s), not older than 15s.
 
 ```
 user:{sub}        Hash { sub, username, name, email, hsm_url,
-                        kid, pubkey, hw_attested, hsm_crt,
+                        kid, pubkey, key_type, hw_attested, hsm_crt,
                         clients (JSON array), enrollment_token,
                         enrolled_at, created_at, updated_at }
+                  pubkey: hex raw bytes — Ed25519: 32B (64 hex); EC: uncompressed X||Y — P256: 64B, P384: 96B, P521: 132B
+                  key_type: 'Ed25519' | 'P256' | 'P384' | 'P521'
 
 username_index    Hash { username → sub }
 
@@ -206,6 +241,8 @@ access:{token}    JSON TTL = access_token_ttl
 
 user_tokens:{sub} Set  { access:{token}, ... }
 enrollment:{tok}  JSON TTL 24h → 30min after validate
+                  { sub, username, forced_key_type, hsm_url, challenge?,
+                    client_redirect_origin? }  ← client_redirect_origin set when created via invite flow
 enroll_lock:{sub} String TTL 30s  (NX lock)
 invite:{token}    JSON TTL 24h  { client_id, client_name, username, name, email }
 client-invite:{token} JSON TTL 24h  { note }
@@ -323,6 +360,9 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
 7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s)
+8. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
+9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
+10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
 
 ---
 
