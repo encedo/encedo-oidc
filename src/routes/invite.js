@@ -23,11 +23,15 @@ export async function adminInviteHandler(req, res, next) {
       return res.status(404).json({ error: 'client_not_found' });
     }
 
-    const checks = [];
-    if (username !== undefined) checks.push(vUsername(username));
-    if (name     !== undefined) checks.push(vDisplayName(name));
-    if (email    !== undefined) checks.push(vEmail(email));
-    checks.push(vKeyType(key_type));
+    // Identity is pinned here by the admin and enforced at /signup/register, so
+    // username and email are REQUIRED — the invitee must not be able to choose a
+    // foreign identity (account-takeover fix). name stays optional (display only).
+    const checks = [
+      vUsername(username),
+      vEmail(email),
+      vKeyType(key_type),
+    ];
+    if (name !== undefined) checks.push(vDisplayName(name));
     const err = checks.find(e => e) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
@@ -35,9 +39,9 @@ export async function adminInviteHandler(req, res, next) {
     await redis.set(`invite:${token}`, JSON.stringify({
       client_id,
       client_name: clientRaw.name || client_id,
-      username:    username?.trim() ?? '',
-      name:        name?.trim()     ?? '',
-      email:       email?.trim().toLowerCase() ?? '',
+      username:    username.trim(),
+      name:        name?.trim() ?? '',
+      email:       email.trim().toLowerCase(),
       key_type:    key_type ?? null, // null = user can choose during enrollment
     }), { EX: 86400 });
 
@@ -141,22 +145,36 @@ export async function adminDeleteInviteHandler(req, res, next) {
 // by the frontend using the returned token (no redirect needed).
 export async function signupRegisterHandler(req, res, next) {
   try {
-    const { token, username, name, email, hsm_url, key_type: reqKeyType } = req.body ?? {};
+    const { token, name, hsm_url, key_type: reqKeyType } = req.body ?? {};
 
     if (!token || !TOKEN_RE.test(token)) {
       return res.status(400).json({ error: 'invalid_token' });
     }
 
-    // Validate inputs before consuming invite — so a validation error doesn't burn the token
+    // Validate user-supplied fields before consuming invite — so a validation
+    // error doesn't burn the token. Identity (username/email) is NOT read from the
+    // request body: it is pinned by the admin at invite time and enforced here,
+    // so the invitee cannot self-assign a foreign identity (account-takeover fix).
     const err = validate(
-      vUsername(username),
-      vEmail(email),
       vDisplayName(name),
       vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true }),
     );
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
-    const uname = username.trim();
+    // Peek invite (non-destructive) to read the admin-pinned identity, so a
+    // username conflict can be reported without burning the token.
+    const peek = await redis.get(`invite:${token}`);
+    if (!peek) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    const invitePeek = JSON.parse(peek);
+
+    const uname = (invitePeek.username ?? '').trim();
+    const email = (invitePeek.email ?? '').trim().toLowerCase();
+    const idErr = validate(vUsername(uname), vEmail(email));
+    if (idErr) {
+      return res.status(400).json({ error: 'invite_incomplete',
+        error_description: 'Invite must pin a valid username and email' });
+    }
+
     if (await redis.hGet('username_index', uname)) {
       return res.status(409).json({ error: 'username_already_exists' });
     }
@@ -179,7 +197,7 @@ export async function signupRegisterHandler(req, res, next) {
       sub,
       username:   uname,
       name:       (name ?? '').trim(),
-      email:      email.trim().toLowerCase(),
+      email,      // pinned by the invite, already normalised above
       hsm_url:    hsm_url.trim(),
       clients:    JSON.stringify([invite.client_id]),
       created_at: new Date().toISOString(),

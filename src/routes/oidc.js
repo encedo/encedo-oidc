@@ -170,18 +170,21 @@ router.get('/authorize', async (req, res, next) => {
       state, nonce, code_challenge, code_challenge_method,
     } = req.query;
 
-    if (response_type !== 'code') {
-      return sendAuthError(res, redirect_uri, 'unsupported_response_type', state);
-    }
-
+    // Validate client + redirect_uri FIRST -- an error must never be redirected
+    // to an unvalidated redirect_uri (open-redirect prevention, OAuth 2.0 s.4.1.2.1).
     const clientRaw = await redis.hGetAll(`client:${client_id}`);
     if (!clientRaw?.client_id) {
-      return sendAuthError(res, redirect_uri, 'unauthorized_client', state);
+      return res.status(400).json({ error: 'unauthorized_client' });
     }
 
     const allowedRedirects = JSON.parse(clientRaw.redirect_uris ?? '[]');
-    if (!allowedRedirects.includes(redirect_uri)) {
+    if (!redirect_uri || !allowedRedirects.includes(redirect_uri)) {
       return res.status(400).json({ error: 'invalid_redirect_uri' });
+    }
+
+    // redirect_uri is now trusted -- subsequent errors may safely redirect to it.
+    if (response_type !== 'code') {
+      return sendAuthError(res, redirect_uri, 'unsupported_response_type', state);
     }
 
     const requestedScopes = (scope ?? '').split(' ').filter(Boolean);
@@ -576,15 +579,23 @@ router.get('/logout',
   async (req, res, next) => {
     const { id_token_hint, post_logout_redirect_uri, state } = req.query;
 
-    function finish() {
+    // Redirect to post_logout_redirect_uri ONLY when its origin is registered for
+    // the client identified (and verified) via id_token_hint. Without a verified
+    // hint we cannot identify the client, so we never redirect to an unvalidated
+    // URI -- prevents open redirect (OIDC RP-Initiated Logout s.2).
+    function finish(allowedOrigins = null) {
       if (post_logout_redirect_uri) {
+        let url;
         try {
-          const url = new URL(post_logout_redirect_uri);
-          if (state) url.searchParams.set('state', state);
-          return res.redirect(url.toString());
+          url = new URL(post_logout_redirect_uri);
         } catch {
           return res.status(400).json({ error: 'invalid_request', error_description: 'invalid post_logout_redirect_uri' });
         }
+        if (allowedOrigins?.includes(url.origin)) {
+          if (state) url.searchParams.set('state', state);
+          return res.redirect(url.toString());
+        }
+        // Not registered for a verified client -- do not open-redirect.
       }
       res.json({ logged_out: true });
     }
@@ -638,11 +649,21 @@ router.get('/logout',
         await pipeline.exec();
       }
 
+      // Hint verified -- resolve which post-logout origins are allowed for this
+      // client (origins of its registered redirect_uris). aud is the client_id.
+      let allowedOrigins = null;
+      try {
+        const clientRaw = await redis.hGetAll(`client:${payload.aud}`);
+        allowedOrigins = JSON.parse(clientRaw?.redirect_uris ?? '[]')
+          .map(u => { try { return new URL(u).origin; } catch { return null; } })
+          .filter(Boolean);
+      } catch { allowedOrigins = null; }
+
       await logSecurity(SEC.LOGOUT, {
         sub, username: userRaw.username, result: 'ok', revokedTokens: tokenKeys.length, ip: req.ip,
       });
       console.log(`[OIDC] Logout: revoked=${tokenKeys.length} tokens`);
-      finish();
+      finish(allowedOrigins);
 
     } catch (err) { next(err); }
   }
