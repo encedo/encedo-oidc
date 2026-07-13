@@ -8,6 +8,11 @@ node_modules/
 *.log
 npm-debug.log*
 
+# Redis backups -- contain client secrets, access tokens, HSM certs
+backups/
+*.ndjson
+*.ndjson.gz
+
 # OS
 .DS_Store
 Thumbs.db

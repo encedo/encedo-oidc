@@ -759,6 +759,106 @@ After enrollment the user can log in. Point their OIDC client at `https://auth.e
 
 ---
 
+## Backup & Restore
+
+Redis is the **sole database** — users, enrolled public keys, clients and the audit log live nowhere else.
+Losing it means every user must re-enroll their HSM, so back it up.
+
+Two commands, both talking to `REDIS_URL` over the network (no access to the Redis container needed):
+
+```bash
+npm run backup                       # -> ./backups/redis-backup-<timestamp>.ndjson.gz
+npm run restore -- <file> --dry-run  # validate a backup without writing
+```
+
+The backup is a `SCAN` + `DUMP`/`PTTL` sweep written as gzipped NDJSON. Payloads are RDB-serialised,
+so `RESTORE` rebuilds every type and TTL exactly — including future schema additions, without
+changing this tool.
+
+### Backup
+
+| Flag | Meaning |
+|------|---------|
+| `--url <redis-url>` | default: `$REDIS_URL`, else `redis://127.0.0.1:6379` |
+| `--out <dir>` | output directory (default `./backups`) |
+| `--file <path\|->` | exact path; `-` streams to stdout |
+| `--match <glob>` | only keys matching the pattern |
+| `--skip-ephemeral` | drop `pending:` / `code:` / `enroll_lock:` / `rl:` (in-flight auth state) |
+| `--no-gzip` | plain NDJSON |
+
+```bash
+# Encrypted off-box backup
+npm run backup -- --file - | age -r age1... > backup.age
+```
+
+### Docker (multi-tenant)
+
+`redis-<tenant>` publishes no port — it is reachable only inside `oidc-net`. So run the backup from
+the `oidc-<tenant>` container, which is already on that network and already has `REDIS_URL` in its
+env (no `--url` needed). Write to the host via stdout, so no volume is required:
+
+```bash
+# host <- container.  No -t: it must stay a raw binary stream.
+docker exec oidc-acme node src/cli/backup.js --file - > /var/backups/oidc-acme-$(date +%F).ndjson.gz
+```
+
+For scheduled backups, mount a directory instead (add to the tenant's `docker-compose.yml`):
+
+```yaml
+  oidc:
+    volumes:
+      - /var/backups/oidc:/backups
+```
+```bash
+docker exec oidc-acme node src/cli/backup.js --out /backups
+```
+
+> The image must contain `src/cli/` — rebuild it (`docker build ...`) if the running container
+> predates this feature. Check with `docker exec oidc-acme ls src/cli`.
+
+**Verify a backup is actually restorable** — into a throwaway Redis, never the live one:
+
+```bash
+docker run -d --rm --name redis-verify --network oidc-net redis:7-alpine
+docker cp /var/backups/oidc-acme-2026-07-13.ndjson.gz oidc-acme:/tmp/verify.gz
+docker exec oidc-acme node src/cli/restore.js /tmp/verify.gz --url redis://redis-verify:6379
+docker exec redis-verify redis-cli dbsize        # must match the key count reported above
+docker stop redis-verify && docker exec oidc-acme rm /tmp/verify.gz
+```
+
+`restore` validates the file in a pass before writing, so it needs a **seekable file** — give it a
+path (`docker cp` or a mount), do not pipe a backup into its stdin.
+
+### Restore
+
+Restore refuses to touch a non-empty database unless you say how:
+
+```bash
+npm run restore -- backup.ndjson.gz               # only into an empty DB
+npm run restore -- backup.ndjson.gz --replace     # merge, overwriting colliding keys
+npm run restore -- backup.ndjson.gz --flush --yes # wipe the target first
+```
+
+The file is fully validated *before* the first key is written — a truncated or corrupt backup is
+rejected outright rather than leaving the database half-restored. TTLs are re-applied relative to the
+moment of restore (a key with 10h left when dumped gets 10h from now). Both commands exit non-zero on
+failure, so they are safe to drive from cron.
+
+> **Backups contain client secrets, access tokens and HSM certificates.** Files are written `0600`,
+> and `backups/` is git-ignored. Store them encrypted.
+>
+> `RESTORE` rejects payloads from a *newer* Redis: restore into an equal or newer version than the source.
+
+### Scheduled backups
+
+```cron
+# daily 03:15, keep 14 days
+15 3 * * * cd /opt/encedo-oidc && npm run backup -- --out /var/backups/oidc --quiet && \
+           find /var/backups/oidc -name '*.ndjson.gz' -mtime +14 -delete
+```
+
+---
+
 ## OIDC Endpoints
 
 | Method | Path | Description |
