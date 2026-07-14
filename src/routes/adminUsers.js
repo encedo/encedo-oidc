@@ -22,6 +22,25 @@ function deserialize(raw) {
   };
 }
 
+/**
+ * Normalise a clients[] grant: drop duplicates and verify every client_id really
+ * exists. A UUID that passes vUuid but names no client would be stored happily,
+ * show up in the admin panel as a bare UUID with no name, and grant nothing --
+ * the user would simply never be able to sign in to it.
+ *
+ * @returns {Promise<{ids: string[], unknown: string[]}>}
+ */
+async function resolveClientGrant(clients) {
+  const ids = [...new Set(clients ?? [])];
+  if (ids.length === 0) return { ids, unknown: [] };
+
+  const pipeline = redis.multi();
+  for (const id of ids) pipeline.sIsMember('clients', id);
+  const exists = await pipeline.exec();
+
+  return { ids, unknown: ids.filter((_, i) => !exists[i]) };
+}
+
 // --- GET /admin/users -----------------------------------------
 router.get('/', async (_req, res, next) => {
   try {
@@ -49,16 +68,40 @@ router.get('/:sub', async (req, res, next) => {
 // --- POST /admin/users ----------------------------------------
 router.post('/', async (req, res, next) => {
   try {
-    const { username, name, email, hsm_url, key_type } = req.body ?? {};
+    const { username, name, email, hsm_url, key_type, clients } = req.body ?? {};
 
-    const err = validate(
+    const checks = [
       vUsername(username),
       vEmail(email),
       vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true }),
       vDisplayName(name),
       vKeyType(key_type),
-    );
+    ];
+
+    // clients is optional; same shape as PATCH (array of client_id UUIDs). A user
+    // with none cannot authenticate anywhere -- /authorize/login rejects them with
+    // client_not_authorized -- so it was previously impossible to create a usable
+    // user in one step.
+    if (clients !== undefined) {
+      if (!Array.isArray(clients)) {
+        checks.push('clients must be an array');
+      } else {
+        for (const id of clients) {
+          const e = vUuid(id, `clients[${id}]`);
+          if (e) { checks.push(e); break; }
+        }
+      }
+    }
+
+    const err = validate(...checks);
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
+
+    // Every granted client must exist -- a well-formed UUID is not enough.
+    const grant = await resolveClientGrant(clients);
+    if (grant.unknown.length) {
+      return res.status(400).json({ error: 'validation_error',
+        error_description: `unknown client_id: ${grant.unknown.join(', ')}` });
+    }
 
     const resolvedKeyType = key_type ?? DEFAULT_KEY_TYPE;
 
@@ -76,7 +119,7 @@ router.post('/', async (req, res, next) => {
       name:       (name ?? '').trim(),
       email:      email.trim().toLowerCase(),
       hsm_url:    hsm_url.trim(),
-      clients:    '[]',
+      clients:    JSON.stringify(grant.ids),
       created_at: new Date().toISOString(),
     };
 
@@ -131,6 +174,17 @@ router.patch('/:sub', async (req, res, next) => {
     const err = checks.find(e => e !== null && e !== undefined) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
+    // Every granted client must exist -- same rule as POST, so there is no path
+    // that can store a grant pointing at a client that is not there.
+    let grant = null;
+    if (Array.isArray(req.body.clients)) {
+      grant = await resolveClientGrant(req.body.clients);
+      if (grant.unknown.length) {
+        return res.status(400).json({ error: 'validation_error',
+          error_description: `unknown client_id: ${grant.unknown.join(', ')}` });
+      }
+    }
+
     const allowed = ['username', 'name', 'email', 'hsm_url'];
     const updates = {};
     for (const key of allowed) {
@@ -141,8 +195,8 @@ router.patch('/:sub', async (req, res, next) => {
       }
     }
 
-    if (Array.isArray(req.body.clients)) {
-      updates.clients = JSON.stringify(req.body.clients);
+    if (grant) {
+      updates.clients = JSON.stringify(grant.ids);
     }
 
     if (req.body.hsm_url_in_userinfo !== undefined) {

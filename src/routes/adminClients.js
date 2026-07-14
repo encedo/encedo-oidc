@@ -202,8 +202,24 @@ router.delete('/:id', async (req, res, next) => {
     await redis.del(`client:${id}`);
     await redis.sRem('clients', id);
 
-    await logSecurity(SEC.ADMIN_CLIENT_DELETE, { client_id: id, ip: req.ip });
-    console.log(`[Admin] Client deleted: ${id}`);
+    // Revoke the grant everywhere. Without this, user:{sub}.clients keeps pointing
+    // at a client that no longer exists: the admin panel shows a bare UUID with no
+    // name, and any write of that user's grants would now be rejected as an unknown
+    // client_id. Creating a grant is validated, so deleting must clean up after itself.
+    const subs = await redis.sMembers('users');
+    let revoked = 0;
+    for (const sub of subs) {
+      const raw = await redis.hGet(`user:${sub}`, 'clients');
+      if (!raw) continue;
+      let list;
+      try { list = JSON.parse(raw); } catch { continue; }
+      if (!Array.isArray(list) || !list.includes(id)) continue;
+      await redis.hSet(`user:${sub}`, { clients: JSON.stringify(list.filter(c => c !== id)) });
+      revoked++;
+    }
+
+    await logSecurity(SEC.ADMIN_CLIENT_DELETE, { client_id: id, revoked_from_users: revoked, ip: req.ip });
+    console.log(`[Admin] Client deleted: ${id} (revoked from ${revoked} user(s))`);
     res.status(204).send();
   } catch (err) { next(err); }
 });

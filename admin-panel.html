@@ -437,6 +437,12 @@ html.light .client-check-name{color:var(--text)}
           <option value="P521">P-521 (ECDSA / ES512)</option>
         </select>
       </div>
+      <div class="divider"></div>
+      <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
+      <div class="clients-list" id="au-clients-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
+      </div>
+      <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to &#183; a user with none cannot sign in anywhere</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>

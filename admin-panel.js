@@ -238,6 +238,8 @@ function openAddUser() {
   ['u-username','u-firstname','u-lastname','u-email'].forEach(id => $(id).value = '');
   $('u-hsm').value = 'https://my.ence.do';
   $('u-key-type').value = 'Ed25519';
+  // Nothing checked by default -- assigning a client is an explicit grant.
+  _renderClientsChecklist([], 'au-clients-list');
   openModal('modal-add-user');
   setTimeout(() => $('u-username').focus(), 60);
 }
@@ -257,8 +259,11 @@ async function submitAddUser() {
   if (!email)     return toast('Email required', 'err');
   if (!hsm_url)   return toast('HSM URL required', 'err');
 
+  const clients = [...document.querySelectorAll('#au-clients-list input:checked')]
+    .map(el => el.dataset.cid);
+
   try {
-    const user = await api('/admin/users', {method:'POST', body:JSON.stringify({username, name, email, hsm_url, key_type})});
+    const user = await api('/admin/users', {method:'POST', body:JSON.stringify({username, name, email, hsm_url, key_type, clients})});
     closeModal('modal-add-user');
 
     const { enrollment_url } = user;
@@ -328,8 +333,9 @@ function _getClaimsFromUI() {
   return result;
 }
 
-async function _renderClientsChecklist(selectedIds) {
-  const wrap = $('eu-clients-list');
+/** Shared by the Add and Edit user modals -- same checklist, same markup. */
+async function _renderClientsChecklist(selectedIds, listId = 'eu-clients-list') {
+  const wrap = $(listId);
   wrap.innerHTML = '<div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>';
   try {
     _clientsCache = await api('/admin/clients');
