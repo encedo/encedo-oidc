@@ -187,6 +187,27 @@ html.light .client-check-name{color:var(--text)}
 
 /* ── Audit selects ────────────────────────────────────── */
 .audit-select{background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:7px 12px;font-family:var(--mono);font-size:11px;color:var(--text);outline:none;cursor:pointer}
+
+/* ── Link pills (user <-> client) + shared popover ─────── */
+/* The popover lives on <body> and is position:fixed on purpose: .table has
+   overflow:hidden for its rounded corners, so anything absolutely positioned
+   inside a row would be clipped at the table edge. */
+.link-pill{display:inline-flex;align-items:center;gap:5px;background:rgba(110,53,140,.1);border:1px solid rgba(110,53,140,.22);border-radius:6px;padding:2px 8px;font-family:var(--mono);font-size:10px;color:var(--soft);cursor:default}
+.link-pill:hover{border-color:var(--accent);color:var(--text)}
+.link-pill.is-empty{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.3);color:var(--amber);cursor:help}
+.link-pill.is-empty:hover{border-color:var(--amber)}
+.link-pill .dot{width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.link-pill.is-empty .dot{background:var(--amber)}
+
+.pop{position:fixed;z-index:200;display:none;max-width:340px;background:var(--panel);border:1px solid var(--dim);border-radius:10px;padding:9px 11px;box-shadow:0 8px 26px rgba(0,0,0,.5)}
+.pop.open{display:block}
+.pop-title{font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;margin-bottom:6px}
+/* Two lines: the client_id is a UUID and would be ellipsised away on one line. */
+.pop-item{font-family:var(--mono);font-size:11px;color:var(--text);padding:3px 0}
+.pop-item + .pop-item{border-top:1px solid var(--rim)}
+.pop-item small{display:block;color:var(--muted);font-size:9px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pop-more{font-family:var(--mono);font-size:10px;color:var(--muted);padding-top:4px;border-top:1px solid var(--rim);margin-top:5px}
+.pop-warn{font-family:var(--mono);font-size:10px;color:var(--amber);line-height:1.5}
 </style>
 </head>
 <body>
@@ -257,11 +278,12 @@ html.light .client-check-name{color:var(--text)}
         </div>
       </div>
       <div class="table">
-        <div class="table-head" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
+        <div class="table-head" style="grid-template-columns:1fr 1.2fr 1.5fr 1fr .8fr .9fr 1fr;">
           <div class="table-head-cell">USERNAME</div>
           <div class="table-head-cell">FULL NAME</div>
           <div class="table-head-cell">EMAIL</div>
           <div class="table-head-cell">HSM URL</div>
+          <div class="table-head-cell">CLIENTS</div>
           <div class="table-head-cell">CREATED</div>
           <div class="table-head-cell" style="text-align:right">ACTIONS</div>
         </div>
@@ -835,6 +857,7 @@ html.light .client-check-name{color:var(--text)}
 </div>
 
 <div id="toasts"></div>
+<div id="pop" class="pop"></div>
 
 <script src="/admin-panel.js"></script>
 </body>

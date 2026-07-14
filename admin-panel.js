@@ -38,6 +38,83 @@ const secret = () => $('api-secret').value;
 const hdrs = () => ({'Content-Type':'application/json','Authorization':`Bearer ${secret()}`});
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+/* -- user <-> client links -------------------------------------------------
+   The relation is stored on the user only (user:{sub}.clients) and it GATES
+   LOGIN: /authorize/login rejects a user whose clients[] does not contain the
+   client_id (hint: client_not_authorized). So an empty list is not a cosmetic
+   detail -- that user cannot sign in anywhere. The client -> users direction is
+   derived here in the browser; Redis holds no reverse index. */
+const POP_MAX = 10;
+
+const clientNameOf = id => _clientsCache.find(c => c.client_id === id)?.name ?? id;
+const usersOfClient = id => _usersCache.filter(u => (u.clients ?? []).includes(id));
+
+/** Count pill; the popover reads the data-pop* attributes on hover. */
+function linkPill(kind, key, count) {
+  const cls = count ? 'link-pill' : 'link-pill is-empty';
+  const label = count || 'none';
+  return `<span class="${cls}" data-pop="${kind}" data-pop-key="${esc(key)}">`
+       + `<span class="dot"></span>${label}</span>`;
+}
+
+function popContent(kind, key) {
+  if (kind === 'user-clients') {
+    const ids = _usersCache.find(u => u.sub === key)?.clients ?? [];
+    if (!ids.length) {
+      return '<div class="pop-warn">No clients assigned &mdash; this user cannot sign in anywhere.</div>';
+    }
+    const items = ids.slice(0, POP_MAX).map(id =>
+      `<div class="pop-item">${esc(clientNameOf(id))}<small>${esc(id)}</small></div>`).join('');
+    const more = ids.length > POP_MAX
+      ? `<div class="pop-more">+${ids.length - POP_MAX} more</div>` : '';
+    return `<div class="pop-title">CAN SIGN IN TO</div>${items}${more}`;
+  }
+
+  const us = usersOfClient(key);
+  if (!us.length) {
+    return '<div class="pop-warn">No users assigned &mdash; nobody can sign in to this client.</div>';
+  }
+  const items = us.slice(0, POP_MAX).map(u =>
+    `<div class="pop-item">${esc(u.username || u.sub)}<small>${esc(u.email ?? '')}</small></div>`).join('');
+  const more = us.length > POP_MAX
+    ? `<div class="pop-more">+${us.length - POP_MAX} more</div>` : '';
+  return `<div class="pop-title">USERS ASSIGNED</div>${items}${more}`;
+}
+
+let _popEl = null;
+
+function showPop(el) {
+  const pop = $('pop');
+  pop.innerHTML = popContent(el.dataset.pop, el.dataset.popKey);
+  pop.classList.add('open');
+
+  // position:fixed, measured after render -- .table has overflow:hidden for its
+  // rounded corners, so an absolutely positioned popover would be clipped.
+  const anchor = el.getBoundingClientRect();
+  const box    = pop.getBoundingClientRect();
+  let left = anchor.left;
+  let top  = anchor.bottom + 6;
+  if (left + box.width  > window.innerWidth  - 12) left = window.innerWidth - box.width - 12;
+  if (top  + box.height > window.innerHeight - 12) top  = anchor.top - box.height - 6; // flip above
+  pop.style.left = Math.max(12, left) + 'px';
+  pop.style.top  = Math.max(12, top)  + 'px';
+}
+
+function hidePop() {
+  _popEl = null;
+  $('pop').classList.remove('open');
+}
+
+// Delegated: rows are re-rendered on every load, so per-element listeners would
+// leak. mouseover fires on children too -- compare against the tracked element.
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest?.('[data-pop]') ?? null;
+  if (el === _popEl) return;
+  if (el) { _popEl = el; showPop(el); }
+  else if (_popEl) hidePop();
+});
+document.addEventListener('scroll', hidePop, true);
+
 async function api(path, opts = {}) {
   const res = await fetch(base() + path, {
     ...opts,
@@ -128,19 +205,22 @@ async function loadUsers() {
   const b = $('users-body');
   b.innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
   try {
-    const users = await api('/admin/users');
+    // Both lists: the CLIENTS column resolves client_id -> client name.
+    const [users, clients] = await Promise.all([api('/admin/users'), api('/admin/clients')]);
     _usersCache = users;
+    _clientsCache = clients;
     $('users-sub').textContent = users.length + ' registered user' + (users.length !== 1 ? 's' : '');
     if (!users.length) {
       b.innerHTML = '<div class="empty">No users yet</div>';
       return;
     }
     b.innerHTML = users.map((u, i) => `
-      <div class="table-row" style="grid-template-columns:1fr 1.3fr 1.6fr 1fr 1fr 1fr;">
+      <div class="table-row" style="grid-template-columns:1fr 1.2fr 1.5fr 1fr .8fr .9fr 1fr;">
         <div class="cell-name">${esc(u.username || u.sub)}</div>
         <div class="cell-mono" style="color:var(--text)">${esc(u.name || '-')}</div>
         <div class="cell-mono">${esc(u.email || '-')}</div>
         <div class="cell-mono" style="font-size:10px">${esc(u.hsm_url)}</div>
+        <div>${linkPill('user-clients', u.sub, (u.clients ?? []).length)}</div>
         <div class="cell-muted">${fmt(u.created_at)}</div>
         <div class="cell-actions">
           <button class="btn btn-xs" style="background:rgba(52,216,154,.12);border:1px solid rgba(52,216,154,.3);color:var(--green)" onclick="requestEnrollment('${esc(u.sub)}', ${!!u.pubkey})">${u.pubkey ? 'Renew' : 'New Enrollment'}</button>
@@ -490,8 +570,10 @@ async function loadClients() {
   const b = $('clients-body');
   b.innerHTML = '<div class="loading-row"><span class="spinner"></span></div>';
   try {
-    const cls = await api('/admin/clients');
+    // Both lists: the USERS pill is a reverse lookup over user.clients[].
+    const [cls, users] = await Promise.all([api('/admin/clients'), api('/admin/users')]);
     _clientsCache = cls;
+    _usersCache = users;
     $('clients-sub').textContent = cls.length + ' relying part' + (cls.length !== 1 ? 'ies' : 'y');
     $('jwks-panel').style.display = cls.length ? 'block' : 'none';
     $('jwks-url').textContent = base() + '/jwks.json';
@@ -503,11 +585,14 @@ async function loadClients() {
       const urimeta = (c.redirect_uris || []).map(u => u.replace(/^https?:\/\//, '')).join(' - ');
       const scopePills = (c.scopes || ['openid']).map(s =>
         `<span class="scope-pill">${esc(s)}</span>`).join('');
+      const userCount = usersOfClient(c.client_id).length;
       return `<div class="client-card">
         <div class="client-card-body">
           <div class="client-card-name">${esc(c.name)}</div>
           <div class="client-card-meta">id: <span>${esc(c.client_id)}</span> &nbsp;&middot;&nbsp; ${esc(urimeta)}</div>
-          <div class="client-card-scopes">${scopePills}</div>
+          <div class="client-card-scopes">${scopePills}
+            ${linkPill('client-users', c.client_id, userCount)}
+          </div>
         </div>
         <div class="client-card-actions">
           <button class="btn btn-ghost btn-xs" onclick="openEditClient(${ci})">Edit</button>
