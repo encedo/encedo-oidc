@@ -87,10 +87,16 @@ router.post('/', async (req, res, next) => {
 
     const resolvedKeyType = key_type ?? DEFAULT_KEY_TYPE;
 
-    // username must be unique -- O(1) index lookup
-    const uname = username.trim();
+    // username + email must be unique -- O(1) index lookups. Uniqueness is scoped
+    // to this tenant (one Redis per tenant). Pre-existing records were never
+    // indexed and are grandfathered: this only prevents NEW collisions.
+    const uname  = username.trim();
+    const nemail = email.trim().toLowerCase();
     if (await redis.hGet('username_index', uname)) {
       return res.status(409).json({ error: 'username_already_exists' });
+    }
+    if (await redis.hGet('email_index', nemail)) {
+      return res.status(409).json({ error: 'email_already_exists' });
     }
 
     const sub = randomUUID();
@@ -99,7 +105,7 @@ router.post('/', async (req, res, next) => {
       sub,
       username:   uname,
       name:       (name ?? '').trim(),
-      email:      email.trim().toLowerCase(),
+      email:      nemail,
       hsm_url:    hsm_url.trim(),
       clients:    JSON.stringify(grant.ids),
       email_verified: 'false',   // on-site Add: no mailbox proof; upgraded only via emailed link
@@ -109,6 +115,7 @@ router.post('/', async (req, res, next) => {
     await redis.hSet(`user:${sub}`, record);
     await redis.sAdd('users', sub);
     await redis.hSet('username_index', uname, sub);
+    await redis.hSet('email_index', nemail, sub);
 
     // Generate enrollment link (24h) -- included in creation response
     const token = randomBytes(32).toString('base64url');
@@ -208,6 +215,29 @@ router.patch('/:sub', async (req, res, next) => {
         if (currentRaw) await redis.hDel('username_index', currentRaw);
       }
       updates.username = newName;
+    }
+
+    // Same for email (already normalised in `updates`). A grandfathered record has
+    // no email_index entry; claiming here simply starts indexing it going forward.
+    if (updates.email) {
+      const newEmail   = updates.email;
+      const currentRaw = await redis.hGet(`user:${sub}`, 'email');
+
+      if (currentRaw !== newEmail) {
+        const claimed = await redis.hSetNX('email_index', newEmail, sub);
+        if (!claimed) {
+          const owner = await redis.hGet('email_index', newEmail);
+          if (owner !== sub) {
+            return res.status(409).json({ error: 'email_already_exists' });
+          }
+        }
+        // Only release the old email if THIS sub owns its index entry. A
+        // grandfathered old email may be indexed to a newer claimant of the same
+        // address -- deleting that would free someone else's email.
+        if (currentRaw && (await redis.hGet('email_index', currentRaw)) === sub) {
+          await redis.hDel('email_index', currentRaw);
+        }
+      }
     }
 
     updates.updated_at = new Date().toISOString();
@@ -317,14 +347,20 @@ router.delete('/:sub', async (req, res, next) => {
       await pipeline.exec();
     }
 
-    const [username, enrollToken] = await Promise.all([
+    const [username, email, enrollToken] = await Promise.all([
       redis.hGet(`user:${sub}`, 'username'),
+      redis.hGet(`user:${sub}`, 'email'),
       redis.hGet(`user:${sub}`, 'enrollment_token'),
     ]);
     if (enrollToken) await redis.del(`enrollment:${enrollToken}`);
     await redis.del(`user:${sub}`);
     await redis.sRem('users', sub);
     if (username) await redis.hDel('username_index', username);
+    // Release the email only if THIS sub owns its index entry (grandfathered
+    // dupes may point elsewhere).
+    if (email && (await redis.hGet('email_index', email)) === sub) {
+      await redis.hDel('email_index', email);
+    }
 
     await logSecurity(SEC.ADMIN_USER_DELETE, { sub, username, revokedTokens: tokenKeys.length, ip: req.ip });
     console.log(`[Admin] User deleted: ${sub}`);

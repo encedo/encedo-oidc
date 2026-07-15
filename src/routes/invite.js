@@ -42,6 +42,13 @@ export async function adminInviteHandler(req, res, next) {
     const err = checks.find(e => e) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
+    // Early email-uniqueness check -- fail the invite now instead of at signup.
+    // Not authoritative (nothing is reserved here): signupRegisterHandler re-checks
+    // and claims the index when the user is actually created.
+    if (await redis.hGet('email_index', email.trim().toLowerCase())) {
+      return res.status(409).json({ error: 'email_already_exists' });
+    }
+
     // Every granted client must exist -- same rule as POST /admin/users.
     const grant = await resolveClientGrant(clients);
     if (grant.unknown.length) {
@@ -211,6 +218,10 @@ export async function signupRegisterHandler(req, res, next) {
         error_description: 'Invite must pin a valid username and email' });
     }
 
+    if (await redis.hGet('email_index', email)) {
+      return res.status(409).json({ error: 'email_already_exists' });
+    }
+
     if (await redis.hGet('username_index', uname)) {
       return res.status(409).json({ error: 'username_already_exists' });
     }
@@ -251,6 +262,7 @@ export async function signupRegisterHandler(req, res, next) {
     await redis.hSet(`user:${sub}`, record);
     await redis.sAdd('users', sub);
     await redis.hSet('username_index', uname, sub);
+    await redis.hSet('email_index', email, sub);
 
     // key_type priority: invite-forced > user-choice > default
     const forcedKeyType = invite.key_type ?? reqKeyType ?? DEFAULT_KEY_TYPE;

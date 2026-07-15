@@ -229,6 +229,8 @@ user:{sub}        Hash { sub, username, name, email, hsm_url,
 
 username_index    Hash { username → sub }
 
+email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; pre-existing records grandfathered (not backfilled)
+
 users             Set  { sub, ... }
 
 client:{id}       Hash { client_id, client_secret, name,
