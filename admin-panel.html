@@ -272,8 +272,7 @@ html.light .client-check-name{color:var(--text)}
           <div class="page-sub" id="users-sub">loading...</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost" onclick="openInviteUser()">&#9993; Invite user</button>
-          <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+          <button class="btn btn-primary" onclick="openAddUser()">+ New user</button>
           <button class="btn btn-ghost" style="padding:7px 14px;" onclick="loadUsers()">&#8635;</button>
         </div>
       </div>
@@ -401,7 +400,7 @@ html.light .client-check-name{color:var(--text)}
 <div class="overlay" id="modal-add-user">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Add user</div>
+      <div class="modal-title">New user</div>
       <button class="modal-close" onclick="closeModal('modal-add-user')">&#215;</button>
     </div>
     <div class="modal-body">
@@ -425,16 +424,13 @@ html.light .client-check-name{color:var(--text)}
         <input class="field-input" id="u-email" type="email" placeholder="jan@example.com">
       </div>
       <div class="field">
-        <label class="field-label">HSM URL</label>
-        <input class="field-input" id="u-hsm" placeholder="https://my.ence.do">
-      </div>
-      <div class="field">
         <label class="field-label">Key algorithm</label>
         <select class="field-input" id="u-key-type" style="appearance:auto;cursor:pointer;">
           <option value="Ed25519">Ed25519 (EdDSA)</option>
           <option value="P256">P-256 (ECDSA / ES256)</option>
           <option value="P384">P-384 (ECDSA / ES384)</option>
           <option value="P521">P-521 (ECDSA / ES512)</option>
+          <option value="">User chooses (invite only)</option>
         </select>
       </div>
       <div class="divider"></div>
@@ -443,56 +439,24 @@ html.light .client-check-name{color:var(--text)}
         <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
       </div>
       <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to &#183; a user with none cannot sign in anywhere</div>
+      <div class="divider"></div>
+      <div class="field">
+        <label class="field-label">HSM URL <span style="color:var(--muted)">(for Add)</span></label>
+        <input class="field-input" id="u-hsm" placeholder="https://my.ence.do">
+        <div class="field-hint" style="margin-top:6px">
+          <b>Add</b> creates the account now &mdash; needs the HSM URL (user is here with their device).<br>
+          <b>Invite</b> emails a self-service link &mdash; the user provides their HSM URL during enrollment.
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitAddUser()">Create</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-user')">Close</button>
+      <button class="btn btn-ghost" onclick="submitInviteUser()">Invite</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">Add</button>
     </div>
   </div>
 </div>
 
-<!-- INVITE USER -->
-<div class="overlay" id="modal-invite-user">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">Invite user</div>
-      <button class="modal-close" onclick="closeModal('modal-invite-user')">&#215;</button>
-    </div>
-    <div class="modal-body">
-      <div class="field">
-        <label class="field-label">Client (required)</label>
-        <select class="field-input" id="inv-client" style="appearance:none;cursor:pointer;"></select>
-      </div>
-      <div class="section-label" style="margin-bottom:10px">Pre-fill (optional — user can edit)</div>
-      <div class="field">
-        <label class="field-label" for="inv-username">Username</label>
-        <input class="field-input" id="inv-username" type="text" placeholder="leave empty for user to choose">
-      </div>
-      <div class="field">
-        <label class="field-label" for="inv-name">Full name</label>
-        <input class="field-input" id="inv-name" type="text" placeholder="">
-      </div>
-      <div class="field">
-        <label class="field-label" for="inv-email">Email</label>
-        <input class="field-input" id="inv-email" type="email" placeholder="">
-      </div>
-      <div class="field">
-        <label class="field-label" for="inv-key-type">Key algorithm (optional — leave blank to let user choose)</label>
-        <select class="field-input" id="inv-key-type" style="appearance:auto;cursor:pointer;">
-          <option value="">User chooses</option>
-          <option value="Ed25519">Ed25519 (EdDSA)</option>
-          <option value="P256">P-256 (ECDSA / ES256)</option>
-          <option value="P384">P-384 (ECDSA / ES384)</option>
-          <option value="P521">P-521 (ECDSA / ES512)</option>
-        </select>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modal-invite-user')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitInviteUser()">Generate link</button>
-    </div>
-  </div>
-</div>
 
 <!-- INVITE CLIENT -->
 <div class="overlay" id="modal-invite-client">

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { randomUUID, randomBytes } from 'crypto';
 import redis from '../services/redis.js';
+import { resolveClientGrant } from '../services/clientGrant.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -20,25 +21,6 @@ function deserialize(raw) {
     custom_claims:        JSON.parse(rest.custom_claims ?? '{}'),
     hsm_url_in_userinfo:  rest.hsm_url_in_userinfo !== '0', // default true
   };
-}
-
-/**
- * Normalise a clients[] grant: drop duplicates and verify every client_id really
- * exists. A UUID that passes vUuid but names no client would be stored happily,
- * show up in the admin panel as a bare UUID with no name, and grant nothing --
- * the user would simply never be able to sign in to it.
- *
- * @returns {Promise<{ids: string[], unknown: string[]}>}
- */
-async function resolveClientGrant(clients) {
-  const ids = [...new Set(clients ?? [])];
-  if (ids.length === 0) return { ids, unknown: [] };
-
-  const pipeline = redis.multi();
-  for (const id of ids) pipeline.sIsMember('clients', id);
-  const exists = await pipeline.exec();
-
-  return { ids, unknown: ids.filter((_, i) => !exists[i]) };
 }
 
 // --- GET /admin/users -----------------------------------------

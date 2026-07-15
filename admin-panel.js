@@ -391,41 +391,27 @@ async function requestEnrollment(sub, hasKey) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function openInviteUser() {
-  ['inv-username','inv-name','inv-email'].forEach(id => $(id).value = '');
-  $('inv-key-type').value = '';
-  const sel = $('inv-client');
-  sel.innerHTML = '<option value="">loading...</option>';
-  openModal('modal-invite-user');
-  try {
-    const clients = await api('/admin/clients');
-    if (!clients.length) {
-      sel.innerHTML = '<option value="">No clients defined</option>';
-      return;
-    }
-    sel.innerHTML = clients.map(c =>
-      `<option value="${esc(c.client_id)}">${esc(c.name)}</option>`
-    ).join('');
-  } catch (e) {
-    sel.innerHTML = `<option value="">Error: ${esc(e.message)}</option>`;
-  }
-}
 
+// Invite branch of the shared New-user form: same fields as Add, minus HSM URL
+// (the invitee supplies their device at enrollment). Identity is required for
+// both branches -- that is what dissolved the old "leave empty" P0.
 async function submitInviteUser() {
-  const client_id = $('inv-client').value;
-  if (!client_id) return toast('Select a client', 'err');
-  const body = { client_id };
-  const username = $('inv-username').value.trim();
-  const name     = $('inv-name').value.trim();
-  const email    = $('inv-email').value.trim();
-  const key_type = $('inv-key-type').value;
-  if (username) body.username = username;
+  const username = $('u-username').value.trim();
+  const name     = [$('u-firstname').value.trim(), $('u-lastname').value.trim()].filter(Boolean).join(' ');
+  const email    = $('u-email').value.trim();
+  const key_type = $('u-key-type').value;   // '' = let the user choose at signup
+  const clients  = [...document.querySelectorAll('#au-clients-list input:checked')].map(el => el.dataset.cid);
+
+  if (!username)       return toast('Username required', 'err');
+  if (!email)          return toast('Email required', 'err');
+  if (!clients.length) return toast('Select at least one client', 'err');
+
+  const body = { clients, username, email };
   if (name)     body.name     = name;
-  if (email)    body.email    = email;
   if (key_type) body.key_type = key_type;
   try {
     const data = await api('/admin/invite', { method: 'POST', body: JSON.stringify(body) });
-    closeModal('modal-invite-user');
+    closeModal('modal-add-user');
     $('inv-result-url').textContent = data.invite_url;
     openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
@@ -715,7 +701,6 @@ window.openModal        = openModal;
 window.closeModal       = closeModal;
 window.copyText         = copyText;
 window.toggleTheme      = toggleTheme;
-window.openInviteUser   = openInviteUser;
 window.submitInviteUser = submitInviteUser;
 window.openAddUser      = openAddUser;
 window.submitAddUser    = submitAddUser;

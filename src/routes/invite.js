@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'crypto';
 import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validate, vEmail, vUsername, vDisplayName, vUrl, vKeyType } from '../middleware/validate.js';
+import { resolveClientGrant } from '../services/clientGrant.js';
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
 
@@ -10,17 +11,23 @@ const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT 
 // Invite tokens: randomBytes(32).toString('hex') = 64 hex chars
 const TOKEN_RE = /^[a-f0-9]{64}$/;
 
+/** Client id(s) from an invite record. Handles both the new clients[] shape and
+ *  legacy single-client_id invites created before opt. A. */
+const inviteClients = (data) =>
+  Array.isArray(data.clients) ? data.clients : (data.client_id ? [data.client_id] : []);
+
 // --- POST /admin/invite ---------------------------------------
 export async function adminInviteHandler(req, res, next) {
   try {
-    const { client_id, username, name, email, key_type } = req.body ?? {};
+    const { username, name, email, key_type } = req.body ?? {};
+    // Multi-client invites (opt. A). Accept a legacy single client_id too, so an
+    // older caller keeps working; the invitee's user is created with the whole list.
+    const clients = Array.isArray(req.body?.clients)
+      ? req.body.clients
+      : (req.body?.client_id ? [req.body.client_id] : []);
 
-    if (!client_id) {
-      return res.status(400).json({ error: 'validation_error', error_description: 'client_id is required' });
-    }
-    const clientRaw = await redis.hGetAll(`client:${client_id}`);
-    if (!clientRaw?.client_id) {
-      return res.status(404).json({ error: 'client_not_found' });
+    if (clients.length === 0) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'at least one client is required' });
     }
 
     // Identity is pinned here by the admin and enforced at /signup/register, so
@@ -35,18 +42,31 @@ export async function adminInviteHandler(req, res, next) {
     const err = checks.find(e => e) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
+    // Every granted client must exist -- same rule as POST /admin/users.
+    const grant = await resolveClientGrant(clients);
+    if (grant.unknown.length) {
+      return res.status(400).json({ error: 'validation_error',
+        error_description: `unknown client_id: ${grant.unknown.join(', ')}` });
+    }
+
+    // Resolve names for display in the invites list (cheap, done once at creation).
+    const namePipeline = redis.multi();
+    for (const id of grant.ids) namePipeline.hGet(`client:${id}`, 'name');
+    const names = await namePipeline.exec();
+    const client_names = grant.ids.map((id, i) => names[i] || id);
+
     const token = randomBytes(32).toString('hex');
     await redis.set(`invite:${token}`, JSON.stringify({
-      client_id,
-      client_name: clientRaw.name || client_id,
-      username:    username.trim(),
-      name:        name?.trim() ?? '',
-      email:       email.trim().toLowerCase(),
-      key_type:    key_type ?? null, // null = user can choose during enrollment
+      clients:      grant.ids,
+      client_names,
+      username:     username.trim(),
+      name:         name?.trim() ?? '',
+      email:        email.trim().toLowerCase(),
+      key_type:     key_type ?? null, // null = user can choose during enrollment
     }), { EX: 86400 });
 
     const invite_url = `${issuer()}/signup#token=${token}`;
-    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'invite_generated', client_id, ip: req.ip });
+    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'invite_generated', clients: grant.ids, ip: req.ip });
 
     res.status(201).json({ invite_url, expires_in: 86400 });
   } catch (err) { next(err); }
@@ -64,8 +84,10 @@ export async function signupPrefillHandler(req, res, next) {
     if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
 
     const data = JSON.parse(raw);
+    // signup.js shows a single label -- join names for a multi-client invite.
+    const clientNames = data.client_names ?? (data.client_name ? [data.client_name] : []);
     res.json({
-      client_name: data.client_name,
+      client_name: clientNames.join(', '),
       username:    data.username,
       name:        data.name,
       email:       data.email,
@@ -115,13 +137,16 @@ export async function adminListInvitesHandler(_req, res, next) {
       if (!raw) continue;
       const data = JSON.parse(raw);
       const token = key.slice(prefix.length);
+      // client invites carry `note`; user invites carry one or many clients.
+      const clientNames = data.client_names
+        ?? (data.client_name ? [data.client_name] : []);
       invites.push({
         token,
         type,
-        client_id:   data.client_id   ?? null,
-        client_name: data.client_name ?? data.note ?? '',
-        username:    data.username    ?? '',
-        email:       data.email       ?? '',
+        client_id:   data.clients?.[0] ?? data.client_id ?? null, // first, for back-compat
+        client_name: clientNames.join(', ') || data.note || '',
+        username:    data.username ?? '',
+        email:       data.email    ?? '',
         ttl,
       });
     }
@@ -184,8 +209,10 @@ export async function signupRegisterHandler(req, res, next) {
     if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
     const invite = JSON.parse(raw);
 
-    // Derive client redirect origin for post-enrollment Close button
-    const clientRaw = await redis.hGetAll(`client:${invite.client_id}`);
+    const inviteClientIds = inviteClients(invite);
+
+    // Derive client redirect origin (first client) for the post-enrollment Close button
+    const clientRaw = await redis.hGetAll(`client:${inviteClientIds[0]}`);
     const redirectUris = JSON.parse(clientRaw?.redirect_uris ?? '[]');
     let client_redirect_origin = null;
     if (redirectUris.length) {
@@ -199,7 +226,7 @@ export async function signupRegisterHandler(req, res, next) {
       name:       (name ?? '').trim(),
       email,      // pinned by the invite, already normalised above
       hsm_url:    hsm_url.trim(),
-      clients:    JSON.stringify([invite.client_id]),
+      clients:    JSON.stringify(inviteClientIds),
       created_at: new Date().toISOString(),
     };
 
@@ -220,7 +247,7 @@ export async function signupRegisterHandler(req, res, next) {
     }), { EX: 3600 }); // 1h — user is actively enrolling right now
     await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
 
-    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'signup', sub, username: uname, client_id: invite.client_id, ip: req.ip });
+    await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'signup', sub, username: uname, clients: inviteClientIds, ip: req.ip });
 
     res.status(201).json({
       sub,
