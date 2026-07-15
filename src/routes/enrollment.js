@@ -136,7 +136,7 @@ router.post('/submit',
     keyFn: req => req.body?.token ?? req.ip }),
   async (req, res, next) => {
   try {
-    const { token, hsm_url, kid, pubkey, key_type, signature, genuine, crt } = req.body;
+    const { token, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n } = req.body;
 
     if (!token)     return res.status(400).json({ error: 'missing_token' });
     if (!hsm_url)   return res.status(400).json({ error: 'missing_hsm_url' });
@@ -255,6 +255,13 @@ router.post('/submit',
         console.warn(`[Enrollment] Attestation not verified: hw_attested=${hw_attested} reason=${attestResult.reason ?? '-'}`);
       }
 
+      // email_verified: completing enrollment via the emailed link proves mailbox
+      // access (EMAIL.MD). Path B (invite -> signup) carries the proof forward as
+      // session.via_email; path A (direct enrollment link) matches n against the
+      // nonce stored on this enrollment session.
+      const emailVerified = session.via_email === true
+        || Boolean(n && session.email_nonce && n === session.email_nonce);
+
       const userFields = {
         hsm_url:      hsm_url.trim(),
         kid:          expectedKid,
@@ -264,6 +271,10 @@ router.post('/submit',
         enrolled_at:  new Date().toISOString(),
         updated_at:   new Date().toISOString(),
       };
+      // Upgrade-only: re-enrolling a device (e.g. plain admin link) must never
+      // downgrade an already-verified email. The field is set to 'false' at user
+      // creation, so absence here just preserves the current value.
+      if (emailVerified) userFields.email_verified = 'true';
       if (attestResult.crt) userFields.hsm_crt = attestResult.crt;
 
       await redis.hSet(`user:${sub}`, userFields);

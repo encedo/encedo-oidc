@@ -2,8 +2,9 @@ import { HEM, HemError } from '/hem-sdk.js';
 
 // Read token from URL fragment (#token=...) -- fragment is never sent to the server,
 // so it won't appear in access logs or Referer headers.
-const params = new URLSearchParams(window.location.hash.slice(1));
-const token  = params.get('token') || '';
+const params     = new URLSearchParams(window.location.hash.slice(1));
+const token      = params.get('token') || '';
+const emailNonce = params.get('n') || '';   // present when arriving via the emailed link
 
 let userData = { sub: '', username: '' };
 let clientRedirectOrigin = null;
@@ -206,7 +207,7 @@ async function doSubmit() {
     const res  = await fetch('/enrollment/submit', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt }),
+      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n: emailNonce }),
     });
     const data = await res.json();
 

@@ -56,6 +56,16 @@ export async function adminInviteHandler(req, res, next) {
     const client_names = grant.ids.map((id, i) => names[i] || id);
 
     const token = randomBytes(32).toString('hex');
+    // email_nonce proves the invite link was delivered to (and clicked from) the
+    // pinned mailbox: completing signup+enrollment via this nonce sets
+    // email_verified=true (EMAIL.MD). It travels only in the URL fragment (#...&n=),
+    // which never reaches server logs, and it is NEVER returned to the admin --
+    // otherwise the signal would lose its evidentiary value.
+    //
+    // NOTE: while UI email sending is not wired yet, the admin copies this link by
+    // hand, so email_verified is not yet trustworthy end-to-end. Nothing consumes
+    // it for access decisions until the connector enforcement (EMAIL.MD stage 4).
+    const email_nonce = randomBytes(32).toString('base64url');
     await redis.set(`invite:${token}`, JSON.stringify({
       clients:      grant.ids,
       client_names,
@@ -63,9 +73,10 @@ export async function adminInviteHandler(req, res, next) {
       name:         name?.trim() ?? '',
       email:        email.trim().toLowerCase(),
       key_type:     key_type ?? null, // null = user can choose during enrollment
+      email_nonce,
     }), { EX: 86400 });
 
-    const invite_url = `${issuer()}/signup#token=${token}`;
+    const invite_url = `${issuer()}/signup#token=${token}&n=${email_nonce}`;
     await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'invite_generated', clients: grant.ids, ip: req.ip });
 
     res.status(201).json({ invite_url, expires_in: 86400 });
@@ -170,7 +181,7 @@ export async function adminDeleteInviteHandler(req, res, next) {
 // by the frontend using the returned token (no redirect needed).
 export async function signupRegisterHandler(req, res, next) {
   try {
-    const { token, name, hsm_url, key_type: reqKeyType } = req.body ?? {};
+    const { token, name, hsm_url, key_type: reqKeyType, n } = req.body ?? {};
 
     if (!token || !TOKEN_RE.test(token)) {
       return res.status(400).json({ error: 'invalid_token' });
@@ -219,6 +230,12 @@ export async function signupRegisterHandler(req, res, next) {
       try { client_redirect_origin = new URL(redirectUris[0]).origin; } catch { /* ignore */ }
     }
 
+    // Did the invitee arrive via the emailed link? The nonce is compared here, but
+    // email_verified is only committed once enrollment actually completes (below,
+    // via the enrollment session), so an abandoned signup never marks the mailbox
+    // as verified.
+    const via_email = Boolean(invite.email_nonce && n && n === invite.email_nonce);
+
     const sub = randomUUID();
     const record = {
       sub,
@@ -227,6 +244,7 @@ export async function signupRegisterHandler(req, res, next) {
       email,      // pinned by the invite, already normalised above
       hsm_url:    hsm_url.trim(),
       clients:    JSON.stringify(inviteClientIds),
+      email_verified: 'false',   // set to 'true' by /enrollment/submit if via_email
       created_at: new Date().toISOString(),
     };
 
@@ -244,6 +262,7 @@ export async function signupRegisterHandler(req, res, next) {
       hsm_url:           hsm_url.trim(),
       forced_key_type:   forcedKeyType,
       client_redirect_origin,
+      via_email,   // enrollment/submit reads this to set user.email_verified
     }), { EX: 3600 }); // 1h — user is actively enrolling right now
     await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
 

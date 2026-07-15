@@ -1,6 +1,10 @@
 import { HEM, HemError } from '/hem-sdk.js';
 
-const token = location.hash.slice(1).replace(/^token=/, '');
+// Fragment carries token and, for an emailed invite, the email nonce (#token=...&n=...).
+// Parse both properly -- a naive strip would fold "&n=..." into the token.
+const hashParams  = new URLSearchParams(location.hash.slice(1));
+const token       = hashParams.get('token') || '';
+const emailNonce  = hashParams.get('n') || '';
 
 let clientName           = '';
 let clientRedirectOrigin = null;
@@ -103,6 +107,9 @@ if (!token) {
       if (d.name)  document.getElementById('su-name').value  = d.name;
       if (d.email) document.getElementById('su-email').value = d.email;
 
+      // Arrived via the emailed link -> the click itself proves mailbox access.
+      if (emailNonce) document.getElementById('su-email-verified').style.display = 'flex';
+
       // Key type: locked or selectable
       if (forcedKeyType) {
         document.getElementById('su-key-type-row').style.display        = 'none';
@@ -161,7 +168,7 @@ async function doSubmit() {
     const regRes  = await fetch('/signup/register', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token, username, name, email, hsm_url, key_type }),
+      body:    JSON.stringify({ token, username, name, email, hsm_url, key_type, n: emailNonce }),
     });
     const regData = await regRes.json();
     if (!regRes.ok) {

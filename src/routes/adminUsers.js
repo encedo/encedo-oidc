@@ -102,6 +102,7 @@ router.post('/', async (req, res, next) => {
       email:      email.trim().toLowerCase(),
       hsm_url:    hsm_url.trim(),
       clients:    JSON.stringify(grant.ids),
+      email_verified: 'false',   // on-site Add: no mailbox proof; upgraded only via emailed link
       created_at: new Date().toISOString(),
     };
 

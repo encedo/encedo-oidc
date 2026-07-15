@@ -200,6 +200,12 @@
       <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name">Loading&hellip;</strong></div>
     </div>
 
+    <!-- Shown only when arriving via the emailed link (nonce present) -->
+    <div id="su-email-verified" style="display:none;align-items:center;gap:8px;margin-bottom:16px;padding:9px 12px;border-radius:10px;background:rgba(52,216,154,.1);border:1px solid rgba(52,216,154,.3);font-size:13px;color:var(--green,#34D89A)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" style="flex-shrink:0"><path d="M20 6 9 17l-5-5"/></svg>
+      <span>Email verified &mdash; finish setup below</span>
+    </div>
+
     <!-- Username: editable or locked by admin -->
     <div class="field" id="su-username-row">
       <label class="field-label" for="su-username">Username</label>
