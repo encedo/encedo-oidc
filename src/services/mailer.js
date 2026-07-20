@@ -9,6 +9,13 @@
  * Credentials come only from the environment -- never hard-coded, never logged.
  */
 import nodemailer from 'nodemailer';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
+
+// The same logo the web UI serves at /logo.png (this file is src/services/).
+// Embedded inline via CID so it renders even when the client blocks remote images.
+const LOGO_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../logo.png');
+const LOGO_CID  = 'encedo-logo';
 
 let transport = null;
 
@@ -47,8 +54,8 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 12px;">
 <tr><td align="center">
 <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;font-family:'Inter',Arial,Helvetica,sans-serif;">
-<tr><td style="padding:34px 40px 6px;text-align:center;">
-<span style="font-size:22px;font-weight:700;letter-spacing:.02em;color:#6E358C;">encedo</span></td></tr>
+<tr><td style="padding:32px 40px 6px;text-align:center;">
+<img src="cid:${LOGO_CID}" alt="Encedo" height="44" style="height:44px;border-radius:12px;display:inline-block;"></td></tr>
 <tr><td style="padding:16px 40px 32px;">
 <h1 style="margin:0 0 14px;font-size:20px;font-weight:700;color:#2A225E;">${esc(heading)}</h1>
 <p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:#222;">Hello${greetingName ? ' ' + esc(greetingName) : ''},</p>
@@ -82,6 +89,7 @@ export async function sendEnrollmentEmail({ to, url, clientName, name }) {
         `Hello${name ? ` ${name}` : ''},\n\n${intro}\n${url}\n\n` +
         `The link expires in 24 hours. If you did not request this, ignore this message.\n`,
       html: renderHtml({ heading: 'Link your Encedo HSM', greetingName: name, intro, url, buttonLabel: 'Complete setup' }),
+      attachments: [{ filename: 'logo.png', path: LOGO_PATH, cid: LOGO_CID }],
     });
     return { ok: true, messageId: info.messageId };
   } catch (err) {
@@ -107,6 +115,7 @@ export async function sendVerificationEmail({ to, url, name }) {
         `Hello${name ? ` ${name}` : ''},\n\n${intro}\n${url}\n\n` +
         `The link expires in 24 hours. If you did not request this, ignore this message.\n`,
       html: renderHtml({ heading: 'Confirm your email address', greetingName: name, intro, url, buttonLabel: 'Confirm email' }),
+      attachments: [{ filename: 'logo.png', path: LOGO_PATH, cid: LOGO_CID }],
     });
     return { ok: true, messageId: info.messageId };
   } catch (err) {
