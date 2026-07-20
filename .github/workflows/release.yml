@@ -35,6 +35,7 @@ jobs:
             admin-panel.html admin-panel.js \
             signup.html signup.js \
             signup-client.html signup-client.js \
+            verify-email.html verify-email.js \
             hem-sdk.js favicon.ico \
             package.json .env.example
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"

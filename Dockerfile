@@ -11,6 +11,7 @@ COPY index.html     index.js     \
      admin-panel.html admin-panel.js \
      signup.html     signup.js    \
      signup-client.html signup-client.js \
+     verify-email.html verify-email.js \
      hem-sdk.js      logo.png    ./
 
 ARG GIT_COMMIT=unknown
