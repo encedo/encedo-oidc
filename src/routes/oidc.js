@@ -217,6 +217,9 @@ router.get('/authorize', async (req, res, next) => {
 
 // --- 4. POST /authorize/login ---------------------------------
 router.post('/authorize/login',
+  // Backstop keyed by IP -- the per-client_id limit below can be bypassed by
+  // rotating client_id, but the caller cannot rotate their source IP as cheaply.
+  rateLimit({ prefix: 'login-ip', max: 40, window: 60 }),
   rateLimit({ prefix: 'login', max: 20, window: 60,
     keyFn: req => req.body?.client_id ?? req.ip }),
   async (req, res, next) => {

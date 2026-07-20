@@ -5,6 +5,7 @@ import redis from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validateAttestation } from '../services/attestation.js';
 import { invalidateJwksCache } from './oidc.js';
+import { vUrl } from '../middleware/validate.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
@@ -96,6 +97,9 @@ function verifyEnrollmentSig(key_type, compressedHex, msg, sigB64url) {
 // Calling validate activates the session: TTL shortened to 30 min,
 // challenge generated (idempotent on repeated calls).
 router.get('/validate',
+  // IP backstop -- the per-token limit below is bypassable by sending random
+  // tokens (each is its own bucket); the source IP is not as cheap to rotate.
+  rateLimit({ prefix: 'enroll-validate-ip', max: 30, window: 60 }),
   rateLimit({ prefix: 'enroll-validate', max: 10, window: 60,
     keyFn: req => req.query.token ?? req.ip }),
   async (req, res, next) => {
@@ -132,6 +136,7 @@ router.get('/validate',
 // Body: { token, hsm_url, kid, pubkey, key_type, signature, genuine?, crt? }
 // signature = sign(challenge) with the new key, base64url-encoded.
 router.post('/submit',
+  rateLimit({ prefix: 'enroll-submit-ip', max: 20, window: 60 }),   // IP backstop (see /validate)
   rateLimit({ prefix: 'enroll-submit', max: 5, window: 60,
     keyFn: req => req.body?.token ?? req.ip }),
   async (req, res, next) => {
@@ -140,6 +145,12 @@ router.post('/submit',
 
     if (!token)     return res.status(400).json({ error: 'missing_token' });
     if (!hsm_url)   return res.status(400).json({ error: 'missing_hsm_url' });
+    // hsm_url is persisted on the user record -- validate its shape here too, the
+    // same way /signup/register does (other paths validated it, this one did not).
+    {
+      const e = vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true });
+      if (e) return res.status(400).json({ error: 'validation_error', error_description: e });
+    }
     if (!kid)       return res.status(400).json({ error: 'missing_kid' });
     if (!pubkey)    return res.status(400).json({ error: 'missing_pubkey' });
     if (!key_type)  return res.status(400).json({ error: 'missing_key_type' });
