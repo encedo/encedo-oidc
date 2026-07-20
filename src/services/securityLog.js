@@ -66,6 +66,7 @@ export const SEC = {
   ENROLL_OK:         'enrollment.ok',
   ENROLL_FAIL:       'enrollment.fail',
   ENROLL_REGEN:      'enrollment.regen',
+  ENROLL_EMAIL_SENT: 'enrollment.email_sent',
   // Session
   LOGOUT:            'auth.logout',
   // Rate limiting

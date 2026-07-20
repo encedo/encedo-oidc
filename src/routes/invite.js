@@ -3,6 +3,7 @@ import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validate, vEmail, vUsername, vDisplayName, vUrl, vKeyType } from '../middleware/validate.js';
 import { resolveClientGrant } from '../services/clientGrant.js';
+import { sendEnrollmentEmail, isMailEnabled } from '../services/mailer.js';
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
 
@@ -173,6 +174,42 @@ export async function adminListInvitesHandler(_req, res, next) {
       });
     }
     res.json(invites);
+  } catch (err) { next(err); }
+}
+
+// --- POST /admin/invites/:token/send-email --------------------
+// Emails the invite's enrollment link to the address the ADMIN pinned on the
+// invite -- never an address from the request body (anti open-relay). The link
+// carries the invite's email_nonce, so completing signup+enrollment via it marks
+// the mailbox verified. The nonce/link are NOT returned to the admin.
+export async function adminSendInviteEmailHandler(req, res, next) {
+  try {
+    if (!isMailEnabled()) {
+      return res.status(503).json({ error: 'mail_disabled', error_description: 'SMTP is not configured' });
+    }
+    const { token } = req.params;
+    if (!TOKEN_RE.test(token)) return res.status(400).json({ error: 'invalid_token' });
+
+    const raw = await redis.get(`invite:${token}`);
+    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    const invite = JSON.parse(raw);
+
+    const to = (invite.email ?? '').trim().toLowerCase();
+    if (!to) return res.status(400).json({ error: 'invite_incomplete', error_description: 'invite has no pinned email' });
+
+    const clientNames = invite.client_names ?? (invite.client_name ? [invite.client_name] : []);
+    const url = `${issuer()}/signup#token=${token}${invite.email_nonce ? `&n=${invite.email_nonce}` : ''}`;
+
+    const result = await sendEnrollmentEmail({
+      to, url, clientName: clientNames.join(', '), username: invite.username,
+    });
+    if (!result.ok) {
+      await logSecurity(SEC.ENROLL_FAIL, { action: 'invite_email_failed', reason: result.error, ip: req.ip });
+      return res.status(502).json({ error: 'mail_send_failed', error_description: result.error });
+    }
+
+    await logSecurity(SEC.ENROLL_EMAIL_SENT, { to, ip: req.ip });
+    res.json({ sent: true, to });   // no nonce, no url
   } catch (err) { next(err); }
 }
 

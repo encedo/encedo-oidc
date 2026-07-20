@@ -16,7 +16,8 @@ import adminUsers, { getAuditLog }              from './routes/adminUsers.js';
 import adminClients                              from './routes/adminClients.js';
 import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
-import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler } from './routes/invite.js';
+import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler, adminSendInviteEmailHandler } from './routes/invite.js';
+import { isMailEnabled } from './services/mailer.js';
 import { adminInviteClientHandler, adminDeleteClientInviteHandler, signupClientPrefillHandler, signupClientRegisterHandler } from './routes/inviteClient.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -95,7 +96,7 @@ app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
 // --- Health check -------------------------------------------------------------
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null });
+  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null, mail_enabled: isMailEnabled() });
 });
 
 // --- Static UI pages ----------------------------------------------------------
@@ -143,6 +144,7 @@ app.get('/admin/audit-log', getAuditLog);
 app.post('/admin/invite', adminInviteHandler);
 app.post('/admin/invite-client', adminInviteClientHandler);
 app.get('/admin/invites', adminListInvitesHandler);
+app.post('/admin/invites/:token/send-email', adminSendInviteEmailHandler);
 app.delete('/admin/invites/:token', adminDeleteInviteHandler);
 app.delete('/admin/client-invites/:token', adminDeleteClientInviteHandler);
 

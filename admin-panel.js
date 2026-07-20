@@ -28,6 +28,8 @@ let _usersCache = [];
 let _clientsCache = [];
 let _editClientId = null;
 let _rotateId = null;
+let _mailEnabled = false;   // from /health.mail_enabled -- gates the "Email link" button
+let _inviteToken = null;    // token of the invite shown in the invite-link modal
 
 /* -- helpers -- */
 const $ = id => document.getElementById(id);
@@ -181,6 +183,7 @@ async function checkHealth() {
     if (!r.ok) throw 0;
     const health = await r.json();
     if (health.commit) $('version-label').textContent = ' v ' + health.commit;
+    _mailEnabled = !!health.mail_enabled;
     // URL reachable — check if secret is valid by probing admin endpoint
     const r2 = await fetch(base() + '/admin/users', {
       method: 'HEAD',
@@ -413,8 +416,32 @@ async function submitInviteUser() {
     const data = await api('/admin/invite', { method: 'POST', body: JSON.stringify(body) });
     closeModal('modal-add-user');
     $('inv-result-url').textContent = data.invite_url;
+    // Token for the optional "Email link" action -- parse it out of the URL fragment.
+    _inviteToken = (data.invite_url.split('#token=')[1] || '').split('&')[0] || null;
+    const emailBtn = $('inv-email-btn');
+    if (_mailEnabled && _inviteToken) {
+      emailBtn.style.display = '';
+      emailBtn.textContent = `✉ Email link to ${email}`;
+    } else {
+      emailBtn.style.display = 'none';
+    }
     openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+async function emailInviteLink() {
+  if (!_inviteToken) return;
+  const btn = $('inv-email-btn');
+  btn.disabled = true;
+  try {
+    const r = await api(`/admin/invites/${encodeURIComponent(_inviteToken)}/send-email`, { method: 'POST' });
+    toast(`Invite emailed to ${r.to}`);
+    closeModal('modal-invite-link');
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function delUser(sub, username) {
@@ -711,6 +738,7 @@ window.closeModal       = closeModal;
 window.copyText         = copyText;
 window.toggleTheme      = toggleTheme;
 window.submitInviteUser = submitInviteUser;
+window.emailInviteLink  = emailInviteLink;
 window.openAddUser      = openAddUser;
 window.submitAddUser    = submitAddUser;
 window.openEditUser     = openEditUser;
