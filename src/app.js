@@ -47,7 +47,7 @@ const STYLE_HASHES = [
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
   "'sha256-aeiTjKwpQyLweFX9vVB9iij4EBs40oHYv9vg69BhU7w='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
-  "'sha256-Go0yfMfZTrdJO7mU3UBwv0vzonREN7afqYNYVN45vHY='", // verify-email.html
+  "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",

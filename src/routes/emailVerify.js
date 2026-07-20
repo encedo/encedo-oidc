@@ -38,7 +38,9 @@ export async function sendVerificationEmailHandler(req, res, next) {
     await redis.set(`email_verify:${token}`, JSON.stringify({ sub, email: to }), { EX: 86400 });
     const url = `${issuer()}/verify-email#token=${token}`;
 
-    const result = await sendVerificationEmail({ to, url, username: user.username });
+    // Greet by full name when set, else the username.
+    const greet = (user.name && user.name.trim()) || user.username;
+    const result = await sendVerificationEmail({ to, url, name: greet });
     if (!result.ok) {
       await logSecurity(SEC.ENROLL_FAIL, { action: 'verify_email_failed', reason: result.error, ip: req.ip });
       return res.status(502).json({ error: 'mail_send_failed', error_description: result.error });

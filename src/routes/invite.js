@@ -200,8 +200,10 @@ export async function adminSendInviteEmailHandler(req, res, next) {
     const clientNames = invite.client_names ?? (invite.client_name ? [invite.client_name] : []);
     const url = `${issuer()}/signup#token=${token}${invite.email_nonce ? `&n=${invite.email_nonce}` : ''}`;
 
+    // Greet by full name when the invite has one, else the username.
+    const greet = (invite.name && invite.name.trim()) || invite.username;
     const result = await sendEnrollmentEmail({
-      to, url, clientName: clientNames.join(', '), username: invite.username,
+      to, url, clientName: clientNames.join(', '), name: greet,
     });
     if (!result.ok) {
       await logSecurity(SEC.ENROLL_FAIL, { action: 'invite_email_failed', reason: result.error, ip: req.ip });

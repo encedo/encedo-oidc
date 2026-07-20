@@ -6,55 +6,115 @@
 <title>Confirm your email — Encedo</title>
 <link rel="icon" href="/favicon.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#0a0c0f; --card:#12161c; --rim:#1e2730; --text:#D8C8F8; --muted:#6a7a8a;
-          --accent:#8040F0; --green:#34D89A; --red:#FF4D72; --white:#F2EEFF; }
-  * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif;
-         min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .card { background: var(--card); border: 1px solid var(--rim); border-radius: 18px;
-          padding: 40px 36px; max-width: 420px; width: 100%; text-align: center; }
-  .logo { width: 108px; margin: 0 auto 26px; display: block; }
-  .icon { width: 56px; height: 56px; border-radius: 50%; display: none; align-items: center;
-          justify-content: center; margin: 0 auto 20px; }
-  .icon.ok  { background: rgba(52,216,154,.12); }
-  .icon.err { background: rgba(255,77,114,.12); }
-  h1 { font-size: 21px; font-weight: 700; color: var(--white); margin-bottom: 10px; }
-  p  { font-size: 14px; color: var(--muted); line-height: 1.6; }
-  .email { color: var(--text); font-weight: 600; }
-  .spinner { width: 30px; height: 30px; border: 3px solid var(--rim); border-top-color: var(--accent);
-             border-radius: 50%; animation: spin .8s linear infinite; margin: 8px auto 18px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .screen { display: none; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --green:   #2ecc71;
+    --red:     #e74c3c;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+  }
+
+  .screen { display: none; width: 100%; max-width: 440px; }
   .screen.on { display: block; }
+
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase; margin-top: 10px;
+  }
+
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 40px 40px 44px;
+    text-align: center;
+  }
+
+  .icon-circle {
+    width: 72px; height: 72px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 22px;
+  }
+  .icon-circle-ok  { background: rgba(46,204,113,.1); border: 1px solid rgba(46,204,113,.35); }
+  .icon-circle-err { background: rgba(231,76,60,.1);  border: 1px solid rgba(231,76,60,.35); }
+
+  h1 { font-size: 22px; font-weight: 700; color: var(--navy); margin-bottom: 12px; }
+  p  { font-size: 15px; color: var(--muted); line-height: 1.6; }
+  .email { color: var(--purple); font-weight: 600; }
+
+  .spinner {
+    width: 34px; height: 34px; border: 3px solid rgba(110,53,140,.15);
+    border-top-color: var(--purple); border-radius: 50%;
+    animation: spin .8s linear infinite; margin: 6px auto 22px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 520px) { .card { padding: 30px 24px 34px; border-radius: 22px; } }
 </style>
 </head>
 <body>
-  <div class="card">
-    <img class="logo" src="/logo.png" alt="Encedo">
 
-    <div class="screen on" id="s-loading">
-      <div class="spinner"></div>
-      <p>Confirming your email address…</p>
-    </div>
-
-    <div class="screen" id="s-ok">
-      <div class="icon ok" style="display:flex">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#34D89A" stroke-width="2.6"><polyline points="20 6 9 17 4 12"/></svg>
-      </div>
-      <h1>Email confirmed</h1>
-      <p><span class="email" id="ok-email"></span> is now verified. You can close this tab.</p>
-    </div>
-
-    <div class="screen" id="s-err">
-      <div class="icon err" style="display:flex">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF4D72" stroke-width="2.6"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </div>
-      <h1>Link not valid</h1>
-      <p id="err-msg">This confirmation link is invalid or has expired. Ask your administrator to send a new one.</p>
-    </div>
+<div class="screen on" id="s-loading">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Email Verification</div>
   </div>
-  <script src="/verify-email.js"></script>
+  <div class="card">
+    <div class="spinner"></div>
+    <p>Confirming your email address&hellip;</p>
+  </div>
+</div>
+
+<div class="screen" id="s-ok">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Email Verification</div>
+  </div>
+  <div class="card">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <h1>Email confirmed</h1>
+    <p><span class="email" id="ok-email"></span> is now verified. You can close this tab.</p>
+  </div>
+</div>
+
+<div class="screen" id="s-err">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Email Verification</div>
+  </div>
+  <div class="card">
+    <div class="icon-circle icon-circle-err">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </div>
+    <h1>Link not valid</h1>
+    <p id="err-msg">This confirmation link is invalid or has expired. Ask your administrator to send a new one.</p>
+  </div>
+</div>
+
+<script src="/verify-email.js"></script>
 </body>
 </html>
