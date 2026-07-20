@@ -289,8 +289,11 @@ async function openEditUser(idx) {
   $('eu-firstname').value       = parts[0] || '';
   $('eu-lastname').value        = parts.slice(1).join(' ') || '';
   $('eu-email').value           = u.email || '';
-  _setEmailStatus(u.email_verified === true || u.email_verified === 'true');
+  _setEmailStatus(u.email_verified === true || u.email_verified === 'true');   // cached, may be stale
   $('eu-verify-btn').style.display = _mailEnabled ? '' : 'none';
+  // email_verified can flip OUTSIDE the panel (the user clicks the emailed link),
+  // so the cache is often stale here -- refresh this one field from the server.
+  refreshEmailStatus(u.sub);
   $('eu-hsm').value             = u.hsm_url || '';
   $('eu-kid').textContent       = u.kid || '--';
   $('eu-key-type').textContent  = u.key_type || 'EdDSA';
@@ -429,6 +432,19 @@ async function submitInviteUser() {
     }
     openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+// Pull the current email_verified for one user (it can change outside the panel)
+// and update the pill -- only if that user's modal is still open. Does NOT touch
+// _usersCache: the table rows are indexed by position, so reordering the cache
+// would make the Edit buttons open the wrong user.
+async function refreshEmailStatus(sub) {
+  try {
+    const fresh = (await api('/admin/users')).find(u => u.sub === sub);
+    if (fresh && $('eu-sub').textContent.trim() === sub) {
+      _setEmailStatus(fresh.email_verified === true || fresh.email_verified === 'true');
+    }
+  } catch { /* keep the cached value on error */ }
 }
 
 // Green pill when the DB email_verified flag is true, amber otherwise.
