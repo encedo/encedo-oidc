@@ -60,7 +60,7 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
 <h1 style="margin:0 0 14px;font-size:20px;font-weight:700;color:#2A225E;">${esc(heading)}</h1>
 <p style="margin:0 0 10px;font-size:15px;line-height:1.6;color:#222;">Hello${greetingName ? ' ' + esc(greetingName) : ''},</p>
 <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#444;">${esc(intro)}</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>
+<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto 24px;"><tr>
 <td style="border-radius:22px;background:#6E358C;"><a href="${u}" style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:22px;">${esc(buttonLabel)}</a></td>
 </tr></table>
 <p style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#666;">Or paste this link into your browser:</p>
