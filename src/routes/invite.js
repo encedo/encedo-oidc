@@ -70,13 +70,12 @@ export async function adminInviteHandler(req, res, next) {
     const token = randomBytes(32).toString('hex');
     // email_nonce proves the invite link was delivered to (and clicked from) the
     // pinned mailbox: completing signup+enrollment via this nonce sets
-    // email_verified=true (EMAIL.MD). It travels only in the URL fragment (#...&n=),
-    // which never reaches server logs, and it is NEVER returned to the admin --
-    // otherwise the signal would lose its evidentiary value.
-    //
-    // NOTE: while UI email sending is not wired yet, the admin copies this link by
-    // hand, so email_verified is not yet trustworthy end-to-end. Nothing consumes
-    // it for access decisions until the connector enforcement (EMAIL.MD stage 4).
+    // email_verified=true (EMAIL.MD). It is stored on the invite but NEVER handed
+    // back to the admin -- it is added to the link ONLY when the server itself
+    // sends the email (/admin/invites/:token/send-email). The admin-visible link
+    // below carries NO nonce, so a link the admin copies by hand yields
+    // email_verified=false (no proof the mailbox was actually reached). That is
+    // what keeps the signal trustworthy.
     const email_nonce = randomBytes(32).toString('base64url');
     await redis.set(`invite:${token}`, JSON.stringify({
       clients:      grant.ids,
@@ -88,7 +87,8 @@ export async function adminInviteHandler(req, res, next) {
       email_nonce,
     }), { EX: 86400 });
 
-    const invite_url = `${issuer()}/signup#token=${token}&n=${email_nonce}`;
+    // No &n= here on purpose -- the nonce only ever leaves via the emailed link.
+    const invite_url = `${issuer()}/signup#token=${token}`;
     await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'invite_generated', clients: grant.ids, ip: req.ip });
 
     res.status(201).json({ invite_url, expires_in: 86400 });
