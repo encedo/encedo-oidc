@@ -14,8 +14,7 @@ const router = Router();
 
 function deserialize(raw) {
   if (!raw || Object.keys(raw).length === 0) return null;
-  // eslint-disable-next-line no-unused-vars
-  const { enrollment_token, ...rest } = raw; // internal field -- never exposed via API
+  const { enrollment_token, ...rest } = raw; // internal field -- never exposed via API (omitted here)
   return {
     ...rest,
     clients:              JSON.parse(rest.clients       ?? '[]'),
