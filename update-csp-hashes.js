@@ -18,6 +18,7 @@ const FILES = [
   { file: 'index.html',       label: 'index.html' },
   { file: 'signup.html',      label: 'signup.html' },
   { file: 'signup-client.html', label: 'signup-client.html' },
+  { file: 'verify-email.html', label: 'verify-email.html' },
 ];
 
 function styleHash(html) {

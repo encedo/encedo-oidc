@@ -18,6 +18,7 @@ import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
 import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler, adminSendInviteEmailHandler } from './routes/invite.js';
 import { isMailEnabled } from './services/mailer.js';
+import { confirmEmailHandler } from './routes/emailVerify.js';
 import { adminInviteClientHandler, adminDeleteClientInviteHandler, signupClientPrefillHandler, signupClientRegisterHandler } from './routes/inviteClient.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +47,7 @@ const STYLE_HASHES = [
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
   "'sha256-aeiTjKwpQyLweFX9vVB9iij4EBs40oHYv9vg69BhU7w='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
+  "'sha256-Go0yfMfZTrdJO7mU3UBwv0vzonREN7afqYNYVN45vHY='", // verify-email.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",
@@ -131,6 +133,11 @@ app.post('/signup/register',       signupRegisterHandler);
 app.get('/signup-client',          (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.html')));
 app.get('/signup-client/prefill',  signupClientPrefillHandler);
 app.post('/signup-client/register', signupClientRegisterHandler);
+
+// --- Email verification (public -- the token in the link is the credential) ----
+app.get('/verify-email',           (_req, res) => res.sendFile(resolve(ROOT, 'verify-email.html')));
+app.get('/verify-email.js',        (_req, res) => res.sendFile(resolve(ROOT, 'verify-email.js')));
+app.post('/verify-email/confirm',  rateLimit({ prefix: 'verify-email', max: 20, window: 60 }), confirmEmailHandler);
 
 // --- Admin API -- network check + auth -----------------------------------------
 app.use('/admin',

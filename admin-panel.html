@@ -558,6 +558,10 @@ html.light .client-check-name{color:var(--text)}
       <div class="field">
         <label class="field-label">Email</label>
         <input class="field-input" id="eu-email" type="email">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px">
+          <span id="eu-email-status" class="link-pill" style="cursor:default"><span class="dot"></span>—</span>
+          <button class="btn btn-ghost btn-xs" id="eu-verify-btn" style="display:none" onclick="sendVerificationEmail()">&#9993; Send verification email</button>
+        </div>
       </div>
       <div class="divider"></div>
       <div class="section-label">Hardware</div>

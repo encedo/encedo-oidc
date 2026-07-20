@@ -289,6 +289,8 @@ async function openEditUser(idx) {
   $('eu-firstname').value       = parts[0] || '';
   $('eu-lastname').value        = parts.slice(1).join(' ') || '';
   $('eu-email').value           = u.email || '';
+  _setEmailStatus(u.email_verified === true || u.email_verified === 'true');
+  $('eu-verify-btn').style.display = _mailEnabled ? '' : 'none';
   $('eu-hsm').value             = u.hsm_url || '';
   $('eu-kid').textContent       = u.kid || '--';
   $('eu-key-type').textContent  = u.key_type || 'EdDSA';
@@ -427,6 +429,33 @@ async function submitInviteUser() {
     }
     openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+// Green pill when the DB email_verified flag is true, amber otherwise.
+function _setEmailStatus(verified) {
+  const el = $('eu-email-status');
+  if (verified) {
+    el.style.cssText = 'cursor:default;background:rgba(52,216,154,.1);border-color:rgba(52,216,154,.35);color:var(--green)';
+    el.innerHTML = '<span class="dot" style="background:var(--green)"></span>email verified';
+  } else {
+    el.style.cssText = 'cursor:default;background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.3);color:var(--amber)';
+    el.innerHTML = '<span class="dot" style="background:var(--amber)"></span>not verified';
+  }
+}
+
+// (Re)send a confirm-your-email link to the edited user. Repeatable.
+async function sendVerificationEmail() {
+  const sub = $('eu-sub').textContent.trim();
+  const btn = $('eu-verify-btn');
+  btn.disabled = true;
+  try {
+    const r = await api(`/admin/users/${encodeURIComponent(sub)}/send-verification-email`, { method: 'POST' });
+    toast(`Verification email sent to ${r.to}`);
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function emailInviteLink() {
@@ -739,6 +768,7 @@ window.copyText         = copyText;
 window.toggleTheme      = toggleTheme;
 window.submitInviteUser = submitInviteUser;
 window.emailInviteLink  = emailInviteLink;
+window.sendVerificationEmail = sendVerificationEmail;
 window.openAddUser      = openAddUser;
 window.submitAddUser    = submitAddUser;
 window.openEditUser     = openEditUser;

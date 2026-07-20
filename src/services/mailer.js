@@ -58,3 +58,27 @@ export async function sendEnrollmentEmail({ to, url, clientName, username }) {
     return { ok: false, error: err.message };
   }
 }
+
+/**
+ * Send a standalone "confirm your email address" link -- independent of
+ * enrollment, so it works for any user (on-site Add, copied invite link, or a
+ * changed address). Clicking it sets email_verified. Never throws.
+ */
+export async function sendVerificationEmail({ to, url, username }) {
+  if (!isMailEnabled()) return { ok: false, error: 'mail_disabled' };
+  try {
+    const info = await getTransport().sendMail({
+      from:    process.env.MAIL_FROM,
+      to,
+      subject: 'Confirm your email address',
+      text:
+        `Hello${username ? ` ${username}` : ''},\n\n` +
+        `Confirm this email address by opening the link below:\n${url}\n\n` +
+        `The link expires in 24 hours. If you did not request this, ignore this message.\n`,
+    });
+    return { ok: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('[Mailer] send failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+}

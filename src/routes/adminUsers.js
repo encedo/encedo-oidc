@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID, randomBytes } from 'crypto';
 import redis from '../services/redis.js';
 import { resolveClientGrant } from '../services/clientGrant.js';
+import { sendVerificationEmailHandler } from './emailVerify.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -237,6 +238,9 @@ router.patch('/:sub', async (req, res, next) => {
         if (currentRaw && (await redis.hGet('email_index', currentRaw)) === sub) {
           await redis.hDel('email_index', currentRaw);
         }
+        // The new address has not been proven -- any prior verification was for
+        // the old one. Force re-verification.
+        updates.email_verified = 'false';
       }
     }
 
@@ -386,5 +390,9 @@ export async function getAuditLog(req, res, next) {
     res.json({ entries, total, offset, limit });
   } catch (err) { next(err); }
 }
+
+// (Re)send a confirm-your-email link to this user -- repeatable, generates a
+// fresh token each time. Handler in emailVerify.js.
+router.post('/:sub/send-verification-email', sendVerificationEmailHandler);
 
 export default router;
