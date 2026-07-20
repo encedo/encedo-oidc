@@ -22,6 +22,12 @@ jobs:
       - name: Install production dependencies
         run: npm ci --omit=dev
 
+      # Gate the release on tests (redis-server backs the integration tests).
+      - name: Run tests
+        run: |
+          sudo apt-get update && sudo apt-get install -y redis-server
+          node --test
+
       - name: Build ZIP archive
         run: |
           VERSION="${GITHUB_REF_NAME}"

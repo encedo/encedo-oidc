@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # redis-server is spawned by the integration tests (test/flow.test.js);
+      # without it those tests skip themselves.
+      - name: Install redis-server
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: Run tests
+        run: node --test

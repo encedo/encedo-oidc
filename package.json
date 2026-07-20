@@ -9,6 +9,7 @@
     "start": "node src/app.js",
     "backup": "node src/cli/backup.js",
     "restore": "node src/cli/restore.js",
+    "test": "node --test",
     "lint": "eslint src/"
   },
   "dependencies": {
