@@ -697,6 +697,16 @@ html.light .client-check-name{color:var(--text)}
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
         </div>
       </div>
+      <div class="section-label" style="margin-top:14px">Open access</div>
+      <div class="pkce-row" id="c-open" onclick="togglePkce('c-open')">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Allow any enrolled user</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">Skips the per-user allow-list &mdash; every enrolled user can sign in here</div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-client')">Cancel</button>
@@ -766,6 +776,16 @@ html.light .client-check-name{color:var(--text)}
         <div>
           <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Require PKCE (S256)</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
+        </div>
+      </div>
+      <div class="section-label" style="margin-top:14px">Open access</div>
+      <div class="pkce-row" id="ec-open" onclick="togglePkce('ec-open')">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Allow any enrolled user</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">Skips the per-user allow-list &mdash; every enrolled user can sign in here</div>
         </div>
       </div>
     </div>

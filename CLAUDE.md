@@ -234,8 +234,10 @@ email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; 
 users             Set  { sub, ... }
 
 client:{id}       Hash { client_id, client_secret, name,
-                        redirect_uris, scopes, pkce,
+                        redirect_uris, scopes, pkce, allow_any_user,
                         id_token_ttl, access_token_ttl, created_at }
+                  allow_any_user: 'true'|'false' (default 'false') — open client: any ENROLLED user may
+                    authenticate (login gate ORs it with user.clients[]); never auto-creates the identity
 
 pending:{sid}     JSON TTL 120s
 code:{code}       JSON TTL 60s

@@ -31,6 +31,7 @@ function deserialize(raw) {
     redirect_uris:    JSON.parse(raw.redirect_uris    ?? '[]'),
     scopes:           JSON.parse(raw.scopes           ?? '["openid"]'),
     pkce:             raw.pkce === 'true',
+    allow_any_user:   raw.allow_any_user === 'true',
     id_token_ttl:     parseInt(raw.id_token_ttl)     || 3600,
     access_token_ttl: parseInt(raw.access_token_ttl) || 3600,
   };
@@ -71,6 +72,7 @@ router.post('/', async (req, res, next) => {
       name, redirect_uris = [],
       scopes = ['openid', 'profile', 'email'],
       pkce = true,
+      allow_any_user = false,
       id_token_ttl = 3600,
       access_token_ttl = 3600,
     } = req.body ?? {};
@@ -87,6 +89,9 @@ router.post('/', async (req, res, next) => {
     }
     if (typeof pkce !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'pkce must be a boolean' });
+    }
+    if (typeof allow_any_user !== 'boolean') {
+      return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
     }
 
     const uriErr = validateRedirectUris(redirect_uris);
@@ -105,6 +110,9 @@ router.post('/', async (req, res, next) => {
       redirect_uris:    JSON.stringify(redirect_uris),
       scopes:           JSON.stringify(validScopes),
       pkce:             String(pkce),
+      // Open client: ANY enrolled user may authenticate (skips the per-user
+      // clients[] allowlist). Off by default -- admin opts in explicitly.
+      allow_any_user:   String(allow_any_user),
       id_token_ttl:     String(id_token_ttl),
       access_token_ttl: String(access_token_ttl),
       created_at:       new Date().toISOString(),
@@ -152,6 +160,13 @@ router.patch('/:id', async (req, res, next) => {
         return res.status(400).json({ error: 'validation_error', error_description: 'pkce must be a boolean' });
       }
       updates.pkce = String(req.body.pkce);
+    }
+
+    if (req.body.allow_any_user !== undefined) {
+      if (typeof req.body.allow_any_user !== 'boolean') {
+        return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
+      }
+      updates.allow_any_user = String(req.body.allow_any_user);
     }
 
     if (req.body.id_token_ttl !== undefined) {

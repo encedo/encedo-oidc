@@ -275,11 +275,19 @@ router.post('/authorize/login',
         user = await findUserByUsername(username.trim());
       }
 
+      // Authorization to this client: either the client is open to any enrolled
+      // user (allow_any_user, opt-in per client), or the user was explicitly
+      // granted it (clients[]). An open client still requires an existing,
+      // enrolled Encedo user -- it never auto-creates the identity.
+      const clientOpen = clientRaw.allow_any_user === 'true';
+      const hasGrant   = !!user && JSON.parse(user.clients ?? '[]').includes(client_id);
+      const authorized = clientOpen || hasGrant;
+
       // Unified error -- do not reveal whether user exists, is unauthorized, or incomplete
-      if (!user || !JSON.parse(user.clients ?? '[]').includes(client_id) || !user.pubkey || !user.kid) {
+      if (!user || !authorized || !user.pubkey || !user.kid) {
         await logSecurity(SEC.LOGIN_FAIL, {
           client_id,
-          hint: !user ? 'user_not_found' : !JSON.parse(user.clients ?? '[]').includes(client_id) ? 'client_not_authorized' : 'enrollment_incomplete',
+          hint: !user ? 'user_not_found' : !authorized ? 'client_not_authorized' : 'enrollment_incomplete',
           ip: req.ip,
         });
         return res.status(400).json({ error: 'access_denied', error_description: 'invalid credentials' });

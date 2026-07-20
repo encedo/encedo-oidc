@@ -578,12 +578,16 @@ async function loadClients() {
       const scopePills = (c.scopes || ['openid']).map(s =>
         `<span class="scope-pill">${esc(s)}</span>`).join('');
       const userCount = usersOfClient(c.client_id).length;
+      const openBadge = c.allow_any_user
+        ? `<span class="link-pill is-empty" style="cursor:default" title="Any enrolled user can sign in — the per-user allow-list is bypassed"><span class="dot"></span>open</span>`
+        : '';
       return `<div class="client-card">
         <div class="client-card-body">
           <div class="client-card-name">${esc(c.name)}</div>
           <div class="client-card-meta">id: <span>${esc(c.client_id)}</span> &nbsp;&middot;&nbsp; ${esc(urimeta)}</div>
           <div class="client-card-scopes">${scopePills}
             ${linkPill('client-users', c.client_id, userCount)}
+            ${openBadge}
           </div>
         </div>
         <div class="client-card-actions">
@@ -602,6 +606,7 @@ function openAddClient() {
   $('c-id-ttl').value = 3600; $('c-at-ttl').value = 3600;
   setScopesIn('c-scopes', ['openid','profile','email']);
   $('c-pkce').classList.add('on');
+  $('c-open').classList.remove('on');   // open access off by default -- explicit opt-in
   initScopeTags('c-scopes');
   openModal('modal-add-client');
   setTimeout(() => $('c-name').focus(), 60);
@@ -612,13 +617,14 @@ async function submitAddClient() {
   const uris   = $('c-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('c-scopes');
   const pkce   = $('c-pkce').classList.contains('on');
+  const allow_any_user = $('c-open').classList.contains('on');
   const id_token_ttl     = parseInt($('c-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('c-at-ttl').value) || 3600;
   if (!name)        return toast('Name required', 'err');
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, scopes, pkce, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-add-client');
     $('rc-id').textContent = c.client_id;
@@ -639,6 +645,8 @@ function openEditClient(idx) {
   setScopesIn('ec-scopes', c.scopes || ['openid','profile','email']);
   if (c.pkce !== false) $('ec-pkce').classList.add('on');
   else $('ec-pkce').classList.remove('on');
+  if (c.allow_any_user) $('ec-open').classList.add('on');
+  else $('ec-open').classList.remove('on');
   initScopeTags('ec-scopes');
   openModal('modal-edit-client');
   setTimeout(() => $('ec-name').focus(), 60);
@@ -649,13 +657,14 @@ async function submitEditClient() {
   const uris   = $('ec-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('ec-scopes');
   const pkce   = $('ec-pkce').classList.contains('on');
+  const allow_any_user = $('ec-open').classList.contains('on');
   const id_token_ttl     = parseInt($('ec-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('ec-at-ttl').value) || 3600;
   if (!name)        return toast('Name required', 'err');
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, scopes, pkce, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-edit-client');
     toast('Client updated');
