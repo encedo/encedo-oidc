@@ -275,6 +275,9 @@
       </div>
     </div>
     <button class="btn btn-primary btn-full" id="s-done-btn" style="margin-top:22px;" onclick="doGoToService()">Go to service &rarr;</button>
+    <!-- Shown instead of "Go to service" for admin-triggered enrollment (no client redirect) -->
+    <button class="btn btn-primary btn-full" id="s-close-btn" style="margin-top:22px;display:none;" onclick="doClose()">Done. Close this page</button>
+    <p id="s-close-hint" style="display:none;font-size:13px;color:var(--muted);margin-top:16px;">Setup complete — you can now close this tab.</p>
   </div>
 </div>
 

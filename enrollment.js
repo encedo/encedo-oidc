@@ -224,7 +224,9 @@ async function doSubmit() {
     document.getElementById('s-username').textContent = data.username;
     document.getElementById('s-hsm').textContent      = hsm_url;
     if (!clientRedirectOrigin) {
-      document.getElementById('s-done-btn').style.display = 'none';
+      // Admin-triggered enrollment (no service to return to): offer to close the tab.
+      document.getElementById('s-done-btn').style.display  = 'none';
+      document.getElementById('s-close-btn').style.display = 'block';
     }
     showScreen('s-success');
 
@@ -244,4 +246,15 @@ window.doSubmit = doSubmit;
 
 window.doGoToService = function() {
   if (clientRedirectOrigin) window.location.href = clientRedirectOrigin;
+};
+
+window.doClose = function() {
+  window.close();
+  // Browsers refuse window.close() for a tab the script did not open (the usual
+  // case here -- the admin opened the link). If we're still on the page shortly
+  // after, swap the button for a hint telling the user to close it themselves.
+  setTimeout(() => {
+    document.getElementById('s-close-btn').style.display  = 'none';
+    document.getElementById('s-close-hint').style.display = 'block';
+  }, 200);
 };
