@@ -105,7 +105,18 @@ if (!token) {
       }
 
       if (d.name)  document.getElementById('su-name').value  = d.name;
-      if (d.email) document.getElementById('su-email').value = d.email;
+
+      // Email: pinned by the admin at invite time (H1), so it is read-only here --
+      // the backend ignores any email in the request body regardless.
+      document.getElementById('su-email').value = d.email ?? '';
+      if (d.email) {
+        document.getElementById('su-email-row').style.display        = 'none';
+        document.getElementById('su-email-locked-row').style.display = '';
+        document.getElementById('su-email-locked-val').textContent   = d.email;
+      } else {
+        document.getElementById('su-email-row').style.display        = '';
+        document.getElementById('su-email-locked-row').style.display = 'none';
+      }
 
       // Arrived via the emailed link -> the click itself proves mailbox access.
       if (emailNonce) document.getElementById('su-email-verified').style.display = 'flex';

@@ -42,9 +42,13 @@ export async function adminInviteHandler(req, res, next) {
     const err = checks.find(e => e) ?? null;
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
-    // Early email-uniqueness check -- fail the invite now instead of at signup.
-    // Not authoritative (nothing is reserved here): signupRegisterHandler re-checks
-    // and claims the index when the user is actually created.
+    // Early uniqueness checks -- fail the invite now (surfaced to the admin)
+    // instead of at signup (surfaced to the invitee, who can do nothing about it).
+    // Not authoritative: signupRegisterHandler re-checks and claims both indexes
+    // when the user is actually created.
+    if (await redis.hGet('username_index', username.trim())) {
+      return res.status(409).json({ error: 'username_already_exists' });
+    }
     if (await redis.hGet('email_index', email.trim().toLowerCase())) {
       return res.status(409).json({ error: 'email_already_exists' });
     }
