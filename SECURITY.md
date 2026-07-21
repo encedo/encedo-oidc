@@ -7,7 +7,9 @@ The system protects against:
 - Token forgery (Ed25519 signing requires physical HSM access)
 - Replay attacks (one-time codes, challenge-response, session TTLs)
 - Admin API abuse (network isolation + strong secret + rate limiting)
-- Fake HSM enrollment (hardware attestation via api.encedo.com)
+- Fake HSM detection — hardware attestation (via api.encedo.com) is **recorded** as `hw_attested`
+  for audit and downstream trust decisions, but is **not** enforced at enrollment (advisory signal;
+  see [Hardware attestation](#hardware-attestation)).
 
 Primary threat actor: attacker with network access but **without** physical access to the HSM device.
 
@@ -44,12 +46,11 @@ Authorization codes (`code:{code}`) have a 60-second TTL and are deleted on firs
 `/enrollment/validate` issues a 32-byte random challenge. The enrolling party must sign it with the new key and submit the signature to `/enrollment/submit`. Backend verifies Ed25519 — proves possession of the corresponding private key. A public-only key or a guessed key cannot pass enrollment.
 
 ### Hardware attestation
-At enrollment, the frontend fetches `genuine` + `crt` from `GET {hsm_url}/api/system/config/attestation` and forwards them to `POST api.encedo.com/attest`. The backend validates:
-- `result === 'ok'` from Encedo's attestation service
-- `checks.genuine_ok`, `crt_trusted`, `pairing_ok`
-- Timestamp: not in the future (±5 s skew), not older than 15 seconds (replay prevention; clocks synchronised via `/checkin`)
+At enrollment, the frontend fetches `genuine` + `crt` from `GET {hsm_url}/api/system/config/attestation` and forwards them to `POST api.encedo.com/attest`. The backend (`src/services/attestation.js`) treats `result === 'ok'` from Encedo's attestation service as the outcome; freshness/replay checks are delegated to `api.encedo.com` (local timestamp validation was removed to avoid clock-skew false negatives).
 
-Result stored as `hw_attested` in `user:{sub}`. The X.509 device certificate (`hsm_crt`) is stored for audit.
+The outcome is stored as `hw_attested` (`'true'`/`'false'`) in `user:{sub}`, and the X.509 device certificate (`hsm_crt`) is stored for audit.
+
+**Enforcement:** enrollment is **not** blocked when attestation fails — a failed/absent attestation is logged and stored as `hw_attested='false'`, and enrollment proceeds (`src/routes/enrollment.js`). This is a deliberate product decision: `hw_attested` is an **advisory** signal for audit and downstream trust, not a gate. Consumers that require a genuine device must check `hw_attested` themselves. To make it a hard gate, block enrollment when `hw_attested !== 'true'`.
 
 ---
 
