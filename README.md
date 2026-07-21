@@ -814,6 +814,19 @@ docker exec oidc-acme node src/cli/backup.js --skip-ephemeral --file - \
   | age -r age1yourkey... > /var/backups/oidc-acme-$(date +%F).ndjson.gz.age
 ```
 
+Generate the key pair once with `age-keygen -o identity.txt` — it prints the `age1...` **public key**
+(use it as `-r` above) and writes the matching `AGE-SECRET-KEY-1...` **private key** into the file.
+**Keep the private key off this server** (a password manager or a separate host): if it sits next to
+the backups, anyone who takes the box gets both and the encryption buys you nothing. Losing it makes
+every backup unrecoverable. To restore, decrypt first, then feed the plaintext to `restore`:
+
+```bash
+age -d -i identity.txt oidc-acme-2026-07-21.ndjson.gz.age > /tmp/plain.ndjson.gz
+docker cp /tmp/plain.ndjson.gz oidc-acme:/tmp/r.gz && rm /tmp/plain.ndjson.gz
+docker exec oidc-acme node src/cli/restore.js /tmp/r.gz --dry-run   # then --replace / --flush --yes
+docker exec oidc-acme rm -f /tmp/r.gz
+```
+
 > **Do not** use `--file /tmp/x` inside the container followed by `docker cp` — that leaves a plaintext
 > copy in the container's filesystem. If you ever do, `docker exec oidc-acme rm /tmp/x` afterwards.
 
