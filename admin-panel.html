@@ -497,7 +497,7 @@ html.light .client-check-name{color:var(--text)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-invite-client-link')">Close</button>
-      <button class="btn btn-ghost" onclick="copyText('invc-result-url');closeModal('modal-invite-client-link')">&#128203; Copy &amp; Close</button>
+      <button class="btn btn-ghost" onclick="copyText('invc-result-url');closeModal('modal-invite-client-link')">Copy &amp; Close</button>
     </div>
   </div>
 </div>
@@ -521,8 +521,8 @@ html.light .client-check-name{color:var(--text)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-invite-link')">Close</button>
-      <button class="btn btn-ghost" id="inv-email-btn" style="display:none" onclick="emailInviteLink()">&#9993; Email link</button>
-      <button class="btn btn-ghost" onclick="copyText('inv-result-url');closeModal('modal-invite-link')">&#128203; Copy &amp; Close</button>
+      <button class="btn btn-ghost" id="inv-email-btn" style="display:none" onclick="emailInviteLink()">Email link</button>
+      <button class="btn btn-ghost" onclick="copyText('inv-result-url');closeModal('modal-invite-link')">Copy &amp; Close</button>
     </div>
   </div>
 </div>
@@ -560,7 +560,7 @@ html.light .client-check-name{color:var(--text)}
         <input class="field-input" id="eu-email" type="email">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px">
           <span id="eu-email-status" class="link-pill" style="cursor:default"><span class="dot"></span>—</span>
-          <button class="btn btn-ghost btn-xs" id="eu-verify-btn" style="display:none" onclick="sendVerificationEmail()">&#9993; Send verification email</button>
+          <button class="btn btn-ghost btn-xs" id="eu-verify-btn" style="display:none" onclick="sendVerificationEmail()">Send verification email</button>
         </div>
       </div>
       <div class="divider"></div>
@@ -591,7 +591,7 @@ html.light .client-check-name{color:var(--text)}
         <span class="client-check-name">Include <code>hsm_url</code> in userinfo</span>
       </label>
       <div id="eu-claims-list" style="margin-bottom:8px"></div>
-      <button class="btn btn-ghost btn-xs" onclick="addClaimRow()">+ Add claim</button>
+      <button class="btn btn-ghost btn-xs" onclick="addClaimRow()">Add claim</button>
       <div class="field-hint" style="margin-top:6px">Custom key/value claims returned by /userinfo endpoint</div>
     </div>
     <div class="modal-footer">
@@ -625,8 +625,8 @@ html.light .client-check-name{color:var(--text)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-user-created')">Close</button>
-      <button class="btn btn-ghost" onclick="copyText('nu-enroll-url');closeModal('modal-user-created')">&#128203; Copy &amp; Close</button>
-      <button class="btn btn-primary" onclick="window.open(document.getElementById('nu-enroll-url').textContent,'_blank')">&#8599; Open</button>
+      <button class="btn btn-ghost" onclick="copyText('nu-enroll-url');closeModal('modal-user-created')">Copy &amp; Close</button>
+      <button class="btn btn-primary" onclick="window.open(document.getElementById('nu-enroll-url').textContent,'_blank')">Open</button>
     </div>
   </div>
 </div>
@@ -647,8 +647,8 @@ html.light .client-check-name{color:var(--text)}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-enrollment')">Close</button>
-      <button class="btn btn-ghost" onclick="copyText('enroll-url');closeModal('modal-enrollment')">&#128203; Copy &amp; Close</button>
-      <button class="btn btn-primary" onclick="window.open(document.getElementById('enroll-url').textContent,'_blank')">&#8599; Open</button>
+      <button class="btn btn-ghost" onclick="copyText('enroll-url');closeModal('modal-enrollment')">Copy &amp; Close</button>
+      <button class="btn btn-primary" onclick="window.open(document.getElementById('enroll-url').textContent,'_blank')">Open</button>
     </div>
   </div>
 </div>
@@ -743,7 +743,7 @@ html.light .client-check-name{color:var(--text)}
         <label class="field-label">Client secret</label>
         <div style="display:flex;gap:10px;align-items:center">
           <div class="secret-dots">&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</div>
-          <button class="btn btn-ghost btn-xs" style="white-space:nowrap" onclick="doRotateFromEdit()">&#8635; Generate</button>
+          <button class="btn btn-ghost btn-xs" style="white-space:nowrap" onclick="doRotateFromEdit()">Generate</button>
         </div>
         <div class="field-hint">Rotate to generate a new secret &#183; old secret invalidated immediately</div>
       </div>
@@ -821,7 +821,7 @@ html.light .client-check-name{color:var(--text)}
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="copyText('rc-secret')">&#128203; Copy secret</button>
+      <button class="btn btn-ghost" onclick="copyText('rc-secret')">Copy secret</button>
       <button class="btn btn-primary" onclick="closeModal('modal-client-created')">Done</button>
     </div>
   </div>
@@ -846,7 +846,7 @@ html.light .client-check-name{color:var(--text)}
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="copyText('rr-secret')">&#128203; Copy secret</button>
+      <button class="btn btn-ghost" onclick="copyText('rr-secret')">Copy secret</button>
       <button class="btn btn-primary" onclick="closeModal('modal-secret-rotated')">Done</button>
     </div>
   </div>
