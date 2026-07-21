@@ -215,15 +215,27 @@ Module-level `jwksCache` variable in `oidc.js`, 60s TTL. Invalidated immediately
 Checks `result === 'ok'` — timestamp validation delegated entirely to `api.encedo.com` (local check removed to avoid clock-skew false negatives).
 `crt` (X.509 PEM) stored as `hsm_crt` in Redis. Debug logging active (intended — useful in production for tracing).
 
+### Email enrollment link + `email_verified`
+Server can email the enrollment/invite link over SMTP, and a completed enrollment from an emailed link proves mailbox access → `email_verified`.
+
+- **Mailer** (`src/services/mailer.js`, `nodemailer`): `sendEnrollmentEmail`/`sendVerificationEmail`. Transport gated on `SMTP_HOST`+`MAIL_FROM` (`isMailEnabled()`); `SMTP_MODE=ssl` (465, implicit TLS) or `starttls` (587, `requireTLS` — no silent plaintext fallback). **DKIM/SPF/DMARC is entirely the mail server's job** — the app signs nothing, only supplies to/from/subject/body. Sender never throws (a send failure must not break account creation; admin has copy-paste fallback). `/health` exposes `mail_enabled`.
+- **Nonce → `email_verified`**: an emailed link carries `&n=<email_nonce>` in the URL **fragment** (not in server logs). The nonce lives on `invite:{token}`/`enrollment:{token}` and is **never returned to the admin** (that is what keeps the signal trustworthy — a hand-copied link has no `&n=` → `email_verified` stays false). Two paths: `/enrollment/submit` sets it when `n === session.email_nonce`; `/signup/register` sets `via_email` on the enrollment session when `n === invite.email_nonce`, and `/enrollment/submit` commits it. Stored as `user:{sub}.email_verified='true'|'false'` (upgrade-only — re-enrollment does not degrade it). Exposed as the `email_verified` claim in **id_token + userinfo**.
+- **Endpoints**: `POST /admin/invites/:token/send-email` (emails invite link), `POST /admin/users/:sub/send-verification-email` (standalone verify link, `emailVerify.js`), `POST /verify-email/confirm` (public, one-time `getDel`, sets `email_verified=true` if the current email still matches). Admin panel: "Email link" (invite modal) + "Send verification email" (Edit User) buttons, disabled when `mail_enabled=false`.
+- **Connector enforcement**: `carbonio-oidc-connector` requires `email_verified===true` before PreAuth when `require_email_verified` is set (403 otherwise).
+
+Caveat (inherent to any email verification): intercepting the mail yields a false `email_verified=true`. The nonce adds no new attack surface — the enrollment token already grants enrollment; the nonce only carries the verification signal.
+
 ---
 
 ## Redis Schema
 
 ```
-user:{sub}        Hash { sub, username, name, email, hsm_url,
+user:{sub}        Hash { sub, username, name, email, email_verified, hsm_url,
                         kid, pubkey, key_type, hw_attested, hsm_crt,
                         clients (JSON array), enrollment_token,
                         enrolled_at, created_at, updated_at }
+                  email_verified: 'true'|'false' (default 'false') — 'true' only via emailed-link nonce
+                    or /verify-email/confirm; upgrade-only (re-enrollment never degrades it)
                   pubkey: hex raw bytes — Ed25519: 32B (64 hex); EC: uncompressed X||Y — P256: 64B, P384: 96B, P521: 132B
                   key_type: 'Ed25519' | 'P256' | 'P384' | 'P521'
 
@@ -246,10 +258,14 @@ access:{token}    JSON TTL = access_token_ttl
 user_tokens:{sub} Set  { access:{token}, ... }
 enrollment:{tok}  JSON TTL 24h → 30min after validate
                   { sub, username, forced_key_type, hsm_url, challenge?,
-                    client_redirect_origin? }  ← client_redirect_origin set when created via invite flow
+                    client_redirect_origin?, email_nonce?, via_email? }
+                  client_redirect_origin set when created via invite flow;
+                  email_nonce/via_email carry the email_verified signal (see Email section)
 enroll_lock:{sub} String TTL 30s  (NX lock)
-invite:{token}    JSON TTL 24h  { client_id, client_name, username, name, email }
+invite:{token}    JSON TTL 24h  { client_id/clients, client_name(s), username, name, email, email_nonce? }
+                  email_nonce present when server emails the link (&n=); never returned to the admin
 client-invite:{token} JSON TTL 24h  { note }
+email_verify:{token}  JSON TTL 24h  { sub, email }  ← standalone verify link (Edit User)
 security:log      ZSet score=ms  value=JSON  (cap 20 000)
 security:events   Pub/Sub channel
 ```
