@@ -43,6 +43,14 @@ function getTransport() {
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+// Insert <wbr> break opportunities into a long URL so it wraps even in mail
+// clients that strip CSS word-break (Gmail, some desktop clients). <wbr> is a
+// break HINT, not a character -- it is NOT copied when the user selects the link,
+// so paste stays intact. Split the RAW url first, THEN escape each chunk: splitting
+// an already-escaped string could cut an entity like &amp; in half.
+const breakableUrl = (rawUrl) =>
+  (String(rawUrl ?? '').match(/.{1,16}/g) ?? []).map(esc).join('<wbr>');
+
 /**
  * HTML body in the same palette as the web UI (signup.html): brand purple
  * #6E358C, navy #2A225E, text #222, muted #666, page #f4f4f4, card #fff.
@@ -64,7 +72,7 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
 <td style="border-radius:22px;background:#6E358C;"><a href="${u}" style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:22px;">${esc(buttonLabel)}</a></td>
 </tr></table>
 <p style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#666;">Or paste this link into your browser:</p>
-<p style="margin:0 0 20px;font-size:12px;line-height:1.5;word-break:break-all;overflow-wrap:anywhere;"><a href="${u}" style="color:#6E358C;word-break:break-all;overflow-wrap:anywhere;">${u}</a></p>
+<p style="margin:0 0 20px;font-size:12px;line-height:1.5;word-break:break-all;overflow-wrap:anywhere;"><a href="${u}" style="color:#6E358C;word-break:break-all;overflow-wrap:anywhere;">${breakableUrl(url)}</a></p>
 <p style="margin:0;font-size:12px;line-height:1.6;color:#999;">This link expires in 24 hours. If you did not request this, you can ignore this message.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
