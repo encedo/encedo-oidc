@@ -1,27 +1,14 @@
-import { randomBytes, randomUUID } from 'crypto';
+import { randomBytes } from 'crypto';
 import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { vRequired }     from '../middleware/validate.js';
 import { issuer } from '../services/issuer.js';
+import { generateClientSecret, generateClientId, validateRedirectUris } from '../services/client.js';
 
 const ALLOWED_SCOPES = ['openid', 'profile', 'email'];
 
 // Client-invite tokens: randomBytes(32).toString('hex') = 64 hex chars
 const TOKEN_RE = /^[a-f0-9]{64}$/;
-
-function generateClientSecret() { return randomBytes(32).toString('base64url'); }
-
-function validateRedirectUris(uris) {
-  for (const uri of uris) {
-    try {
-      const u = new URL(uri);
-      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && u.hostname === 'localhost')) {
-        return `Non-localhost HTTP not allowed: ${uri}`;
-      }
-    } catch { return `Invalid URI: ${uri}`; }
-  }
-  return null;
-}
 
 // --- POST /admin/invite-client --------------------------------
 export async function adminInviteClientHandler(req, res, next) {
@@ -94,7 +81,7 @@ export async function signupClientRegisterHandler(req, res, next) {
     const raw = await redis.getDel(`client-invite:${token}`);
     if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
 
-    const client_id     = randomUUID();
+    const client_id     = generateClientId();
     const client_secret = generateClientSecret();
 
     const record = {

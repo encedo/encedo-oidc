@@ -1,28 +1,13 @@
 import { Router } from 'express';
-import { randomUUID, randomBytes } from 'crypto';
 import redis from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validate, vRequired, vTtl } from '../middleware/validate.js';
+import { generateClientSecret, generateClientId, validateRedirectUris } from '../services/client.js';
 
 const router = Router();
 
 // --- Helpers --------------------------------------------------
 const ALLOWED_SCOPES = ['openid', 'profile', 'email', 'groups'];
-
-function generateClientSecret() { return randomBytes(32).toString('base64url'); }
-function generateClientId()     { return randomUUID(); }
-
-function validateRedirectUris(uris) {
-  for (const uri of uris) {
-    try {
-      const u = new URL(uri);
-      if (u.protocol !== 'https:' && !(u.protocol === 'http:' && u.hostname === 'localhost')) {
-        return `Non-localhost HTTP not allowed: ${uri}`;
-      }
-    } catch { return `Invalid URI: ${uri}`; }
-  }
-  return null;
-}
 
 function deserialize(raw) {
   if (!raw || Object.keys(raw).length === 0) return null;
