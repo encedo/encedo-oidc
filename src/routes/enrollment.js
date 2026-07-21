@@ -7,6 +7,8 @@ import { validateAttestation } from '../services/attestation.js';
 import { invalidateJwksCache } from './oidc.js';
 import { vUrl } from '../middleware/validate.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import { verifyEd25519 } from '../services/ed25519.js';
+import { revokeUserTokens } from '../services/tokens.js';
 
 const router = Router();
 
@@ -75,11 +77,8 @@ function verifyEnrollmentSig(key_type, compressedHex, msg, sigB64url) {
   const msgBuf = Buffer.from(msg);
 
   if (key_type === 'Ed25519') {
-    // Ed25519: 32-byte raw key, fixed SPKI prefix
-    const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
-    const pubkeyDer  = Buffer.concat([spkiPrefix, Buffer.from(compressedHex, 'hex')]);
-    const publicKey  = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
-    return verify(null, msgBuf, publicKey, sigBuf);
+    // Ed25519: 32-byte raw key (compressedHex is the raw key here, not a point)
+    return verifyEd25519(compressedHex, msgBuf, sigBuf);
   }
 
   // ECDSA: build SPKI DER with compressed point -- OpenSSL handles decompression
@@ -292,13 +291,7 @@ router.post('/submit',
       await redis.hDel(`user:${sub}`, 'enrollment_token');
 
       // Revoke all active access tokens -- old key is no longer valid
-      const tokenKeys = await redis.sMembers(`user_tokens:${sub}`);
-      if (tokenKeys.length > 0) {
-        const pipeline = redis.multi();
-        for (const k of tokenKeys) pipeline.del(k);
-        pipeline.del(`user_tokens:${sub}`);
-        await pipeline.exec();
-      }
+      await revokeUserTokens(sub);
 
       await logSecurity(SEC.ENROLL_OK, { sub, username, kid: expectedKid, key_type, hw_attested, ip: req.ip });
       console.log(`[Enrollment] Enrolled kid=${expectedKid} key_type=${key_type} hw_attested=${hw_attested}`);

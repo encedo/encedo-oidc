@@ -6,6 +6,8 @@ import redis                                     from '../services/redis.js';
 import { logSecurity, SEC }                      from '../services/securityLog.js';
 import { rateLimit }                             from '../middleware/rateLimit.js';
 import { validate, vState, vNonce, vCodeChallenge, vCodeVerifier, vSignature } from '../middleware/validate.js';
+import { verifyEd25519 } from '../services/ed25519.js';
+import { revokeUserTokens } from '../services/tokens.js';
 
 const router = Router();
 
@@ -47,10 +49,7 @@ function verifySignature(key_type, pubkeyHex, message, sigB64url) {
   const msgBuf   = Buffer.from(message);
 
   if (!key_type || key_type === 'Ed25519') {
-    const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
-    const pubkeyDer  = Buffer.concat([spkiPrefix, pubBytes]);
-    const publicKey  = createPublicKey({ key: pubkeyDer, format: 'der', type: 'spki' });
-    return verify(null, msgBuf, publicKey, sigBuf);
+    return verifyEd25519(pubkeyHex, msgBuf, sigBuf);
   }
 
   // ECDSA: pubBytes = raw X||Y (no 04 prefix)
@@ -654,13 +653,7 @@ router.get('/logout',
       }
 
       // Revoke all active access tokens
-      const tokenKeys = await redis.sMembers(`user_tokens:${sub}`);
-      if (tokenKeys.length > 0) {
-        const pipeline = redis.multi();
-        for (const k of tokenKeys) pipeline.del(k);
-        pipeline.del(`user_tokens:${sub}`);
-        await pipeline.exec();
-      }
+      const revokedTokens = await revokeUserTokens(sub);
 
       // Hint verified -- resolve which post-logout origins are allowed for this
       // client (origins of its registered redirect_uris). aud is the client_id.
@@ -673,9 +666,9 @@ router.get('/logout',
       } catch { allowedOrigins = null; }
 
       await logSecurity(SEC.LOGOUT, {
-        sub, username: userRaw.username, result: 'ok', revokedTokens: tokenKeys.length, ip: req.ip,
+        sub, username: userRaw.username, result: 'ok', revokedTokens, ip: req.ip,
       });
-      console.log(`[OIDC] Logout: revoked=${tokenKeys.length} tokens`);
+      console.log(`[OIDC] Logout: revoked=${revokedTokens} tokens`);
       finish(allowedOrigins);
 
     } catch (err) { next(err); }

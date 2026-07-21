@@ -2,9 +2,9 @@ import { randomBytes, randomUUID } from 'crypto';
 import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { vRequired }     from '../middleware/validate.js';
+import { issuer } from '../services/issuer.js';
 
 const ALLOWED_SCOPES = ['openid', 'profile', 'email'];
-const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
 // Client-invite tokens: randomBytes(32).toString('hex') = 64 hex chars
 const TOKEN_RE = /^[a-f0-9]{64}$/;

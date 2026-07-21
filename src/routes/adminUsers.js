@@ -3,6 +3,8 @@ import { randomUUID, randomBytes } from 'crypto';
 import redis from '../services/redis.js';
 import { resolveClientGrant } from '../services/clientGrant.js';
 import { sendVerificationEmailHandler } from './emailVerify.js';
+import { issuer } from '../services/issuer.js';
+import { revokeUserTokens } from '../services/tokens.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -126,9 +128,8 @@ router.post('/', async (req, res, next) => {
     }), { EX: 86400 });
     await redis.hSet(`user:${sub}`, { enrollment_token: token });
 
-    const issuer = process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
     // Fragment (#) keeps token out of server access logs and Referer headers
-    const enrollment_url = `${issuer}/enrollment#token=${token}`;
+    const enrollment_url = `${issuer()}/enrollment#token=${token}`;
 
     await logSecurity(SEC.ADMIN_USER_CREATE, { sub, username, ip: req.ip });
     console.log(`[Admin] User created: ${sub} (${username})`);
@@ -279,8 +280,7 @@ router.post('/:sub/enrollment', async (req, res, next) => {
     }), { EX: 86400 });
     await redis.hSet(`user:${sub}`, { enrollment_token: token });
 
-    const issuer = process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
-    const enrollment_url = `${issuer}/enrollment#token=${token}`;
+    const enrollment_url = `${issuer()}/enrollment#token=${token}`;
 
     await logSecurity(SEC.ENROLL_REGEN, { sub, username: raw.username, ip: req.ip });
     res.json({ enrollment_url });
@@ -342,13 +342,7 @@ router.delete('/:sub', async (req, res, next) => {
     if (!exists) return res.status(404).json({ error: 'user_not_found' });
 
     // Revoke all active access tokens for this user
-    const tokenKeys = await redis.sMembers(`user_tokens:${sub}`);
-    if (tokenKeys.length > 0) {
-      const pipeline = redis.multi();
-      for (const k of tokenKeys) pipeline.del(k);
-      pipeline.del(`user_tokens:${sub}`);
-      await pipeline.exec();
-    }
+    const revokedTokens = await revokeUserTokens(sub);
 
     const [username, email, enrollToken] = await Promise.all([
       redis.hGet(`user:${sub}`, 'username'),
@@ -365,7 +359,7 @@ router.delete('/:sub', async (req, res, next) => {
       await redis.hDel('email_index', email);
     }
 
-    await logSecurity(SEC.ADMIN_USER_DELETE, { sub, username, revokedTokens: tokenKeys.length, ip: req.ip });
+    await logSecurity(SEC.ADMIN_USER_DELETE, { sub, username, revokedTokens, ip: req.ip });
     console.log(`[Admin] User deleted: ${sub}`);
     res.status(204).send();
   } catch (err) { next(err); }

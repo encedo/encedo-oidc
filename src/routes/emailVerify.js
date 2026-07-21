@@ -12,8 +12,8 @@ import { randomBytes } from 'crypto';
 import redis from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { sendVerificationEmail, isMailEnabled } from '../services/mailer.js';
+import { issuer } from '../services/issuer.js';
 
-const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const TOKEN_RE = /^[a-f0-9]{64}$/;
 
 // --- POST /admin/users/:sub/send-verification-email -----------

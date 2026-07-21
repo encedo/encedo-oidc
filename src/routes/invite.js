@@ -4,10 +4,9 @@ import { logSecurity, SEC } from '../services/securityLog.js';
 import { validate, vEmail, vUsername, vDisplayName, vUrl, vKeyType } from '../middleware/validate.js';
 import { resolveClientGrant } from '../services/clientGrant.js';
 import { sendEnrollmentEmail, isMailEnabled } from '../services/mailer.js';
+import { issuer } from '../services/issuer.js';
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
-
-const issuer = () => process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
 // Invite tokens: randomBytes(32).toString('hex') = 64 hex chars
 const TOKEN_RE = /^[a-f0-9]{64}$/;
