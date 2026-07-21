@@ -1,6 +1,6 @@
 {
   "name": "encedo-oidc-provider",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "HSM-anchored OpenID Connect Identity Provider",
   "type": "module",
   "main": "src/app.js",
@@ -25,6 +25,6 @@
     "nodemon": "^3.1.4"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   }
 }
