@@ -43,16 +43,17 @@ function getTransport() {
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// Insert <wbr> break opportunities at URL boundaries -- before the fragment (#)
-// and before each query param (&) -- so a long link wraps BETWEEN segments (the
-// nonce &n=... drops to its own line) instead of mid-token. Works even in mail
-// clients that strip CSS word-break (Gmail, some desktop clients). <wbr> is a
-// break HINT, not a character -- it is NOT copied when the user selects the link,
-// so the pasted URL stays intact. Escape first, then target the ESCAPED '&amp;'
-// (esc turns & into &amp;); '#' is not escaped. base64url tokens carry no # or &,
-// so these are the only matches. Token+nonce (43 chars each) now fit one line.
+// Force a HARD line break at each URL boundary -- before the fragment (#) and
+// before each query param (&) -- so the link renders as tidy segments (the nonce
+// &n=... on its own line). We use <br>, not <wbr>/CSS word-break, because real
+// mail clients (this one included) strip those; <br> is basic markup that always
+// renders. The href stays the clean URL and the text/plain part is untouched, so
+// clicking works; and browsers strip newlines when a copied URL is pasted into
+// the address bar, so paste works too. Escape first, then target the ESCAPED
+// '&amp;' (esc turns & into &amp;); '#' is not escaped. base64url tokens carry
+// no # or &, so these are the only matches; each 43-char segment fits one line.
 const breakableUrl = (rawUrl) =>
-  esc(rawUrl).replace(/#/g, '<wbr>#').replace(/&amp;/g, '<wbr>&amp;');
+  esc(rawUrl).replace(/#/g, '<br>#').replace(/&amp;/g, '<br>&amp;');
 
 /**
  * HTML body in the same palette as the web UI (signup.html): brand purple
@@ -64,7 +65,7 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 12px;">
 <tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;font-family:'Inter',Arial,Helvetica,sans-serif;">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="width:480px;max-width:480px;background:#ffffff;border-radius:20px;font-family:'Inter',Arial,Helvetica,sans-serif;">
 <tr><td style="padding:32px 40px 6px;text-align:center;">
 <img src="cid:${LOGO_CID}" alt="Encedo" height="44" style="height:44px;border-radius:12px;display:inline-block;"></td></tr>
 <tr><td style="padding:16px 40px 32px;">
