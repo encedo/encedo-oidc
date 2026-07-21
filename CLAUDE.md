@@ -215,6 +215,15 @@ Module-level `jwksCache` variable in `oidc.js`, 60s TTL. Invalidated immediately
 Checks `result === 'ok'` — timestamp validation delegated entirely to `api.encedo.com` (local check removed to avoid clock-skew false negatives).
 `crt` (X.509 PEM) stored as `hsm_crt` in Redis. Debug logging active (intended — useful in production for tracing).
 
+**Attestation v2 (roadmap — WAITING FOR OFFICIAL FIRMWARE):** the new HSM firmware will ship advanced
+attestation as a single **signed JWT** (firmware + hardware + bootloader + the key's KID + proof-of-possession,
+signed by the device attestation key rooted in the production-line PKI; KID = SHA256 of the public key,
+so the whole chain is verifiable). That lets attestation become **offline-verifiable** (no api.encedo.com
+round-trip) and a **hard enrollment gate** bound to the exact key. The signed JWT will be stored in Redis
+for evidence (not just the `hw_attested` flag), re-attestation is on demand (`POST {nonce,KID}` → JWT), and
+the PKI root will be published via api.encedo.com + the website. **Not implemented — pending the production
+firmware (currently in testing).** Full design in memory `project_attestation_v2`.
+
 ### Email enrollment link + `email_verified`
 Server can email the enrollment/invite link over SMTP, and a completed enrollment from an emailed link proves mailbox access → `email_verified`.
 
