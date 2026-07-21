@@ -39,6 +39,34 @@ async function findUserByUsername(username) {
   return u?.sub ? u : null;
 }
 
+/**
+ * Validate the scope, PKCE and OIDC request params shared by GET /authorize and
+ * POST /authorize/login. The caller MUST have already validated client_id and
+ * redirect_uri -- ordering is security-sensitive (an error must never touch an
+ * unvalidated redirect_uri; open-redirect prevention, OAuth 2.0 s.4.1.2.1).
+ * Returns a neutral { error, error_description? } or null when valid; the caller
+ * chooses delivery (redirect via sendAuthError, or JSON 400).
+ */
+function validateAuthParams({ scope, code_challenge, code_challenge_method, nonce, state }, clientRaw) {
+  const requestedScopes = (scope ?? '').split(' ').filter(Boolean);
+  if (!requestedScopes.includes('openid')) return { error: 'invalid_scope' };
+  const allowedScopes = JSON.parse(clientRaw.scopes ?? '["openid"]');
+  if (!requestedScopes.every(s => allowedScopes.includes(s))) return { error: 'invalid_scope' };
+
+  if (clientRaw.pkce === 'true' && (!code_challenge || code_challenge_method !== 'S256')) {
+    return { error: 'invalid_request', error_description: 'PKCE S256 required' };
+  }
+
+  const paramErr = validate(
+    vNonce(nonce),
+    vState(state),
+    code_challenge ? vCodeChallenge(code_challenge) : null,
+  );
+  if (paramErr) return { error: 'invalid_request', error_description: paramErr };
+
+  return null;
+}
+
 // --- 1. GET /.well-known/openid-configuration -----------------
 export function discoveryHandler(_req, res) {
   const issuer = process.env.ISSUER;
@@ -86,10 +114,7 @@ router.get('/jwks.json', async (req, res, next) => {
 // --- 3. GET /authorize -- validate params, serve Trusted App ---
 router.get('/authorize', async (req, res, next) => {
   try {
-    const {
-      client_id, redirect_uri, response_type, scope,
-      state, nonce, code_challenge, code_challenge_method,
-    } = req.query;
+    const { client_id, redirect_uri, response_type, state } = req.query;
 
     // Validate client + redirect_uri FIRST -- an error must never be redirected
     // to an unvalidated redirect_uri (open-redirect prevention, OAuth 2.0 s.4.1.2.1).
@@ -108,28 +133,8 @@ router.get('/authorize', async (req, res, next) => {
       return sendAuthError(res, redirect_uri, 'unsupported_response_type', state);
     }
 
-    const requestedScopes = (scope ?? '').split(' ').filter(Boolean);
-    if (!requestedScopes.includes('openid')) {
-      return sendAuthError(res, redirect_uri, 'invalid_scope', state);
-    }
-    const allowedScopes = JSON.parse(clientRaw.scopes ?? '["openid"]');
-    if (!requestedScopes.every(s => allowedScopes.includes(s))) {
-      return sendAuthError(res, redirect_uri, 'invalid_scope', state);
-    }
-
-    if (clientRaw.pkce === 'true') {
-      if (!code_challenge || code_challenge_method !== 'S256') {
-        return sendAuthError(res, redirect_uri, 'invalid_request', state,
-          'PKCE S256 required for this client');
-      }
-    }
-
-    const paramErr = validate(
-      vNonce(nonce),
-      vState(state),
-      code_challenge ? vCodeChallenge(code_challenge) : null,
-    );
-    if (paramErr) return sendAuthError(res, redirect_uri, 'invalid_request', state, paramErr);
+    const authErr = validateAuthParams(req.query, clientRaw);
+    if (authErr) return sendAuthError(res, redirect_uri, authErr.error, state, authErr.error_description);
 
     res.sendFile(TRUSTED_APP);
 
@@ -147,7 +152,7 @@ router.post('/authorize/login',
     try {
       const {
         sub: subParam, username, client_id, redirect_uri, scope,
-        state, nonce, code_challenge, code_challenge_method, response_type,
+        state, nonce, code_challenge, response_type,
       } = req.body;
 
       if (response_type !== 'code') {
@@ -164,27 +169,11 @@ router.post('/authorize/login',
         return res.status(400).json({ error: 'invalid_redirect_uri' });
       }
 
+      const authErr = validateAuthParams(req.body, clientRaw);
+      if (authErr) return res.status(400).json(authErr);
+
+      // Reused below when persisting the granted scope into the pending session.
       const requestedScopes = (scope ?? '').split(' ').filter(Boolean);
-      if (!requestedScopes.includes('openid')) {
-        return res.status(400).json({ error: 'invalid_scope' });
-      }
-      const allowedScopes = JSON.parse(clientRaw.scopes ?? '["openid"]');
-      if (!requestedScopes.every(s => allowedScopes.includes(s))) {
-        return res.status(400).json({ error: 'invalid_scope' });
-      }
-
-      if (clientRaw.pkce === 'true') {
-        if (!code_challenge || code_challenge_method !== 'S256') {
-          return res.status(400).json({ error: 'invalid_request', error_description: 'PKCE S256 required' });
-        }
-      }
-
-      const paramErr = validate(
-        vNonce(nonce),
-        vState(state),
-        code_challenge ? vCodeChallenge(code_challenge) : null,
-      );
-      if (paramErr) return res.status(400).json({ error: 'invalid_request', error_description: paramErr });
 
       if (!subParam?.trim() && !username?.trim()) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'missing sub or username' });
