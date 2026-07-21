@@ -53,7 +53,7 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:32px 12px;">
 <tr><td align="center">
-<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;font-family:'Inter',Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:20px;font-family:'Inter',Arial,Helvetica,sans-serif;">
 <tr><td style="padding:32px 40px 6px;text-align:center;">
 <img src="cid:${LOGO_CID}" alt="Encedo" height="44" style="height:44px;border-radius:12px;display:inline-block;"></td></tr>
 <tr><td style="padding:16px 40px 32px;">
@@ -64,7 +64,7 @@ function renderHtml({ heading, greetingName, intro, url, buttonLabel }) {
 <td style="border-radius:22px;background:#6E358C;"><a href="${u}" style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:22px;">${esc(buttonLabel)}</a></td>
 </tr></table>
 <p style="margin:0 0 6px;font-size:12px;line-height:1.6;color:#666;">Or paste this link into your browser:</p>
-<p style="margin:0 0 20px;font-size:12px;line-height:1.5;word-break:break-all;"><a href="${u}" style="color:#6E358C;">${u}</a></p>
+<p style="margin:0 0 20px;font-size:12px;line-height:1.5;word-break:break-all;overflow-wrap:anywhere;"><a href="${u}" style="color:#6E358C;word-break:break-all;overflow-wrap:anywhere;">${u}</a></p>
 <p style="margin:0;font-size:12px;line-height:1.6;color:#999;">This link expires in 24 hours. If you did not request this, you can ignore this message.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
