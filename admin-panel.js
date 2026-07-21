@@ -118,11 +118,44 @@ document.addEventListener('mouseover', e => {
 document.addEventListener('scroll', hidePop, true);
 
 async function api(path, opts = {}) {
-  const res = await fetch(base() + path, {
-    ...opts,
-    headers: {...hdrs(), ...(opts.headers || {})},
-  });
-  const body = res.status === 204 ? null : await res.json();
+  const method     = (opts.method || 'GET').toUpperCase();
+  const idempotent = method === 'GET';   // only these are safe to auto-retry
+
+  let res = null;
+  for (let attempt = 0; attempt < (idempotent ? 2 : 1); attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 400));
+    try {
+      res = await fetch(base() + path, {
+        ...opts,
+        headers: {...hdrs(), ...(opts.headers || {})},
+      });
+    } catch {
+      res = null;   // network error (backend down / connection reset) -- retry GET
+      continue;
+    }
+    // 502/503/504 come from the reverse proxy when the backend is restarting or
+    // briefly unreachable (transient). Retry once for idempotent GETs.
+    if (idempotent && attempt === 0 && (res.status === 502 || res.status === 503 || res.status === 504)) continue;
+    break;
+  }
+  if (!res) throw new Error('Server unreachable — try again in a moment.');
+
+  if (res.status === 204) return null;
+
+  // Read as text first: a proxy gateway error (502/504) returns an HTML page, not
+  // JSON. Parsing that as JSON throws a cryptic SyntaxError that then leaks the
+  // raw HTML into the UI -- surface the HTTP status with a clear message instead.
+  const text = await res.text();
+  let body = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error(res.ok
+        ? `Unexpected non-JSON response (HTTP ${res.status}).`
+        : `Server error ${res.status} — try again in a moment.`);
+    }
+  }
   if (!res.ok) throw new Error(body?.detail || body?.error || `HTTP ${res.status}`);
   return body;
 }
