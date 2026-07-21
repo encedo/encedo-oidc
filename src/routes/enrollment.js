@@ -266,7 +266,7 @@ router.post('/submit',
       }
 
       // email_verified: completing enrollment via the emailed link proves mailbox
-      // access (EMAIL.MD). Path B (invite -> signup) carries the proof forward as
+      // access (see CLAUDE.md). Path B (invite -> signup) carries the proof forward as
       // session.via_email; path A (direct enrollment link) matches n against the
       // nonce stored on this enrollment session.
       const emailVerified = session.via_email === true

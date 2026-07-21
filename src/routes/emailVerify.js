@@ -4,7 +4,7 @@
  * email_verified only becomes true when the user clicks a link that the server
  * emailed to the address on their record. This works for anyone: an on-site
  * (Add) account, a user who got a copied invite link, or someone who just
- * changed their address. The enrollment/invite nonce path (EMAIL.MD) still
+ * changed their address. The enrollment/invite nonce path (see CLAUDE.md) still
  * auto-verifies invitees who complete via the emailed invite link; this is the
  * general-purpose path the admin can trigger from Edit User at any time.
  */

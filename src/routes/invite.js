@@ -72,7 +72,7 @@ export async function adminInviteHandler(req, res, next) {
     const token = randomBytes(32).toString('base64url');
     // email_nonce proves the invite link was delivered to (and clicked from) the
     // pinned mailbox: completing signup+enrollment via this nonce sets
-    // email_verified=true (EMAIL.MD). It is stored on the invite but NEVER handed
+    // email_verified=true (see CLAUDE.md). It is stored on the invite but NEVER handed
     // back to the admin -- it is added to the link ONLY when the server itself
     // sends the email (/admin/invites/:token/send-email). The admin-visible link
     // below carries NO nonce, so a link the admin copies by hand yields

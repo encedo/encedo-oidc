@@ -1,5 +1,5 @@
 /**
- * Outbound mail for enrollment links (EMAIL.MD).
+ * Outbound mail for enrollment links (see CLAUDE.md).
  *
  * The application does NOT sign anything -- DKIM/SPF/DMARC live entirely on the
  * mail server. We only hand nodemailer to/from/subject/body over an authenticated
