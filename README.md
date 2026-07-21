@@ -795,14 +795,30 @@ npm run backup -- --file - | age -r age1... > backup.age
 
 `redis-<tenant>` publishes no port — it is reachable only inside `oidc-net`. So run the backup from
 the `oidc-<tenant>` container, which is already on that network and already has `REDIS_URL` in its
-env (no `--url` needed). Write to the host via stdout, so no volume is required:
+env (no `--url` needed).
+
+**Recommended — stream to the host over stdout (leaves nothing in the container):**
 
 ```bash
-# host <- container.  No -t: it must stay a raw binary stream.
-docker exec oidc-acme node src/cli/backup.js --file - > /var/backups/oidc-acme-$(date +%F).ndjson.gz
+# host <- container.  --file -  writes the gzip stream to stdout; logs go to stderr.
+# No -t: it must stay a raw binary stream. --skip-ephemeral drops in-flight auth state.
+docker exec oidc-acme node src/cli/backup.js --skip-ephemeral --file - \
+  > /var/backups/oidc-acme-$(date +%F).ndjson.gz
 ```
 
-For scheduled backups, mount a directory instead (add to the tenant's `docker-compose.yml`):
+Because the backup carries client secrets, access tokens and HSM certs, prefer **encrypting on the
+way out** so plaintext never touches any disk — container or host:
+
+```bash
+docker exec oidc-acme node src/cli/backup.js --skip-ephemeral --file - \
+  | age -r age1yourkey... > /var/backups/oidc-acme-$(date +%F).ndjson.gz.age
+```
+
+> **Do not** use `--file /tmp/x` inside the container followed by `docker cp` — that leaves a plaintext
+> copy in the container's filesystem. If you ever do, `docker exec oidc-acme rm /tmp/x` afterwards.
+
+For scheduled backups you may instead mount a host directory (add to the tenant's `docker-compose.yml`)
+and write to it — the file lands on the host, nothing extra stays in the container:
 
 ```yaml
   oidc:
@@ -810,7 +826,7 @@ For scheduled backups, mount a directory instead (add to the tenant's `docker-co
       - /var/backups/oidc:/backups
 ```
 ```bash
-docker exec oidc-acme node src/cli/backup.js --out /backups
+docker exec oidc-acme node src/cli/backup.js --skip-ephemeral --out /backups
 ```
 
 > The image must contain `src/cli/` — rebuild it (`docker build ...`) if the running container
