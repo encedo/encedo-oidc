@@ -8,8 +8,11 @@ import { issuer } from '../services/issuer.js';
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
 
-// Invite tokens: randomBytes(32).toString('hex') = 64 hex chars
-const TOKEN_RE = /^[a-f0-9]{64}$/;
+// Invite tokens: randomBytes(32).toString('base64url') = 43 chars, 256-bit entropy.
+// Shorter than hex (64) so invite URLs wrap cleanly in email. The regex also
+// accepts legacy 64-hex tokens so invites issued before this change keep working
+// until they expire (24 h TTL).
+const TOKEN_RE = /^([a-f0-9]{64}|[A-Za-z0-9_-]{43})$/;
 
 /** Client id(s) from an invite record. Handles both the new clients[] shape and
  *  legacy single-client_id invites created before opt. A. */
@@ -66,7 +69,7 @@ export async function adminInviteHandler(req, res, next) {
     const names = await namePipeline.exec();
     const client_names = grant.ids.map((id, i) => names[i] || id);
 
-    const token = randomBytes(32).toString('hex');
+    const token = randomBytes(32).toString('base64url');
     // email_nonce proves the invite link was delivered to (and clicked from) the
     // pinned mailbox: completing signup+enrollment via this nonce sets
     // email_verified=true (EMAIL.MD). It is stored on the invite but NEVER handed

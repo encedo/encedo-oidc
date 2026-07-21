@@ -43,13 +43,16 @@ function getTransport() {
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// Insert <wbr> break opportunities into a long URL so it wraps even in mail
+// Insert <wbr> break opportunities at URL boundaries -- before the fragment (#)
+// and before each query param (&) -- so a long link wraps BETWEEN segments (the
+// nonce &n=... drops to its own line) instead of mid-token. Works even in mail
 // clients that strip CSS word-break (Gmail, some desktop clients). <wbr> is a
 // break HINT, not a character -- it is NOT copied when the user selects the link,
-// so paste stays intact. Split the RAW url first, THEN escape each chunk: splitting
-// an already-escaped string could cut an entity like &amp; in half.
+// so the pasted URL stays intact. Escape first, then target the ESCAPED '&amp;'
+// (esc turns & into &amp;); '#' is not escaped. base64url tokens carry no # or &,
+// so these are the only matches. Token+nonce (43 chars each) now fit one line.
 const breakableUrl = (rawUrl) =>
-  (String(rawUrl ?? '').match(/.{1,16}/g) ?? []).map(esc).join('<wbr>');
+  esc(rawUrl).replace(/#/g, '<wbr>#').replace(/&amp;/g, '<wbr>&amp;');
 
 /**
  * HTML body in the same palette as the web UI (signup.html): brand purple

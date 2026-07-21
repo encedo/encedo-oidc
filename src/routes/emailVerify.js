@@ -14,7 +14,8 @@ import { logSecurity, SEC } from '../services/securityLog.js';
 import { sendVerificationEmail, isMailEnabled } from '../services/mailer.js';
 import { issuer } from '../services/issuer.js';
 
-const TOKEN_RE = /^[a-f0-9]{64}$/;
+// base64url token (43 chars, 256-bit); regex also accepts legacy 64-hex tokens.
+const TOKEN_RE = /^([a-f0-9]{64}|[A-Za-z0-9_-]{43})$/;
 
 // --- POST /admin/users/:sub/send-verification-email -----------
 // Emails a confirm-your-address link to the address on the user record (never
@@ -32,7 +33,7 @@ export async function sendVerificationEmailHandler(req, res, next) {
     const to = (user.email ?? '').trim().toLowerCase();
     if (!to) return res.status(400).json({ error: 'user_has_no_email' });
 
-    const token = randomBytes(32).toString('hex');
+    const token = randomBytes(32).toString('base64url');
     // Bind the token to BOTH sub and the exact address, so a later email change
     // cannot be verified by an old link (checked again at confirm time).
     await redis.set(`email_verify:${token}`, JSON.stringify({ sub, email: to }), { EX: 86400 });

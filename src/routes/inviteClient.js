@@ -7,14 +7,16 @@ import { generateClientSecret, generateClientId, validateRedirectUris } from '..
 
 const ALLOWED_SCOPES = ['openid', 'profile', 'email'];
 
-// Client-invite tokens: randomBytes(32).toString('hex') = 64 hex chars
-const TOKEN_RE = /^[a-f0-9]{64}$/;
+// Client-invite tokens: randomBytes(32).toString('base64url') = 43 chars,
+// 256-bit entropy. Shorter than hex (64) for cleaner URLs. Regex also accepts
+// legacy 64-hex tokens issued before this change (they expire in 24 h).
+const TOKEN_RE = /^([a-f0-9]{64}|[A-Za-z0-9_-]{43})$/;
 
 // --- POST /admin/invite-client --------------------------------
 export async function adminInviteClientHandler(req, res, next) {
   try {
     const { note } = req.body ?? {};
-    const token = randomBytes(32).toString('hex');
+    const token = randomBytes(32).toString('base64url');
     await redis.set(`client-invite:${token}`, JSON.stringify({
       note: note?.trim() ?? '',
     }), { EX: 86400 });

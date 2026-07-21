@@ -170,9 +170,9 @@ Logged events include: login attempts, signature verification results, token iss
 
 ### Invite Flow Security
 
-- Invite tokens: `randomBytes(32).toString('hex')` — 64 hex chars, 256-bit entropy, 24 h TTL
+- Invite tokens: `randomBytes(32).toString('base64url')` — 43 chars, 256-bit entropy, 24 h TTL (base64url keeps invite URLs short enough to wrap cleanly in email)
 - Token delivered via admin panel as a URL fragment (`#token=...`) — not logged by server
-- Token format validated with `TOKEN_RE = /^[a-f0-9]{64}$/` before any Redis call
+- Token format validated with `TOKEN_RE = /^([a-f0-9]{64}|[A-Za-z0-9_-]{43})$/` before any Redis call (accepts current base64url and legacy 64-hex tokens during their 24 h TTL)
 - Inputs validated **before** token consumption — a validation error does not burn the invite
 - Token consumed atomically with `getDel` — race-safe, single use
 - User invite (`invite:{token}`) tied to a specific `client_id` — user is enrolled for that client
