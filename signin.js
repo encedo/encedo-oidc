@@ -52,18 +52,21 @@ const OIDC = {
 };
 
 // --- Session (in-memory only) -------------------------
-let session = {
-  session_id:      null,
-  hsm_url:         null,
-  password:        null,
-  hem:             null,   // HEM instance
-  listToken:       null,   // keymgmt:search token
-  selectedKey:     null,   // { kid, label, sub }
-  openSearch:      false,  // HSM allows unauthenticated search
-  hasMobileApp:    false,  // HSM has mobile-app keys (^RVhUQUlE)
-  pendingAfterPin: null,   // 'search' | 'use'
-  pendingSign:     null,   // { useToken, kid, label, loginData } -- set before s-token-confirm
-};
+function freshSession() {
+  return {
+    session_id:      null,
+    hsm_url:         null,
+    password:        null,
+    hem:             null,   // HEM instance
+    listToken:       null,   // keymgmt:search token
+    selectedKey:     null,   // { kid, label, sub }
+    openSearch:      false,  // HSM allows unauthenticated search
+    hasMobileApp:    false,  // HSM has mobile-app keys (^RVhUQUlE)
+    pendingAfterPin: null,   // 'search' | 'use'
+    pendingSign:     null,   // { useToken, kid, label, loginData } -- set before s-token-confirm
+  };
+}
+let session = freshSession();
 
 // Used to cancel stale async mobile-auth operations
 let currentOpId = null;
@@ -600,10 +603,7 @@ function doCancelRedirect() {
 function doCancel() {
   document.getElementById('rejected-msg').textContent = 'You cancelled the login request.';
   showScreen('s-rejected');
-  session = { session_id: null, signing_input: null,
-    user_name: null, user_username: null, hsm_url: null, password: null,
-    hem: null, listToken: null, selectedKey: null, useToken: null,
-    openSearch: false, hasMobileApp: false, pendingAfterPin: null, pendingSign: null };
+  session = freshSession();
 }
 
 // --- Try again — full reset back to login screen ------
@@ -611,10 +611,7 @@ function doTryAgain() {
   currentOpId = null;
   mobileAbortCtrl?.abort(); mobileAbortCtrl = null;
   cancelRedirect = null;
-  session = { session_id: null, signing_input: null,
-    user_name: null, user_username: null, hsm_url: null, password: null,
-    hem: null, listToken: null, selectedKey: null, useToken: null,
-    openSearch: false, hasMobileApp: false, pendingAfterPin: null, pendingSign: null };
+  session = freshSession();
   document.getElementById('login-err').textContent = '';
   ftRestoreUI();
   showScreen('s-login');
