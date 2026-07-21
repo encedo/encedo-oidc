@@ -54,15 +54,11 @@ const OIDC = {
 // --- Session (in-memory only) -------------------------
 let session = {
   session_id:      null,
-  signing_input:   null,
-  user_name:       null,
-  user_username:   null,
   hsm_url:         null,
   password:        null,
   hem:             null,   // HEM instance
   listToken:       null,   // keymgmt:search token
   selectedKey:     null,   // { kid, label, sub }
-  useToken:        null,
   openSearch:      false,  // HSM allows unauthenticated search
   hasMobileApp:    false,  // HSM has mobile-app keys (^RVhUQUlE)
   pendingAfterPin: null,   // 'search' | 'use'
@@ -138,7 +134,6 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     const rpHost = new URL(OIDC.redirect_uri).hostname;
     document.getElementById('rp-label-login').textContent = rpHost;
-    document.getElementById('confirm-rp').textContent     = rpHost;
     document.getElementById('sign-audience').textContent  = rpHost;
   } catch {
     const label = OIDC.client_id || 'Unknown client';
@@ -625,55 +620,6 @@ function doTryAgain() {
   showScreen('s-login');
 }
 
-// --- Confirm + Sign -----------------------------------
-async function doConfirm() {
-  const btn = document.getElementById('confirm-btn');
-  btn.disabled = true;
-  btn.textContent = 'Signing...';
-  document.getElementById('confirm-err').textContent = '';
-
-  document.getElementById('sign-username').textContent  = session.user_username;
-  document.getElementById('sign-keysource').textContent = session.selectedKey
-    ? `HSM / ${session.selectedKey.label}` : 'HSM';
-  showScreen('s-signing');
-
-  try {
-    // Sign via HSM
-    const sigBytes  = await session.hem.exdsaSign(
-      session.useToken, session.selectedKey.kid, session.signing_input
-    );
-    const signature = bytesToBase64url(sigBytes);
-
-    // POST to backend -- complete OIDC flow
-    const res = await fetch('/authorize/confirm', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ session_id: session.session_id, signature }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      showError(data.error_description || data.error || 'Signature verification failed.');
-      return;
-    }
-
-    // Countdown 5->1 before redirect
-    const statusEl = document.getElementById('sign-status');
-    let count = 5;
-    statusEl.textContent = `Redirecting in ${count}...`;
-    await new Promise(resolve => {
-      const iv = setInterval(() => {
-        count--;
-        if (count <= 0) { clearInterval(iv); resolve(); }
-        else statusEl.textContent = `Redirecting in ${count}...`;
-      }, 1000);
-    });
-    window.location.href = data.redirect_url;
-
-  } catch (err) {
-    console.error('[doConfirm]', err);
-    showError(err?.name + ': ' + (err?.message || 'unknown error'));
-  }
-}
 
 // --- Helpers ------------------------------------------
 function hemErrMsg(err) {
@@ -704,5 +650,4 @@ window.doCancel       = doCancel;
 window.doTryAgain     = doTryAgain;
 window.doApproveSign   = doApproveSign;
 window.doCancelRedirect = doCancelRedirect;
-window.doConfirm      = doConfirm;
 window.showScreen     = showScreen;
