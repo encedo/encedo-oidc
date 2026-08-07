@@ -6,13 +6,14 @@ RUN npm ci --omit=dev
 
 COPY src/           ./src/
 COPY index.html     index.js     \
+     landing.html   landing.js   \
      signin.html    signin.js    \
      enrollment.html enrollment.js \
      admin-panel.html admin-panel.js \
      signup.html     signup.js    \
      signup-client.html signup-client.js \
      verify-email.html verify-email.js \
-     hem-sdk.js      logo.png    ./
+     hem-sdk.js      logo.png     favicon.ico ./
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
