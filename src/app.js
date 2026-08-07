@@ -45,6 +45,7 @@ const STYLE_HASHES = [
   "'sha256-WPNRCWjevpCuzbaeXeJXbBvLGm9JxCIVJqLNS7qCHnk='", // enrollment.html
   "'sha256-EA0irg8jKANLVH35Bh+2RzqKe3W+GIZXlbxrH4lShmg='", // admin-panel.html
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
+  "'sha256-nSvCekeiay54/8qHI5QRjPkvxVPtshpDpZx8+YGvFEc='", // landing.html
   "'sha256-aeiTjKwpQyLweFX9vVB9iij4EBs40oHYv9vg69BhU7w='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
   "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
@@ -102,7 +103,13 @@ app.get('/health', (_req, res) => {
 });
 
 // --- Static UI pages ----------------------------------------------------------
-app.get('/',                (_req, res) => res.sendFile(resolve(ROOT, 'index.html')));
+// LANDING_PAGE=1 puts the product landing page on '/' -- meant for the public
+// instance only. Every instance keeps the operator status page, at /status, and
+// test/demo tenants leave it on '/' by not setting the variable.
+const LANDING_PAGE = process.env.LANDING_PAGE === '1';
+app.get('/',                (_req, res) => res.sendFile(resolve(ROOT, LANDING_PAGE ? 'landing.html' : 'index.html')));
+app.get('/status',          (_req, res) => res.sendFile(resolve(ROOT, 'index.html')));
+app.get('/landing.js',      (_req, res) => res.sendFile(resolve(ROOT, 'landing.js')));
 app.get('/admin',           (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.html')));
 app.get('/enrollment',      (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.html')));
 app.get('/signup.js',            (_req, res) => res.sendFile(resolve(ROOT, 'signup.js')));

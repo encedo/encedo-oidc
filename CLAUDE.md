@@ -92,8 +92,10 @@ encedo-oidc/
 │       ├── redis.js
 │       ├── securityLog.js      ← dual-write: stderr + Redis ZSET
 │       └── attestation.js      ← HSM attestation via api.encedo.com
-├── index.html                  ← Landing page: status, issuer, discovery link, version
-├── index.js                    ← Landing page JS (fetches /health)
+├── index.html                  ← Status page: status, issuer, discovery link, version (served at /status)
+├── index.js                    ← Status page JS (fetches /health)
+├── landing.html                ← Public landing page (served at / when LANDING_PAGE=1)
+├── landing.js                  ← Landing JS: rail from /health + Ed25519 signing demo
 ├── signin.js                   ← Trusted App logic
 ├── signin.html                 ← Trusted App shell
 ├── enrollment.js               ← Enrollment flow logic
@@ -233,6 +235,17 @@ Server can email the enrollment/invite link over SMTP, and a completed enrollmen
 - **Connector enforcement**: `carbonio-oidc-connector` requires `email_verified===true` before PreAuth when `require_email_verified` is set (403 otherwise).
 
 Caveat (inherent to any email verification): intercepting the mail yields a false `email_verified=true`. The nonce adds no new attack surface — the enrollment token already grants enrollment; the nonce only carries the verification signal.
+
+### Landing page (`/`) vs status page (`/status`)
+
+`index.html` (operator status: running / issuer / discovery / build) moved to **`/status`**, where it is served on **every** instance. `/` serves `landing.html` **only when `LANDING_PAGE=1`** — a per-tenant env var, because the public instance (`oidc.encedo.com`) and the test instances (`test.`/`demo.oidc.encedo.com`) run the same image. Unset variable ⇒ `/` still serves the status page, i.e. the test tenants are unchanged.
+
+- **Files**: `landing.html` (inline `<style>`, hashed for CSP) + `landing.js` (external — CSP is `script-src 'self'`).
+- **Deliberately dark-themed**, and dark unconditionally (`color-scheme: dark`, one palette on `:root`). Every other screen stays light; the landing is a product surface, not an operator one. Palette derives from the brand: paper = the logo's navy taken deeper (`#14103a`), purple `#6E358C` lifted to `#b98fd4` so it carries text on navy, amber `#f5b041` used exactly once (self-host block). Primary button uses **dark text on purple** — white on the lifted purple is the one low-contrast combination on the page.
+- `logo.png` is an 8-bit palette PNG with **no alpha**, so on dark it sits on an explicit white chip (a bare `<img>` looks like a rendering fault).
+- The hero demonstration is **real**: the page generates a throwaway Ed25519 pair via WebCrypto, signs the `signing_input` it prints, and verifies it. Without WebCrypto Ed25519 (Chrome <105 / Firefox <113) the row still fills from random bytes but drops the word `valid` — it must not claim a verification that did not happen.
+- The rail reads `issuer` + `commit` from `/health` (same source as `index.js`); on failure the static markup values stay.
+- Layout is adapted from `~/develop/chat/encedo-chat/impl/web/landing.html` (onchato); content is backed by `PRODUCT.md`.
 
 ---
 
@@ -374,7 +387,7 @@ per-tenant/      (tenants/docker-compose.yml template)
 
 ## CSP Hashes
 
-Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 6 files: signin.html, enrollment.html, admin-panel.html, index.html, signup.html, signup-client.html.
+Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 8 files: signin.html, enrollment.html, admin-panel.html, index.html, landing.html, signup.html, signup-client.html, verify-email.html.
 Run `node update-csp-hashes.js` after any `<style>` block change.
 JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks.
 

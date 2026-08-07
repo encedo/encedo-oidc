@@ -44,6 +44,7 @@ npm start
 | `ADMIN_ALLOWED_IPS` | `127.0.0.1,::1` | Comma-separated IPs/CIDRs allowed to reach admin API |
 | `TRUST_PROXY` | — | Set to `1` when behind nginx/Caddy (enables `req.ip` from `X-Forwarded-For`) |
 | `CSP_CONNECT_EXTRA` | — | Extra space-separated origins for CSP `connect-src` (EPA custom domains) |
+| `LANDING_PAGE` | — | Set to `1` to serve the product landing page at `/` (public instance). The status page is always available at `/status` |
 
 ---
 
@@ -901,6 +902,27 @@ failure, so they are safe to drive from cron.
 | `GET/POST` | `/userinfo` | Return claims for access token |
 | `GET` | `/logout` | RP-initiated logout |
 | `GET` | `/health` | Liveness check |
+
+## Web Pages
+
+| Path | Page |
+|------|------|
+| `/` | Landing page when `LANDING_PAGE=1`, otherwise the status page |
+| `/status` | Status page — running indicator, issuer, discovery link, build (always available) |
+| `/admin` | Admin panel (API calls behind `ADMIN_ALLOWED_IPS` + `ADMIN_SECRET`) |
+| `/signup`, `/signup-client` | Invite flows |
+| `/enrollment` | HSM key enrollment |
+
+The landing page (`landing.html` + `landing.js`) is the public product page: it describes the
+hardware-anchored model and demonstrates the signing flow. It is dark-themed by design — the
+operator screens stay light — and it reads `issuer` and `commit` from `/health`, so a deployed
+instance shows its own values. Turn it on for the public instance only:
+
+```ini
+LANDING_PAGE=1
+```
+
+Leave the variable unset on test/demo tenants so `/` keeps serving the status page.
 
 ## Admin API
 

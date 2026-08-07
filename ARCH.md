@@ -151,6 +151,10 @@ encedo-oidc/
 │       ├── redis.js              Singleton Redis client (node-redis v4)
 │       ├── securityLog.js        Security event log (Redis ZSET + stderr)
 │       └── attestation.js        HSM attestation validation via api.encedo.com
+├── index.html                    Status page (served at /status, and at / unless LANDING_PAGE=1)
+├── index.js                      Status page logic (reads /health)
+├── landing.html                  Product landing page (served at / when LANDING_PAGE=1)
+├── landing.js                    Landing logic: rail from /health + signing demonstration
 ├── signin.js                     Trusted App logic (served as /signin.js)
 ├── signin.html                   Trusted App shell (served at /authorize)
 ├── enrollment.js                 Enrollment flow logic

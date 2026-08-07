@@ -16,6 +16,7 @@ const FILES = [
   { file: 'enrollment.html',  label: 'enrollment.html' },
   { file: 'admin-panel.html', label: 'admin-panel.html' },
   { file: 'index.html',       label: 'index.html' },
+  { file: 'landing.html',     label: 'landing.html' },
   { file: 'signup.html',      label: 'signup.html' },
   { file: 'signup-client.html', label: 'signup-client.html' },
   { file: 'verify-email.html', label: 'verify-email.html' },
