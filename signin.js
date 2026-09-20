@@ -638,13 +638,21 @@ function bytesToBase64url(bytes) {
   return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
-// Expose to onclick handlers
-window.doLogin        = doLogin;
-window.doSelectKey    = doSelectKey;
-window.doSubmitPin    = doSubmitPin;
-window.doCancelMobile = doCancelMobile;
-window.doCancel       = doCancel;
-window.doTryAgain     = doTryAgain;
-window.doApproveSign   = doApproveSign;
-window.doCancelRedirect = doCancelRedirect;
-window.showScreen     = showScreen;
+// Click dispatch -- buttons carry data-action, no inline handlers (CSP has no
+// script-src-attr, so on*= attributes would be blocked anyway).
+const ACTIONS = {
+  'do-login':           () => doLogin(),
+  'do-select-key':      () => doSelectKey(),
+  'do-submit-pin':      () => doSubmitPin(),
+  'do-cancel-mobile':   () => doCancelMobile(),
+  'do-cancel':          () => doCancel(),
+  'do-try-again':       () => doTryAgain(),
+  'do-approve-sign':    () => doApproveSign(),
+  'do-cancel-redirect': () => doCancelRedirect(),
+  'show-screen':        el => showScreen(el.dataset.screen),
+};
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  const fn = el && ACTIONS[el.dataset.action];
+  if (fn) { e.preventDefault(); fn(el); }
+});

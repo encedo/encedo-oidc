@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import redis from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { validate, vRequired, vTtl } from '../middleware/validate.js';
+import { validate, vClientName, vTtl } from '../middleware/validate.js';
 import { generateClientSecret, generateClientId, validateRedirectUris } from '../services/client.js';
 
 const router = Router();
@@ -63,7 +63,7 @@ router.post('/', async (req, res, next) => {
     } = req.body ?? {};
 
     const err = validate(
-      vRequired(name, 'name', 128),
+      vClientName(name),
       vTtl(id_token_ttl,     'id_token_ttl',     { min: 60, max: 86400 }),
       vTtl(access_token_ttl, 'access_token_ttl', { min: 60, max: 86400 }),
     );
@@ -123,7 +123,7 @@ router.patch('/:id', async (req, res, next) => {
     const updates = {};
 
     if (req.body.name !== undefined) {
-      const e = vRequired(req.body.name, 'name', 128);
+      const e = vClientName(req.body.name);
       if (e) return res.status(400).json({ error: 'validation_error', error_description: e });
       updates.name = req.body.name.trim();
     }

@@ -309,7 +309,7 @@
         Fast track &mdash; use last key: <strong id="ft-key-label" style="color:var(--purple);"></strong>
       </label>
     </div>
-    <button class="btn btn-primary btn-full" id="login-btn" onclick="doLogin()">Continue &rarr;</button>
+    <button class="btn btn-primary btn-full" id="login-btn" data-action="do-login">Continue &rarr;</button>
     <div class="err-msg" id="login-err"></div>
     <div class="hint-row">requires hardware key confirmation</div>
   </div>
@@ -328,8 +328,8 @@
     </div>
     <div class="err-msg" id="keys-err"></div>
     <div class="btn-row">
-      <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
-      <button class="btn btn-primary" id="keys-next-btn" onclick="doSelectKey()">Next &rarr;</button>
+      <button class="btn btn-ghost" data-action="do-cancel">Cancel</button>
+      <button class="btn btn-primary" id="keys-next-btn" data-action="do-select-key">Next &rarr;</button>
     </div>
   </div>
 </div>
@@ -350,8 +350,8 @@
       <div id="tc-extra"></div>
     </div>
     <div class="btn-row">
-      <button class="btn btn-ghost" onclick="doCancel()">Cancel</button>
-      <button class="btn btn-primary" id="tc-approve-btn" onclick="doApproveSign()">Approve &rarr;</button>
+      <button class="btn btn-ghost" data-action="do-cancel">Cancel</button>
+      <button class="btn btn-primary" id="tc-approve-btn" data-action="do-approve-sign">Approve &rarr;</button>
     </div>
   </div>
 </div>
@@ -378,9 +378,9 @@
       <div class="info-row"><span class="info-key">key source</span><span class="info-value" id="sign-keysource">Simulation</span></div>
     </div>
     <button class="btn btn-ghost btn-full" id="cancel-mobile-btn"
-            style="display:none;margin-top:14px;" onclick="doCancelMobile()">Use passphrase instead</button>
+            style="display:none;margin-top:14px;" data-action="do-cancel-mobile">Use passphrase instead</button>
     <button class="btn btn-ghost btn-full" id="cancel-redirect-btn"
-            style="display:none;margin-top:8px;" onclick="doCancelRedirect()">Cancel</button>
+            style="display:none;margin-top:8px;" data-action="do-cancel-redirect">Cancel</button>
   </div>
 </div>
 
@@ -401,8 +401,8 @@
     </div>
     <div class="err-msg" id="pin-err"></div>
     <div class="btn-row">
-      <button class="btn btn-ghost" onclick="showScreen('s-login')">Back</button>
-      <button class="btn btn-primary" id="pin-btn" onclick="doSubmitPin()">Continue &rarr;</button>
+      <button class="btn btn-ghost" data-action="show-screen" data-screen="s-login">Back</button>
+      <button class="btn btn-primary" id="pin-btn" data-action="do-submit-pin">Continue &rarr;</button>
     </div>
   </div>
 </div>
@@ -423,7 +423,7 @@
     </div>
     <p class="card-title" style="color:var(--red);">Rejected</p>
     <p class="card-sub" id="rejected-msg">You cancelled the login request.</p>
-    <button class="btn btn-ghost" onclick="doTryAgain()">Try again</button>
+    <button class="btn btn-ghost" data-action="do-try-again">Try again</button>
   </div>
 </div>
 
@@ -444,7 +444,7 @@
     </div>
     <p class="card-title" style="color:var(--amber);">Something went wrong</p>
     <p class="card-sub" id="error-msg">An unexpected error occurred.</p>
-    <button class="btn btn-ghost" onclick="doTryAgain()">Try again</button>
+    <button class="btn btn-ghost" data-action="do-try-again">Try again</button>
   </div>
 </div>
 

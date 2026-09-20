@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  vRequired, vOptional, vEmail, vUrl, vUsername, vDisplayName,
+  vRequired, vOptional, vEmail, vUrl, vUsername, vDisplayName, vClientName,
   vCodeChallenge, vCodeVerifier, vState, vNonce, vSignature,
   vKeyType, vTtl, vUuid, vClaimKey, validate,
 } from '../src/middleware/validate.js';
@@ -124,6 +124,23 @@ test('vUuid (v4)', () => {
   bad(vUuid('not-a-uuid'));
   bad(vUuid('0507afa8ef364d858fec6e6013f6cdba'));      // no dashes
   bad(vUuid(123));
+});
+
+test('vDisplayName rejects control characters', () => {
+  ok(vDisplayName('Łukasz Żółć'));
+  ok(vDisplayName(undefined));
+  bad(vDisplayName('Alice\r\nBcc: x@y'));   // header injection shape
+  bad(vDisplayName('a\x00b'));
+  bad(vDisplayName('a'.repeat(129)));
+});
+
+test('vClientName', () => {
+  ok(vClientName('Nextcloud'));
+  ok(vClientName("x');alert(1);//"));        // quotes are fine -- the panel escapes; only control chars are rejected
+  bad(vClientName(''));
+  bad(vClientName('a\nb'));
+  bad(vClientName('a\x7fb'));
+  bad(vClientName('a'.repeat(129)));
 });
 
 test('vClaimKey', () => {

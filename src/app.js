@@ -35,7 +35,9 @@ if (process.env.TRUST_PROXY) {
 // --- Content-Security-Policy --------------------------------------------------
 // connect-src: 'self' (OIDC backend) + *.ence.do (PPA HSMs) + api.encedo.com (broker).
 // EPA devices with custom domains: add via CSP_CONNECT_EXTRA env var (space-separated).
-// script-src: 'self' only -- JS extracted to external files (signin.js, enrollment.js, admin-panel.js).
+// script-src: 'self' only -- JS lives in external files and there are NO inline
+//   on*= handlers either (no script-src-attr): pages dispatch clicks through
+//   data-action attributes, so injected markup can never become code.
 // style-src: inline <style> blocks allowed via SHA-256 hashes (no 'unsafe-inline').
 //   Hashes cover exact byte content -- update if CSS changes (browser console will show new hash).
 // IPv6 not supported for HSM connections (see security.md M3).
@@ -54,7 +56,6 @@ const CSP = [
   "default-src 'self'",
   `connect-src 'self' https://*.ence.do https://api.encedo.com${connectExtra}`,
   "script-src 'self'",
-  "script-src-attr 'unsafe-inline'",   // onclick= handlers in HTML (not <script> blocks)
   `style-src 'self' ${STYLE_HASHES} https://fonts.googleapis.com`,
   "style-src-attr 'unsafe-inline'",    // inline style= attributes on elements
   "font-src 'self' https://fonts.gstatic.com",

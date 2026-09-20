@@ -38,7 +38,10 @@ const checkHealthDebounced = () => { clearTimeout(_healthTimer); _healthTimer = 
 const base = () => $('api-base').value.replace(/\/$/, '');
 const secret = () => $('api-secret').value;
 const hdrs = () => ({'Content-Type':'application/json','Authorization':`Bearer ${secret()}`});
-const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// HTML-escape for text nodes AND double/single-quoted attribute values. Never
+// build an inline handler from data -- there are none (CSP forbids them); the
+// click dispatcher at the bottom reads data-* attributes instead.
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 /* -- user <-> client links -------------------------------------------------
    The relation is stored on the user only (user:{sub}.clients) and it GATES
@@ -156,7 +159,7 @@ async function api(path, opts = {}) {
         : `Server error ${res.status} — try again in a moment.`);
     }
   }
-  if (!res.ok) throw new Error(body?.detail || body?.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(body?.error_description || body?.error || `HTTP ${res.status}`);
   return body;
 }
 
@@ -170,7 +173,11 @@ function fmt(iso) {
 function toast(msg, type = 'ok') {
   const t = document.createElement('div');
   t.className = `toast ${type}`;
-  t.innerHTML = `<span>${type==='ok'?'[ok]':'[x]'}</span><span>${msg}</span>`;
+  // textContent: messages carry server- and user-supplied strings (client
+  // names, error_description) and must never be parsed as HTML.
+  const icon = document.createElement('span'); icon.textContent = type === 'ok' ? '[ok]' : '[x]';
+  const text = document.createElement('span'); text.textContent = msg;
+  t.append(icon, text);
   $('toasts').appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
@@ -259,13 +266,13 @@ async function loadUsers() {
         <div>${linkPill('user-clients', u.sub, (u.clients ?? []).length)}</div>
         <div class="cell-muted">${fmt(u.created_at)}</div>
         <div class="cell-actions">
-          <button class="btn btn-xs" style="background:rgba(52,216,154,.12);border:1px solid rgba(52,216,154,.3);color:var(--green)" onclick="requestEnrollment('${esc(u.sub)}', ${!!u.pubkey})">${u.pubkey ? 'Renew' : 'New Enrollment'}</button>
-          <button class="btn btn-ghost btn-xs" onclick="openEditUser(${i})">Edit</button>
-          <button class="btn btn-danger btn-xs" onclick="delUser('${esc(u.sub)}','${esc(u.username)}')">Delete</button>
+          <button class="btn btn-xs" style="background:rgba(52,216,154,.12);border:1px solid rgba(52,216,154,.3);color:var(--green)" data-action="request-enrollment" data-idx="${i}">${u.pubkey ? 'Renew' : 'New Enrollment'}</button>
+          <button class="btn btn-ghost btn-xs" data-action="edit-user" data-idx="${i}">Edit</button>
+          <button class="btn btn-danger btn-xs" data-action="del-user" data-idx="${i}">Delete</button>
         </div>
       </div>`).join('');
   } catch (e) {
-    b.innerHTML = `<div style="padding:16px 20px;font-family:var(--mono);font-size:11px;color:var(--red)">${e.message}</div>`;
+    b.innerHTML = `<div style="padding:16px 20px;font-family:var(--mono);font-size:11px;color:var(--red)">${esc(e.message)}</div>`;
   }
 }
 
@@ -358,7 +365,7 @@ function _addClaimRow(k = '', v = '') {
       style="width:160px;padding:7px 10px;font-size:12px;font-family:var(--mono);">
     <input class="field-input claim-val" placeholder="value" value="${esc(v)}"
       style="flex:1;padding:7px 10px;font-size:12px;font-family:var(--mono);">
-    <button class="btn btn-danger btn-xs" onclick="this.parentElement.remove()" style="flex-shrink:0">&#215;</button>`;
+    <button class="btn btn-danger btn-xs" data-action="remove-row" style="flex-shrink:0">&#215;</button>`;
   $('eu-claims-list').appendChild(row);
 }
 
@@ -391,7 +398,7 @@ async function _renderClientsChecklist(selectedIds, listId = 'eu-clients-list') 
         <span class="client-check-id">${esc(c.client_id)}</span>
       </label>`).join('');
   } catch (e) {
-    wrap.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--red);padding:10px 0">${e.message}</div>`;
+    wrap.innerHTML = `<div style="font-family:var(--mono);font-size:10px;color:var(--red);padding:10px 0">${esc(e.message)}</div>`;
   }
 }
 
@@ -420,8 +427,11 @@ async function submitEditUser() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function requestEnrollment(sub, hasKey) {
-  if (hasKey) {
+async function requestEnrollment(idx) {
+  const u = _usersCache[idx];
+  if (!u) return;
+  const sub = u.sub;
+  if (u.pubkey) {
     const ok = confirm('This user already has an enrolled key.\nGenerating a new enrollment link will overwrite the existing key when completed.\n\nContinue?');
     if (!ok) return;
   }
@@ -522,7 +532,10 @@ async function emailInviteLink() {
   }
 }
 
-async function delUser(sub, username) {
+async function delUser(idx) {
+  const u = _usersCache[idx];
+  if (!u) return;
+  const { sub, username } = u;
   if (!confirm(`Delete user "${username || sub}"?`)) return;
   try {
     await api(`/admin/users/${sub}`, {method:'DELETE'});
@@ -635,7 +648,7 @@ function renderAuditEntries(entries) {
       .map(([k,v]) => `<span class="info-key">${esc(k)}</span>&nbsp;<span class="info-value">${esc(Array.isArray(v) ? v.join(', ') : String(v))}</span>`)
       .join(' &nbsp;&middot;&nbsp; ');
     return `
-      <div class="table-row" style="grid-template-columns:${COLS};cursor:pointer;" onclick="toggleAuditRow(${i})">
+      <div class="table-row" style="grid-template-columns:${COLS};cursor:pointer;" data-action="toggle-audit-row" data-idx="${i}">
         <div class="cell-mono" style="font-size:10px;color:var(--muted)">${fmtMs(e.ts)}</div>
         <div class="cell-mono" style="display:flex;align-items:center;gap:7px;">
           <span style="width:6px;height:6px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block;"></span>
@@ -696,13 +709,13 @@ async function loadClients() {
           </div>
         </div>
         <div class="client-card-actions">
-          <button class="btn btn-ghost btn-xs" onclick="openEditClient(${ci})">Edit</button>
-          <button class="btn btn-danger btn-xs" onclick="delClient('${esc(c.client_id)}','${esc(c.name)}')">Delete</button>
+          <button class="btn btn-ghost btn-xs" data-action="edit-client" data-idx="${ci}">Edit</button>
+          <button class="btn btn-danger btn-xs" data-action="del-client" data-idx="${ci}">Delete</button>
         </div>
       </div>`;
     }).join('');
   } catch (e) {
-    b.innerHTML = `<div style="font-family:var(--mono);font-size:11px;color:var(--red);padding:16px">${e.message}</div>`;
+    b.innerHTML = `<div style="font-family:var(--mono);font-size:11px;color:var(--red);padding:16px">${esc(e.message)}</div>`;
   }
 }
 
@@ -790,7 +803,10 @@ async function doRotateFromEdit() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function delClient(id, name) {
+async function delClient(idx) {
+  const c = _clientsCache[idx];
+  if (!c) return;
+  const { client_id: id, name } = c;
   if (!confirm(`Delete client "${name}"?`)) return;
   try {
     await api(`/admin/clients/${id}`, {method:'DELETE'});
@@ -799,38 +815,71 @@ async function delClient(id, name) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-/* -- expose to onclick handlers -- */
-window.loadAudit        = loadAudit;
-window.auditPrevPage    = auditPrevPage;
-window.auditNextPage    = auditNextPage;
-window.auditChangeLimit = auditChangeLimit;
-window.connectAndSave    = connectAndSave;
-window.checkHealth       = checkHealth;
-window.checkHealthDebounced = checkHealthDebounced;
-window.applyAuditFilter = applyAuditFilter;
-window.toggleAuditRow   = toggleAuditRow;
-window.togglePkce       = togglePkce;
-window.showPage         = showPage;
-window.openModal        = openModal;
-window.closeModal       = closeModal;
-window.copyText         = copyText;
-window.toggleTheme      = toggleTheme;
-window.submitInviteUser = submitInviteUser;
-window.emailInviteLink  = emailInviteLink;
-window.sendVerificationEmail = sendVerificationEmail;
-window.openAddUser      = openAddUser;
-window.submitAddUser    = submitAddUser;
-window.openEditUser     = openEditUser;
-window.submitEditUser   = submitEditUser;
-window.addClaimRow      = addClaimRow;
-window.requestEnrollment = requestEnrollment;
-window.delUser          = delUser;
-window.openAddClient    = openAddClient;
-window.submitAddClient  = submitAddClient;
-window.openEditClient   = openEditClient;
-window.submitEditClient = submitEditClient;
-window.doRotateFromEdit = doRotateFromEdit;
-window.delClient        = delClient;
+/* -- event wiring ------------------------------------------------------------
+   No inline handlers anywhere (CSP script-src 'self', no script-src-attr).
+   Every clickable element carries data-action; arguments travel as data-*
+   attributes (indexes into _usersCache/_clientsCache, element ids), never as
+   code -- so a client name like  x');alert(1);//  is inert. */
+const ACTIONS = {
+  'toggle-theme':            () => toggleTheme(),
+  'show-page':               el => showPage(el.dataset.page, el),
+  'forget-secret':           () => forgetSecret(),
+  'open-add-user':           () => openAddUser(),
+  'load-users':              () => loadUsers(),
+  'load-invites':            () => loadInvites(),
+  'load-audit':              () => loadAudit(true),
+  'audit-prev-page':         () => auditPrevPage(),
+  'audit-next-page':         () => auditNextPage(),
+  'open-invite-client':      () => openInviteClient(),
+  'open-add-client':         () => openAddClient(),
+  'load-clients':            () => loadClients(),
+  'close-modal':             el => closeModal(el.dataset.modal),
+  'copy':                    el => copyText(el.dataset.target),
+  'copy-close':              el => { copyText(el.dataset.target); closeModal(el.dataset.modal); },
+  'open-url':                el => window.open($(el.dataset.target).textContent, '_blank'),
+  'toggle-pkce':             el => togglePkce(el.id),
+  'submit-invite-user':      () => submitInviteUser(),
+  'submit-add-user':         () => submitAddUser(),
+  'submit-invite-client':    () => submitInviteClient(),
+  'email-invite-link':       () => emailInviteLink(),
+  'send-verification-email': () => sendVerificationEmail(),
+  'add-claim-row':           () => addClaimRow(),
+  'submit-edit-user':        () => submitEditUser(),
+  'submit-add-client':       () => submitAddClient(),
+  'do-rotate-from-edit':     () => doRotateFromEdit(),
+  'submit-edit-client':      () => submitEditClient(),
+  // rendered rows
+  'request-enrollment':      el => requestEnrollment(Number(el.dataset.idx)),
+  'edit-user':               el => openEditUser(Number(el.dataset.idx)),
+  'del-user':                el => delUser(Number(el.dataset.idx)),
+  'remove-row':              el => el.parentElement.remove(),
+  'toggle-audit-row':        el => toggleAuditRow(Number(el.dataset.idx)),
+  'edit-client':             el => openEditClient(Number(el.dataset.idx)),
+  'del-client':              el => delClient(Number(el.dataset.idx)),
+  'delete-invite':           el => deleteInvite(el),
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.action];
+  if (!fn) return;
+  e.preventDefault();
+  fn(el, e);
+});
+
+// Config inputs: the base URL probes /health as you type (public endpoint);
+// the secret is only sent when you press Enter -- probing on every keystroke
+// would stream partial secrets into the audit log as admin.auth.fail.
+$('api-base').addEventListener('input', checkHealthDebounced);
+$('api-base').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('api-secret').focus(); }
+});
+$('api-secret').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); connectAndSave(); }
+});
+$('audit-filter').addEventListener('change', applyAuditFilter);
+$('audit-limit').addEventListener('change', auditChangeLimit);
 
 /* -- boot -- */
 /* -- connect & save config -- */
@@ -841,13 +890,24 @@ async function connectAndSave() {
   try {
     const r = await fetch(url + '/health');
     if (!r.ok) throw 0;
-    localStorage.setItem('encedo-api-base',   url);
-    localStorage.setItem('encedo-api-secret', $('api-secret').value);
+    localStorage.setItem('encedo-api-base', url);
+    // The secret lives in sessionStorage only: it dies with the tab and is
+    // not shared with other tabs, so a script running on this origin later
+    // (or the next person at the machine) does not find a full-power bearer.
+    sessionStorage.setItem('encedo-api-secret', $('api-secret').value);
     $('status-text').textContent = '✔ saved — reloading…';
     setTimeout(() => location.reload(), 1200);
   } catch {
     $('status-text').textContent = 'unreachable — not saved';
   }
+}
+
+function forgetSecret() {
+  sessionStorage.removeItem('encedo-api-secret');
+  localStorage.removeItem('encedo-api-secret');   // pre-sessionStorage installs
+  $('api-secret').value = '';
+  $('status-text').textContent = 'secret forgotten — reloading…';
+  setTimeout(() => location.reload(), 600);
 }
 
 /* ==================== INVITES ==================== */
@@ -883,7 +943,7 @@ async function loadInvites() {
         <div class="cell-muted">${esc(inv.email) || '<span style="opacity:.4">—</span>'}</div>
         <div class="cell-muted">${fmtTtl(inv.ttl)}</div>
         <div class="cell-actions">
-          <button class="btn btn-danger btn-xs" data-inv-type="${inv.type}" data-inv-token="${esc(inv.token)}" onclick="deleteInvite(this)">🗑</button>
+          <button class="btn btn-danger btn-xs" data-action="delete-invite" data-inv-type="${esc(inv.type)}" data-inv-token="${esc(inv.token)}">🗑</button>
         </div>
       </div>`).join('');
   } catch (e) {
@@ -907,12 +967,12 @@ async function deleteInvite(btn) {
   }
 }
 
-window.openInviteClient = function() {
+function openInviteClient() {
   $('invc-note').value = '';
   openModal('modal-invite-client');
-};
+}
 
-window.submitInviteClient = async function() {
+async function submitInviteClient() {
   try {
     const note = $('invc-note').value.trim();
     const data = await api('/admin/invite-client', {
@@ -926,7 +986,7 @@ window.submitInviteClient = async function() {
   } catch (e) {
     toast(e.message, 'err');
   }
-};
+}
 
 // Restore theme
 if (localStorage.getItem('encedo-theme') === 'light')
@@ -935,7 +995,14 @@ if (localStorage.getItem('encedo-theme') === 'light')
 // Restore config (must run before checkHealth/loadUsers)
 (function(){
   const savedBase   = localStorage.getItem('encedo-api-base');
-  const savedSecret = localStorage.getItem('encedo-api-secret');
+  // One-time migration: older panels persisted the secret in localStorage.
+  // Move it to this tab's sessionStorage and drop the durable copy.
+  const legacySecret = localStorage.getItem('encedo-api-secret');
+  if (legacySecret) {
+    sessionStorage.setItem('encedo-api-secret', legacySecret);
+    localStorage.removeItem('encedo-api-secret');
+  }
+  const savedSecret = sessionStorage.getItem('encedo-api-secret');
   if (savedBase)   document.getElementById('api-base').value   = savedBase;
   if (savedSecret) document.getElementById('api-secret').value = savedSecret;
   if (!savedBase) document.getElementById('api-base').value = window.location.origin;

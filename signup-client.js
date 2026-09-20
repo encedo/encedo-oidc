@@ -20,21 +20,21 @@ if (!token) {
 }
 
 // --- Scope / PKCE toggles ---
-window.toggleScope = function(el) {
+function toggleScope(el) {
   el.classList.toggle('on');
-};
+}
 
-window.togglePkce = function() {
+function togglePkce() {
   document.getElementById('pkce-row').classList.toggle('on');
-};
+}
 
 // --- Copy helper ---
-window.copyVal = function(id) {
+function copyVal(id) {
   navigator.clipboard.writeText(document.getElementById(id).textContent);
-};
+}
 
 // --- Register ---
-window.doRegister = async function() {
+async function doRegister() {
   const btn = document.getElementById('sc-register-btn');
   const err = document.getElementById('sc-err');
   err.textContent = '';
@@ -71,4 +71,17 @@ window.doRegister = async function() {
     err.textContent = `Error: ${e.message}`;
     btn.disabled = false;
   }
+}
+
+// Click dispatch -- data-action instead of inline handlers (CSP).
+const ACTIONS = {
+  'toggle-scope': el => toggleScope(el),
+  'toggle-pkce':  () => togglePkce(),
+  'copy-val':     el => copyVal(el.dataset.target),
+  'do-register':  () => doRegister(),
 };
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  const fn = el && ACTIONS[el.dataset.action];
+  if (fn) { e.preventDefault(); fn(el); }
+});

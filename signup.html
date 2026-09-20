@@ -270,7 +270,7 @@
       <input class="field-input" id="su-password" type="password" placeholder="Leave empty if not set" autocomplete="current-password">
     </div>
 
-    <button class="btn btn-primary btn-full" id="su-submit-btn" onclick="doSubmit()">Create account &amp; link HSM &rarr;</button>
+    <button class="btn btn-primary btn-full" id="su-submit-btn" data-action="do-submit">Create account &amp; link HSM &rarr;</button>
     <div class="err-msg" id="su-err"></div>
     <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
   </div>
@@ -313,7 +313,7 @@
         <span class="identity-val" id="s-client"></span>
       </div>
     </div>
-    <button class="btn btn-primary btn-full" id="su-done-btn" style="margin-top:22px;" onclick="doGoToService()">Go to service &rarr;</button>
+    <button class="btn btn-primary btn-full" id="su-done-btn" style="margin-top:22px;" data-action="do-go-to-service">Go to service &rarr;</button>
   </div>
 </div>
 

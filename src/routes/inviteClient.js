@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import redis              from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { vRequired }     from '../middleware/validate.js';
+import { vClientName }   from '../middleware/validate.js';
 import { issuer } from '../services/issuer.js';
 import { generateClientSecret, generateClientId, validateRedirectUris } from '../services/client.js';
 
@@ -60,7 +60,7 @@ export async function signupClientRegisterHandler(req, res, next) {
     }
 
     // Validate inputs before consuming invite — so a validation error doesn't burn the token
-    const nameErr = vRequired(name, 'name', 128);
+    const nameErr = vClientName(name);
     if (nameErr) return res.status(400).json({ error: 'validation_error', error_description: nameErr });
 
     if (!Array.isArray(redirect_uris) || !redirect_uris.length) {

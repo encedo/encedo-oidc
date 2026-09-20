@@ -354,20 +354,21 @@ All critical and high severity issues resolved. See `SECURITY.md` for full model
 Open (accepted or delegated):
 - `GET /authorize` rate limit → nginx `limit_req`
 - id_token not revocable → OIDC spec limitation, configure short TTL
-- Admin panel browser logout button → missing, low priority
+- Admin panel: secret is per-tab (`sessionStorage`) + “Forget secret” button (2026-09-20)
 - Redis TLS → ops configuration (`rediss://`)
 
 ---
 
 ## Admin Panel — Key Details
 
-- `connectAndSave()` — saves API base URL + secret to localStorage, reloads page
+- `connectAndSave()` — saves API base URL to localStorage and the secret to **sessionStorage** (dies with the tab; “Forget secret” button clears it), reloads page
 - `checkHealth()` — fetches `/health`, sets green/orange indicator (orange = URL ok but secret invalid), populates version label
-- `checkHealthDebounced()` — 600ms debounce wrapper; used on `oninput` to avoid CSP errors on partial URLs
+- `checkHealthDebounced()` — 600ms debounce wrapper on the API-base `input` event; the secret field is only sent on Enter (never on keystroke)
 - Default API base = `window.location.origin` (not hardcoded localhost — critical for multi-tenant)
 - Version label in sidebar: `' v ' + commit` (space before v)
 - `ADMIN_ALLOWED_IPS` must include `172.16.0.0/12` for Docker nginx reverse proxy
-- **Invites page**: merged table of user + client invites from `GET /admin/invites`; TYPE badge (user=green, client=purple); Delete button uses `data-inv-type` + `data-inv-token` attributes (no XSS via onclick)
+- **Invites page**: merged table of user + client invites from `GET /admin/invites`; TYPE badge (user=green, client=purple)
+- **No inline handlers anywhere** (CSP has no `script-src-attr`): every clickable element carries `data-action="…"`, arguments ride in `data-*` attributes (row index into `_usersCache`/`_clientsCache`, element id), and one delegated `click` listener maps them through the `ACTIONS` table at the bottom of `admin-panel.js`. Same pattern in `signin.js`, `signup.js`, `enrollment.js`, `signup-client.js`. Never put data into an `onclick` string — that was the stored-XSS vector via client `name` (fixed 2026-09-20). `esc()` escapes `'` too; `toast()` uses `textContent`.
 - **Invite user button**: on Users page header; opens modal; sends `POST /admin/invite`; shows one-time URL
 - **Invite client button**: on Clients page header; opens modal with optional note; sends `POST /admin/invite-client`; shows one-time URL
 
@@ -389,7 +390,7 @@ per-tenant/      (tenants/docker-compose.yml template)
 
 Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 8 files: signin.html, enrollment.html, admin-panel.html, index.html, landing.html, signup.html, signup-client.html, verify-email.html.
 Run `node update-csp-hashes.js` after any `<style>` block change.
-JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks.
+JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks and no `on*=` attributes (there is no `script-src-attr`, so the browser blocks them). Wire clicks through `data-action` + the page's `ACTIONS` map.
 
 ---
 
@@ -406,7 +407,7 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
 10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
 11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>`.
-12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, SSH remote). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
+12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, HTTPS in `.gitmodules`; push it over SSH via a local `pushurl`). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
 
 ---
 

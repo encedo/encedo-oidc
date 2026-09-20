@@ -120,7 +120,9 @@ Set on all responses via `src/app.js`:
 | `Referrer-Policy` | `no-referrer` |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` (production only) |
 
-JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`, `signup.js`, `signup-client.js`, `index.js`) — no inline `<script>` blocks. `script-src 'self'` is enforced without `'unsafe-inline'`. CSP style hashes cover exact `<style>` block content in HTML files (6 files: signin, enrollment, admin-panel, index, signup, signup-client).
+JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`, `signup.js`, `signup-client.js`, `verify-email.js`, `index.js`, `landing.js`) — no inline `<script>` blocks and no inline `on*=` handlers: `script-src 'self'` is enforced without `'unsafe-inline'` and without a permissive `script-src-attr`, so markup injected into the page can never execute. Clicks are dispatched through `data-action` attributes and a delegated listener. CSP style hashes cover exact `<style>` block content in HTML files (8 files: signin, enrollment, admin-panel, index, landing, signup, signup-client, verify-email).
+
+The admin secret is kept in `sessionStorage` (per tab, gone when the tab closes) and can be dropped with the “Forget secret” button; the API base URL alone is remembered in `localStorage`.
 
 ---
 

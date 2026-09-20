@@ -242,13 +242,11 @@ async function doSubmit() {
   }
 }
 
-window.doSubmit = doSubmit;
-
-window.doGoToService = function() {
+function doGoToService() {
   if (clientRedirectOrigin) window.location.href = clientRedirectOrigin;
-};
+}
 
-window.doClose = function() {
+function doClose() {
   window.close();
   // Browsers refuse window.close() for a tab the script did not open (the usual
   // case here -- the admin opened the link). If we're still on the page shortly
@@ -257,4 +255,16 @@ window.doClose = function() {
     document.getElementById('s-close-btn').style.display  = 'none';
     document.getElementById('s-close-hint').style.display = 'block';
   }, 200);
+}
+
+// Click dispatch -- data-action instead of inline handlers (CSP).
+const ACTIONS = {
+  'do-submit':        () => doSubmit(),
+  'do-go-to-service': () => doGoToService(),
+  'do-close':         () => doClose(),
 };
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  const fn = el && ACTIONS[el.dataset.action];
+  if (fn) { e.preventDefault(); fn(el); }
+});

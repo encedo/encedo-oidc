@@ -254,8 +254,17 @@ async function doSubmit() {
   }
 }
 
-window.doSubmit = doSubmit;
-
-window.doGoToService = function() {
+function doGoToService() {
   if (clientRedirectOrigin) window.location.href = clientRedirectOrigin;
+}
+
+// Click dispatch -- data-action instead of inline handlers (CSP).
+const ACTIONS = {
+  'do-submit':        () => doSubmit(),
+  'do-go-to-service': () => doGoToService(),
 };
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  const fn = el && ACTIONS[el.dataset.action];
+  if (fn) { e.preventDefault(); fn(el); }
+});

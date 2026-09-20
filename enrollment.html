@@ -244,7 +244,7 @@
         placeholder="Leave empty if not set">
     </div>
 
-    <button class="btn btn-primary btn-full" id="submit-btn" onclick="doSubmit()">Link HSM &rarr;</button>
+    <button class="btn btn-primary btn-full" id="submit-btn" data-action="do-submit">Link HSM &rarr;</button>
     <div class="err-msg" id="form-err"></div>
     <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
   </div>
@@ -274,9 +274,9 @@
         <span class="identity-val" id="s-hsm"></span>
       </div>
     </div>
-    <button class="btn btn-primary btn-full" id="s-done-btn" style="margin-top:22px;" onclick="doGoToService()">Go to service &rarr;</button>
+    <button class="btn btn-primary btn-full" id="s-done-btn" style="margin-top:22px;" data-action="do-go-to-service">Go to service &rarr;</button>
     <!-- Shown instead of "Go to service" for admin-triggered enrollment (no client redirect) -->
-    <button class="btn btn-primary btn-full" id="s-close-btn" style="margin-top:22px;display:none;" onclick="doClose()">Done. Close this page</button>
+    <button class="btn btn-primary btn-full" id="s-close-btn" style="margin-top:22px;display:none;" data-action="do-close">Done. Close this page</button>
     <p id="s-close-hint" style="display:none;font-size:13px;color:var(--muted);margin-top:16px;">Setup complete — you can now close this tab.</p>
   </div>
 </div>

@@ -69,9 +69,26 @@ export function vUsername(value, label = 'username') {
   return null;
 }
 
+/** Control characters (C0 + DEL) have no place in any name -- they only
+ *  matter to whatever renders or logs the string (mail headers, terminals). */
+const CTRL_RE = /[\x00-\x1f\x7f]/;
+
 /** Display name: printable chars, 0-128. */
 export function vDisplayName(value, label = 'name') {
-  return vOptional(value, label, 128);
+  const base = vOptional(value, label, 128);
+  if (base) return base;
+  if (value && CTRL_RE.test(value)) return `${label} must not contain control characters`;
+  return null;
+}
+
+/** Client (relying party) name: required, 1-128 printable chars. Shown in the
+ *  admin panel and on the sign-in consent line; the panel escapes it, this
+ *  keeps the raw value sane for logs and mail as well. */
+export function vClientName(value, label = 'name') {
+  const base = vRequired(value, label, 128);
+  if (base) return base;
+  if (CTRL_RE.test(value)) return `${label} must not contain control characters`;
+  return null;
 }
 
 /**

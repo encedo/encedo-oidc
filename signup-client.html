@@ -166,13 +166,13 @@
       <label class="field-label">Scopes</label>
       <div class="toggles-row">
         <div class="scope-tag required">openid</div>
-        <div class="scope-tag on" data-scope="profile" onclick="toggleScope(this)">profile</div>
-        <div class="scope-tag on" data-scope="email" onclick="toggleScope(this)">email</div>
+        <div class="scope-tag on" data-scope="profile" data-action="toggle-scope">profile</div>
+        <div class="scope-tag on" data-scope="email" data-action="toggle-scope">email</div>
       </div>
     </div>
     <div class="field">
       <label class="field-label">PKCE</label>
-      <div class="pkce-row on" id="pkce-row" onclick="togglePkce()">
+      <div class="pkce-row on" id="pkce-row" data-action="toggle-pkce">
         <div class="pkce-check">
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.2"><polyline points="2 6 5 9 10 3"/></svg>
         </div>
@@ -181,7 +181,7 @@
       </div>
       <div class="field-hint">PKCE (S256) protects against authorization code interception</div>
     </div>
-    <button class="btn btn-primary btn-full" id="sc-register-btn" onclick="doRegister()">Register &rarr;</button>
+    <button class="btn btn-primary btn-full" id="sc-register-btn" data-action="do-register">Register &rarr;</button>
     <div class="err-msg" id="sc-err"></div>
   </div>
 </div>
@@ -205,11 +205,11 @@
       Copy and store the client secret now. It cannot be retrieved later.
     </div>
     <div class="cred-box">
-      <div class="cred-label">Client ID <span class="cred-copy" onclick="copyVal('done-client-id')">copy</span></div>
+      <div class="cred-label">Client ID <span class="cred-copy" data-action="copy-val" data-target="done-client-id">copy</span></div>
       <div class="cred-value" id="done-client-id"></div>
     </div>
     <div class="cred-box">
-      <div class="cred-label">Client Secret <span class="cred-copy" onclick="copyVal('done-client-secret')">copy</span></div>
+      <div class="cred-label">Client Secret <span class="cred-copy" data-action="copy-val" data-target="done-client-secret">copy</span></div>
       <div class="cred-value" id="done-client-secret"></div>
     </div>
   </div>
