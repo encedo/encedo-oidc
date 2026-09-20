@@ -246,6 +246,7 @@ export async function signupRegisterHandler(req, res, next) {
     const err = validate(
       vDisplayName(name),
       vUrl(hsm_url, 'hsm_url', { httpsOnly: true, allowLocalhost: true }),
+      vKeyType(reqKeyType),   // an arbitrary string here became forced_key_type and made every submit fail
     );
     if (err) return res.status(400).json({ error: 'validation_error', error_description: err });
 
@@ -263,17 +264,24 @@ export async function signupRegisterHandler(req, res, next) {
         error_description: 'Invite must pin a valid username and email' });
     }
 
-    if (await redis.hGet('email_index', email)) {
-      return res.status(409).json({ error: 'email_already_exists' });
-    }
-
-    if (await redis.hGet('username_index', uname)) {
+    // Claim username + email atomically (HSETNX) -- two registrations racing
+    // on the same identity (two invites pinned to one email) cannot both win.
+    const sub = randomUUID();
+    if (!(await redis.hSetNX('username_index', uname, sub))) {
       return res.status(409).json({ error: 'username_already_exists' });
+    }
+    if (!(await redis.hSetNX('email_index', email, sub))) {
+      await redis.hDel('username_index', uname);
+      return res.status(409).json({ error: 'email_already_exists' });
     }
 
     // Atomically consume invite — prevents race condition (two concurrent requests with same token)
     const raw = await redis.getDel(`invite:${token}`);
-    if (!raw) return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    if (!raw) {
+      await redis.hDel('username_index', uname);
+      await redis.hDel('email_index', email);
+      return res.status(404).json({ error: 'invite_not_found_or_expired' });
+    }
     const invite = JSON.parse(raw);
 
     const inviteClientIds = inviteClients(invite);
@@ -292,7 +300,6 @@ export async function signupRegisterHandler(req, res, next) {
     // as verified.
     const via_email = Boolean(invite.email_nonce && n && n === invite.email_nonce);
 
-    const sub = randomUUID();
     const record = {
       sub,
       username:   uname,
@@ -304,24 +311,23 @@ export async function signupRegisterHandler(req, res, next) {
       created_at: new Date().toISOString(),
     };
 
-    await redis.hSet(`user:${sub}`, record);
-    await redis.sAdd('users', sub);
-    await redis.hSet('username_index', uname, sub);
-    await redis.hSet('email_index', email, sub);
-
     // key_type priority: invite-forced > user-choice > default
     const forcedKeyType = invite.key_type ?? reqKeyType ?? DEFAULT_KEY_TYPE;
 
+    // Hash, set membership and enrollment token in one MULTI (see adminUsers.js).
     const enrollToken = randomBytes(32).toString('base64url');
-    await redis.set(`enrollment:${enrollToken}`, JSON.stringify({
-      sub,
-      username:          uname,
-      hsm_url:           hsm_url.trim(),
-      forced_key_type:   forcedKeyType,
-      client_redirect_origin,
-      via_email,   // enrollment/submit reads this to set user.email_verified
-    }), { EX: 3600 }); // 1h — user is actively enrolling right now
-    await redis.hSet(`user:${sub}`, { enrollment_token: enrollToken });
+    await redis.multi()
+      .hSet(`user:${sub}`, { ...record, enrollment_token: enrollToken })
+      .sAdd('users', sub)
+      .set(`enrollment:${enrollToken}`, JSON.stringify({
+        sub,
+        username:          uname,
+        hsm_url:           hsm_url.trim(),
+        forced_key_type:   forcedKeyType,
+        client_redirect_origin,
+        via_email,   // enrollment/submit reads this to set user.email_verified
+      }), { EX: 3600 }) // 1h — user is actively enrolling right now
+      .exec();
 
     await logSecurity(SEC.ADMIN_USER_CREATE, { action: 'signup', sub, username: uname, clients: inviteClientIds, ip: req.ip });
 

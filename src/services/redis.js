@@ -60,4 +60,20 @@ export async function redisAlive(timeoutMs = 1_000) {
   }
 }
 
+// Compare-and-set / compare-and-delete on a string key, server-side and
+// atomic. Used where a value is read, checked and then replaced or consumed:
+// a second request racing on the same key (two enrollment tabs, a retried
+// submit) loses here instead of silently overwriting or double-spending.
+const CAS_SET = `if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) return 1 else return 0 end`;
+const CAS_DEL = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end`;
+
+/** SET key=next EX ex, only if key still holds `expected`. Resolves 1 or 0. */
+export function casSet(key, expected, next, ex) {
+  return client.eval(CAS_SET, { keys: [key], arguments: [expected, next, String(ex)] });
+}
+/** DEL key, only if it still holds `expected`. Resolves 1 or 0. */
+export function casDel(key, expected) {
+  return client.eval(CAS_DEL, { keys: [key], arguments: [expected] });
+}
+
 export default client;

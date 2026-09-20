@@ -76,6 +76,9 @@ router.post('/', async (req, res, next) => {
     if (!Array.isArray(redirect_uris) || !redirect_uris.length) {
       return res.status(400).json({ error: 'validation_error', error_description: 'redirect_uris must be a non-empty array' });
     }
+    if (!Array.isArray(scopes)) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'scopes must be an array' });
+    }
     if (typeof pkce !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'pkce must be a boolean' });
     }

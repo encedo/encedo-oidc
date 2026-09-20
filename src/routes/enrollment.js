@@ -1,7 +1,7 @@
 import { Router }                                  from 'express';
 import { createHash, createPublicKey, verify,
          randomBytes }                             from 'crypto';
-import redis from '../services/redis.js';
+import redis, { casSet, casDel } from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validateAttestation } from '../services/attestation.js';
 import { invalidateJwksCache } from './oidc.js';
@@ -109,14 +109,21 @@ router.get('/validate',
     const raw = await redis.get(`enrollment:${token}`);
     if (!raw) return res.status(404).json({ error: 'invalid_or_expired_token' });
 
-    const session = JSON.parse(raw);
+    let session = JSON.parse(raw);
 
     // Generate challenge once and shorten TTL -- only on first call (idempotent).
     // Subsequent calls return the same challenge WITHOUT resetting TTL,
     // preventing an attacker from indefinitely extending the session window.
+    // Compare-and-set: two first calls at once (two tabs) must end up with ONE
+    // challenge, or the tab that signs the losing one is rejected at submit.
     if (!session.challenge) {
       session.challenge = randomBytes(32).toString('base64url');
-      await redis.set(`enrollment:${token}`, JSON.stringify(session), { EX: 1800 });
+      const won = await casSet(`enrollment:${token}`, raw, JSON.stringify(session), 1800);
+      if (!won) {
+        const again = await redis.get(`enrollment:${token}`);
+        if (!again) return res.status(404).json({ error: 'invalid_or_expired_token' });
+        session = JSON.parse(again);
+      }
     }
 
     const userRaw = await redis.hGetAll(`user:${session.sub}`);
@@ -181,8 +188,11 @@ router.post('/submit',
         error_description: 'kid must equal SHA-1(pubkey)' });
     }
 
-    // Consume token (one-time use) -- also retrieves the challenge
-    const raw = await redis.getDel(`enrollment:${token}`);
+    // Read the session -- the token is consumed only once EVERYTHING checks
+    // out (compare-and-delete below). A wrong key_type, a signature over the
+    // wrong bytes or a duplicate key used to burn the 24 h link on the spot and
+    // send the user back to the administrator for a new one.
+    const raw = await redis.get(`enrollment:${token}`);
     if (!raw) {
       await logSecurity(SEC.ENROLL_FAIL, { reason: 'invalid_token', ip: req.ip });
       return res.status(404).json({ error: 'invalid_or_expired_token' });
@@ -256,6 +266,16 @@ router.post('/submit',
         await logSecurity(SEC.ENROLL_FAIL, { reason: 'duplicate_pubkey', sub, ip: req.ip });
         return res.status(409).json({ error: 'pubkey_already_registered',
           error_description: 'This public key is already enrolled for another user' });
+      }
+
+      // Everything about this request is right -- consume the one-time token
+      // now, atomically against the exact value that was validated. A retried
+      // or concurrent submit, or a token the admin re-issued meanwhile, loses.
+      const consumed = await casDel(`enrollment:${token}`, raw);
+      if (!consumed) {
+        await logSecurity(SEC.ENROLL_FAIL, { reason: 'token_already_used', sub, ip: req.ip });
+        return res.status(409).json({ error: 'invalid_or_expired_token',
+          error_description: 'This enrollment link was used or replaced in the meantime' });
       }
 
       // -- HSM attestation -----------------------------------------

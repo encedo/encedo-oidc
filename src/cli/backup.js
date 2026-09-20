@@ -107,11 +107,15 @@ async function* lines() {
     for (let i = 0; i < keys.length; i++) {
       const payload = dumps[i];
       if (payload == null) { counters.vanished++; continue; }  // expired between SCAN and DUMP
+      // DUMP and PTTL are two commands: a key can expire between them, and a
+      // PTTL of -2 then means "gone". Mapping that to -1 would restore the key
+      // WITHOUT an expiry -- an access token or enrollment link that never dies.
+      if (ttls[i] === -2) { counters.vanished++; continue; }
 
       counters.keys++;
       yield JSON.stringify({
         k: keys[i],
-        t: ttls[i] < 0 ? -1 : ttls[i],     // -1 = no expiry; -2 (gone) can't reach here
+        t: ttls[i] < 0 ? -1 : ttls[i],     // -1 = no expiry (-2 handled above)
         v: payload.toString('base64'),
       }) + '\n';
     }

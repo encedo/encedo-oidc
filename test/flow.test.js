@@ -90,8 +90,9 @@ before(async () => {
 
 after(() => { try { appProc?.kill(); } catch {} try { redisProc?.kill(); } catch {} });
 
-// A failed /enrollment/submit consumes the one-time token (getDel runs before
-// signature verification), so each case below gets its own fresh token.
+// A failed /enrollment/submit no longer consumes the token (it is
+// compare-and-deleted only once every check passed); the first test below
+// still uses fresh tokens per case and the "retry" test relies on the new rule.
 async function submitEnroll(enrollToken, key, { kid, signMessage } = {}) {
   // Always call validate: it activates the session and generates the challenge.
   const challenge = (await jget(`/enrollment/validate?token=${enrollToken}`)).body.challenge;
@@ -379,6 +380,69 @@ test('logout: exact post_logout_redirect_uris, client_id, POST, legacy origin fa
   // a hint whose audience disagrees with client_id is refused
   r = await rget(lq({ id_token_hint: tok.body.id_token, client_id: legacy.client_id }));
   assert.equal(r.status, 400);
+});
+
+test('enrollment: a rejected submit keeps the link usable; a completed one is consumed', opt, async () => {
+  const { enrollToken } = await addUser('retry1');
+  const good = genKey(), other = genKey();
+  // wrong signature -> 400, token still valid
+  let r = await submitEnroll(enrollToken, good, { signMessage: 'wrong' });
+  assert.equal(r.status, 400); assert.equal(r.body.error, 'invalid_enrollment_signature');
+  // wrong kid -> 400, token still valid
+  r = await submitEnroll(enrollToken, other, { kid: good.kid });
+  assert.equal(r.status, 400);
+  // the same link now succeeds
+  r = await submitEnroll(enrollToken, good);
+  assert.equal(r.status, 200, 'the link must survive rejected attempts');
+  // ...and is gone afterwards
+  r = await jget(`/enrollment/validate?token=${enrollToken}`);
+  assert.equal(r.status, 404);
+});
+
+test('admin users: concurrent creates with one email yield one account; null clears a field; bad input is 400 not 500', opt, async () => {
+  const body = (u) => ({ username: u, name: 'X', email: 'same@dup.test', hsm_url: 'https://sw.ence.do' });
+  const results = await Promise.all(['dupa', 'dupb', 'dupc'].map(u => jpost('/admin/users', body(u))));
+  const created = results.filter(r => r.status === 201);
+  assert.equal(created.length, 1, 'exactly one of the racing creates may win');
+  assert.ok(results.filter(r => r.status === 409).length === 2);
+  // the losers left no index entries behind: their usernames are free again
+  for (const u of ['dupa', 'dupb', 'dupc']) {
+    if (created[0].body.username === u) continue;
+    assert.equal(redisCli(`hget username_index ${u}`), '');
+  }
+  const sub = created[0].body.sub;
+
+  // PATCH name: null used to be a 500 from node-redis
+  let r = await fetch(BASE + `/admin/users/${sub}`, { method: 'PATCH', headers: H, body: JSON.stringify({ name: null }) }).then(async x => ({ status: x.status, body: await x.json() }));
+  assert.equal(r.status, 200); assert.equal(r.body.name, '');
+  // claims: a nested object is refused instead of being stored as "[object Object]"
+  r = await fetch(BASE + `/admin/users/${sub}/claims`, { method: 'PUT', headers: H, body: JSON.stringify({ custom_claims: { dept: { a: 1 } } }) }).then(async x => ({ status: x.status }));
+  assert.equal(r.status, 400);
+  // audit log with a non-numeric limit
+  r = await jget('/admin/audit-log?limit=abc&offset=zz');
+  assert.equal(r.status, 200); assert.equal(r.body.limit, 20);
+  // client with scopes that is not an array
+  r = await jpost('/admin/clients', { name: 'S', redirect_uris: ['https://s/cb'], scopes: 'openid' });
+  assert.equal(r.status, 400);
+
+  // deleting a user removes its key from /jwks.json immediately
+  const { enrollToken } = await addUser('jwks1');
+  const key = genKey();
+  assert.equal((await submitEnroll(enrollToken, key)).status, 200);
+  const subJ = (await jget('/admin/users')).body.find(u => u.username === 'jwks1').sub;
+  assert.equal((await jget(`/jwks.json?kid=${key.kid}`, {})).body.keys.length, 1);
+  await fetch(BASE + `/admin/users/${subJ}`, { method: 'DELETE', headers: H });
+  assert.equal((await jget(`/jwks.json?kid=${key.kid}`, {})).body.keys.length, 0, 'deleted user must leave JWKS at once');
+});
+
+test('signup: key_type from the body is validated', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'KT', redirect_uris: ['https://kt/cb'], scopes: ['openid'] })).body;
+  const inv = (await jpost('/admin/invite', { clients: [client.client_id], username: 'ktuser', email: 'kt@f.com' })).body;
+  const token = inv.invite_url.split('#token=')[1];
+  let r = await jpost('/signup/register', { token, hsm_url: 'https://sw.ence.do', key_type: 'RSA' });
+  assert.equal(r.status, 400, 'an unknown key_type must be refused before the invite is consumed');
+  r = await jpost('/signup/register', { token, hsm_url: 'https://sw.ence.do', key_type: 'P256' });
+  assert.equal(r.status, 201);
 });
 
 const redisCli = (args) => execSync(`redis-cli -p ${REDIS_PORT} ${args}`).toString().trim();

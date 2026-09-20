@@ -8,6 +8,7 @@ import { revokeUserTokens } from '../services/tokens.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
+import { invalidateJwksCache } from './oidc.js';
 import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid, vClaimKey, vOptional, vKeyType } from '../middleware/validate.js';
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
@@ -94,14 +95,17 @@ router.post('/', async (req, res, next) => {
     // indexed and are grandfathered: this only prevents NEW collisions.
     const uname  = username.trim();
     const nemail = email.trim().toLowerCase();
-    if (await redis.hGet('username_index', uname)) {
+    const sub = randomUUID();
+
+    // Claim both index entries with HSETNX (atomic): two concurrent creates
+    // with the same username or email cannot both pass a check-then-set.
+    if (!(await redis.hSetNX('username_index', uname, sub))) {
       return res.status(409).json({ error: 'username_already_exists' });
     }
-    if (await redis.hGet('email_index', nemail)) {
+    if (!(await redis.hSetNX('email_index', nemail, sub))) {
+      await redis.hDel('username_index', uname);
       return res.status(409).json({ error: 'email_already_exists' });
     }
-
-    const sub = randomUUID();
 
     const record = {
       sub,
@@ -114,19 +118,20 @@ router.post('/', async (req, res, next) => {
       created_at: new Date().toISOString(),
     };
 
-    await redis.hSet(`user:${sub}`, record);
-    await redis.sAdd('users', sub);
-    await redis.hSet('username_index', uname, sub);
-    await redis.hSet('email_index', nemail, sub);
-
-    // Generate enrollment link (24h) -- included in creation response
+    // Enrollment link (24h) -- included in the creation response. One MULTI
+    // for the hash, the set and the token: a SIGTERM or a dropped connection
+    // halfway can no longer leave a user hash that is in no list (invisible
+    // in the panel) while its username is already claimed.
     const token = randomBytes(32).toString('base64url');
-    await redis.set(`enrollment:${token}`, JSON.stringify({
-      sub,
-      username:        record.username,
-      forced_key_type: resolvedKeyType,
-    }), { EX: 86400 });
-    await redis.hSet(`user:${sub}`, { enrollment_token: token });
+    await redis.multi()
+      .hSet(`user:${sub}`, { ...record, enrollment_token: token })
+      .sAdd('users', sub)
+      .set(`enrollment:${token}`, JSON.stringify({
+        sub,
+        username:        record.username,
+        forced_key_type: resolvedKeyType,
+      }), { EX: 86400 })
+      .exec();
 
     // Fragment (#) keeps token out of server access logs and Referer headers
     const enrollment_url = `${issuer()}/enrollment#token=${token}`;
@@ -180,9 +185,10 @@ router.patch('/:sub', async (req, res, next) => {
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
-        updates[key] = key === 'email'
-          ? req.body[key].trim().toLowerCase()
-          : req.body[key];
+        // JSON null is how a client clears an optional field; Redis has no
+        // null, and node-redis throws on it -- store the empty string.
+        const v = req.body[key] === null ? '' : req.body[key];
+        updates[key] = key === 'email' ? v.trim().toLowerCase() : v;
       }
     }
 
@@ -316,6 +322,11 @@ router.put('/:sub/claims', async (req, res, next) => {
       for (const [k, v] of Object.entries(custom_claims)) {
         const ke = vClaimKey(k);
         if (ke) return res.status(400).json({ error: 'validation_error', error_description: ke });
+        // A claim value is a scalar. Objects/arrays/null would be stringified
+        // ("[object Object]", "null") and served to RPs as such.
+        if (!['string', 'number', 'boolean'].includes(typeof v)) {
+          return res.status(400).json({ error: 'validation_error', error_description: `claim ${k} must be a string, number or boolean` });
+        }
         const ve = vOptional(String(v), k, 256);
         if (ve) return res.status(400).json({ error: 'validation_error', error_description: ve });
       }
@@ -349,15 +360,16 @@ router.delete('/:sub', async (req, res, next) => {
       redis.hGet(`user:${sub}`, 'email'),
       redis.hGet(`user:${sub}`, 'enrollment_token'),
     ]);
-    if (enrollToken) await redis.del(`enrollment:${enrollToken}`);
-    await redis.del(`user:${sub}`);
-    await redis.sRem('users', sub);
-    if (username) await redis.hDel('username_index', username);
     // Release the email only if THIS sub owns its index entry (grandfathered
-    // dupes may point elsewhere).
-    if (email && (await redis.hGet('email_index', email)) === sub) {
-      await redis.hDel('email_index', email);
-    }
+    // dupes may point elsewhere). Decide first, then delete everything in one MULTI.
+    const ownsEmail = email && (await redis.hGet('email_index', email)) === sub;
+    const tx = redis.multi().del(`user:${sub}`).sRem('users', sub);
+    if (enrollToken) tx.del(`enrollment:${enrollToken}`);
+    if (username)    tx.hDel('username_index', username);
+    if (ownsEmail)   tx.hDel('email_index', email);
+    await tx.exec();
+    // The deleted user's key must leave /jwks.json now, not after the 60 s cache.
+    invalidateJwksCache();
 
     await logSecurity(SEC.ADMIN_USER_DELETE, { sub, username, revokedTokens, ip: req.ip });
     console.log(`[Admin] User deleted: ${sub}`);
@@ -368,8 +380,10 @@ router.delete('/:sub', async (req, res, next) => {
 // --- GET /admin/audit-log -------------------------------------
 export async function getAuditLog(req, res, next) {
   try {
-    const limit  = Math.min(Math.max(parseInt(req.query.limit  ?? '20', 10), 1), 500);
-    const offset = Math.max(parseInt(req.query.offset ?? '0', 10), 0);
+    // Non-numeric input falls back to the default instead of feeding NaN to Redis (500).
+    const toInt  = (v, def) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : def; };
+    const limit  = Math.min(Math.max(toInt(req.query.limit, 20), 1), 500);
+    const offset = Math.max(toInt(req.query.offset, 0), 0);
 
     const [raw, total] = await Promise.all([
       redis.zRange(AUDIT_ZSET, '+inf', '-inf', {
