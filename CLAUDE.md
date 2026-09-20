@@ -106,7 +106,7 @@ encedo-oidc/
 ├── signup-client.js            ← Client signup JS
 ├── admin-panel.js
 ├── admin-panel.html
-├── hem-sdk.js                  ← Encedo HEM JavaScript SDK
+├── hem-sdk-js/                 ← Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js); hem-sdk.browser.js served at /hem-sdk.js
 ├── favicon.ico
 ├── nginx/docker-compose.yml    ← nginx container (shared, ports 80+443, oidc-net)
 └── tenants/docker-compose.yml  ← per-tenant template (TENANT env var)
@@ -148,7 +148,7 @@ verify(null, Buffer.from(signing_input), publicKey, Buffer.from(signature, 'base
 // Frontend always sends P1363 (r||s fixed-width) — converted from DER right after exdsaSign
 ```
 
-### exdsaSign in hem-sdk.js
+### exdsaSign in hem-sdk-js
 ```javascript
 // msg = base64 of UTF-8 bytes of signing_input — must be this way, do not change
 body.msg = toB64(strToBytes(msg));
@@ -168,10 +168,10 @@ body.msg = toB64(strToBytes(msg));
 ```javascript
 // At enrollment:
 description = btoa('ETSOIDC' + sub)
-// Searching OIDC keys:
-searchKeys(token, '^' + btoa('ETSOIDC'))
-// Mobile detection:
-searchKeys(null, '^RVhUQUlE')
+// Searching OIDC keys (the SDK prefixes '^' and base64-encodes the pattern itself):
+searchKeys(token, 'ETSOIDC')
+// Mobile detection ('EXTAID' keys):
+searchKeys(null, 'EXTAID')
 ```
 
 ### Sub-based user lookup
@@ -185,7 +185,7 @@ if (subParam?.trim()) {
 }
 ```
 
-### hem-sdk.js — HTTP error handling
+### hem-sdk-js — HTTP error handling
 `#req` catches JSON.parse errors (empty 401 response):
 ```javascript
 try { data = await res.json(); } catch { data = null; }
@@ -406,6 +406,7 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
 10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
 11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>`.
+12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, SSH remote). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
 
 ---
 

@@ -161,7 +161,8 @@ encedo-oidc/
 ├── enrollment.html               Enrollment shell
 ├── admin-panel.js                Admin panel logic
 ├── admin-panel.html              Admin panel shell
-├── hem-sdk.js                    Encedo HEM JavaScript SDK
+├── hem-sdk-js/                   Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js);
+│                                 hem-sdk.browser.js is served at /hem-sdk.js
 └── rp-server.mjs                 Test Relying Party (port 9876)
 ```
 

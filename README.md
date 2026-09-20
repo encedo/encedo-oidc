@@ -18,7 +18,7 @@ HSM-anchored OpenID Connect Identity Provider. Private keys **never leave the HS
 - An Encedo PPA or EPA device (or `my.ence.do` USB key)
 
 ```
-git clone https://github.com/encedo/encedo-oidc.git
+git clone --recurse-submodules https://github.com/encedo/encedo-oidc.git
 cd encedo-oidc
 npm install
 
@@ -336,7 +336,7 @@ docker network create oidc-net
 #### 5. Clone repo and build the OIDC image
 
 ```
-git clone https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc/src
+git clone --recurse-submodules https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc/src
 docker build -t encedo-oidc:latest /opt/encedo-oidc/src
 ```
 
@@ -617,7 +617,7 @@ To deploy a change to one tenant only (e.g. for testing):
 
 ```
 # 1. Pull + build
-cd /opt/encedo-oidc/src && git pull
+cd /opt/encedo-oidc/src && git pull && git submodule update --init
 docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \
   -t encedo-oidc:latest /opt/encedo-oidc/src
 
@@ -633,8 +633,8 @@ Redis is untouched — data is safe. Other tenants keep running the previous ima
 When a new release is available:
 
 ```
-# 1. Pull latest source
-cd /opt/encedo-oidc/src && git pull
+# 1. Pull latest source (incl. the hem-sdk-js submodule pin)
+cd /opt/encedo-oidc/src && git pull && git submodule update --init
 
 # 2. Build new image — once, shared by all tenants
 docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \

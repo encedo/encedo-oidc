@@ -117,7 +117,10 @@ app.get('/signup-client.js',     (_req, res) => res.sendFile(resolve(ROOT, 'sign
 app.get('/logo.png',        (_req, res) => res.sendFile(resolve(ROOT, 'logo.png')));
 app.get('/favicon.ico',    (_req, res) => res.sendFile(resolve(ROOT, 'favicon.ico')));
 app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js')));
-app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk.js')));
+// HEM SDK comes from the hem-sdk-js git submodule (pre-built browser bundle).
+// The URL stays /hem-sdk.js so the UI modules keep their import path.
+app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js')));
+app.get('/hem-sdk.browser.js.map', (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js.map')));
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));
 app.get('/enrollment.js',   (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.js')));
 app.get('/admin-panel.js',  (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.js')));

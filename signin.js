@@ -184,10 +184,10 @@ async function doLogin() {
     btn.textContent = 'Connecting to HSM...';
     await hem.hemCheckin();
 
-    // Step A: detect mobile-app support (^RVhUQUlE pattern)
+    // Step A: detect mobile-app support (keys described 'EXTAID…'; the SDK anchors and base64-encodes the pattern)
     btn.textContent = 'Detecting HSM capabilities...';
     try {
-      const mobileKeys = await hem.searchKeys(null, '^RVhUQUlE');
+      const mobileKeys = await hem.searchKeys(null, 'EXTAID');
       session.openSearch   = true;
       session.hasMobileApp = mobileKeys.length > 0;
     } catch (e) {
@@ -211,7 +211,7 @@ async function doLogin() {
     // Step B: search OIDC keys (or delegate to passphrase screen)
     if (session.openSearch) {
       btn.textContent = 'Searching keys...';
-      const keys = await hem.searchKeys(null, '^' + btoa('ETSOIDC'));
+      const keys = await hem.searchKeys(null, 'ETSOIDC');
       if (keys.length === 0) {
         document.getElementById('login-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';
@@ -298,7 +298,7 @@ async function doSubmitPin() {
       const listToken = await session.hem.authorizePassword(pin, 'keymgmt:search');
       session.listToken = listToken;
       btn.textContent = 'Searching keys...';
-      const keys = await session.hem.searchKeys(listToken, '^' + btoa('ETSOIDC'));
+      const keys = await session.hem.searchKeys(listToken, 'ETSOIDC');
       if (keys.length === 0) {
         document.getElementById('pin-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';

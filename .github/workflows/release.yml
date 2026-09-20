@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true   # hem-sdk-js: the HEM SDK browser bundle ships from it
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -43,7 +45,8 @@ jobs:
             signup.html signup.js \
             signup-client.html signup-client.js \
             verify-email.html verify-email.js \
-            hem-sdk.js favicon.ico logo.png \
+            hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map \
+            favicon.ico logo.png \
             package.json .env.example
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
