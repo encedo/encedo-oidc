@@ -180,13 +180,13 @@ async function signerFor(username, client) {
   const { sub, enrollToken } = await addUser(username, [client.client_id]);
   const key = genKey();
   assert.equal((await submitEnroll(enrollToken, key)).status, 200);
-  return async function getCode({ pkce = true } = {}) {
+  return async function getCode({ pkce = true, extra = {}, sign = true } = {}) {
     const verifier = b64url(crypto.randomBytes(32));
     const chal     = crypto.createHash('sha256').update(verifier).digest('base64url');
-    const body = { sub, client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: 'code', scope: 'openid', nonce: 'n' };
+    const body = { sub, client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: 'code', scope: 'openid', nonce: 'n', ...extra };
     if (pkce) Object.assign(body, { code_challenge: chal, code_challenge_method: 'S256' });
     const login = await jpost('/authorize/login', body);
-    if (login.status !== 200) return { login };
+    if (login.status !== 200 || !sign) return { login };
     const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
     assert.equal(confirm.status, 200);
     return { login, code: new URL(confirm.body.redirect_url).searchParams.get('code'), verifier };
@@ -509,6 +509,88 @@ test('rp-server: verifies the id_token (signature via JWKS, iss, aud, nonce) and
   }
 });
 
+const jwtPayload = (jwtOrInput) => JSON.parse(Buffer.from(jwtOrInput.split('.')[1], 'base64url').toString());
+
+test('sso: an accepted session sets auth_time/amr; every policy layer can refuse it', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'SSO', redirect_uris: ['https://sso/cb'], scopes: ['openid'], pkce: false })).body;
+  assert.equal(client.sso, true, 'clients allow SSO by default');
+  const getCode = await signerFor('ssouser', client);
+  const sub = (await jget('/admin/users')).body.find(u => u.username === 'ssouser').sub;
+  assert.equal((await jget(`/admin/users/${sub}`)).body.sso, true, 'users allow SSO by default');
+  const now = () => Math.floor(Date.now() / 1000);
+  // login only (no signature): this test makes ~15 sign-in requests, the confirm limit is 10/min
+  const login = async (extra) => (await getCode({ pkce: false, extra, sign: false })).login;
+  { const k = redisCli("keys 'rl:login*'").replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
+
+  // fresh sign-in: no sso_iat -> auth_time = now, amr = [hwk], page told it may cache
+  let l = await login({});
+  let p = jwtPayload(l.body.signing_input);
+  assert.deepEqual(p.amr, ['hwk']); assert.ok(Math.abs(p.auth_time - now()) < 5);
+  assert.equal(l.body.sso.enabled, true); assert.equal(l.body.sso.used, false); assert.equal(l.body.sso.suggest_seconds, 28800);
+
+  // session from 20 minutes ago -> accepted: auth_time is THAT time, amr adds sso
+  const iat = now() - 1200;
+  l = await login({ sso_iat: String(iat) });
+  p = jwtPayload(l.body.signing_input);
+  assert.equal(l.body.sso.used, true); assert.equal(p.auth_time, iat); assert.deepEqual(p.amr, ['hwk', 'sso']);
+  // ...and the id_token issued from it carries the same
+  const c = await getCode({ pkce: false, extra: { sso_iat: String(iat) } });
+  const tok = await jpost('/token', { grant_type: 'authorization_code', code: c.code, redirect_uri: 'https://sso/cb', client_id: client.client_id, client_secret: client.client_secret });
+  assert.equal(tok.status, 200); assert.deepEqual(jwtPayload(tok.body.id_token).amr, ['hwk', 'sso']); assert.equal(jwtPayload(tok.body.id_token).auth_time, iat);
+
+  // refusals: each answers a fresh sign-in (auth_time now, amr hwk) and names the reason
+  const refused = async (extra, why) => {
+    const r = await login(extra); const q = jwtPayload(r.body.signing_input);
+    assert.equal(r.status, 200); assert.equal(r.body.sso.used, false); assert.equal(r.body.sso.rejected, why, `expected refusal ${why}`);
+    assert.deepEqual(q.amr, ['hwk']); assert.ok(Math.abs(q.auth_time - now()) < 5);
+    return r;
+  };
+  await refused({ sso_iat: String(iat), prompt: 'login' }, 'prompt');
+  await refused({ sso_iat: String(iat), prompt: 'consent login' }, 'prompt');
+  await refused({ sso_iat: String(iat), max_age: '600' }, 'max_age');
+  await refused({ sso_iat: String(now() - 30000) }, 'too_old');
+  await refused({ sso_iat: String(now() + 3600) }, 'too_old');
+  await refused({ sso_iat: 'garbage' }, 'too_old');
+  // max_age longer than the session age is fine
+  l = await login({ sso_iat: String(iat), max_age: '3600' }); assert.equal(l.body.sso.used, true);
+
+  // client policy
+  assert.equal((await fetch(BASE + `/admin/clients/${client.client_id}`, { method: 'PATCH', headers: H, body: JSON.stringify({ sso: false }) })).status, 200);
+  let r = await refused({ sso_iat: String(iat) }, 'client');
+  assert.equal(r.body.sso.enabled, false, 'page must not cache when the client forbids SSO');
+  await fetch(BASE + `/admin/clients/${client.client_id}`, { method: 'PATCH', headers: H, body: JSON.stringify({ sso: true }) });
+  // user policy
+  assert.equal((await fetch(BASE + `/admin/users/${sub}`, { method: 'PATCH', headers: H, body: JSON.stringify({ sso: false }) })).status, 200);
+  r = await refused({ sso_iat: String(iat) }, 'user');
+  assert.equal(r.body.sso.enabled, false);
+  await fetch(BASE + `/admin/users/${sub}`, { method: 'PATCH', headers: H, body: JSON.stringify({ sso: true }) });
+  l = await login({ sso_iat: String(iat) }); assert.equal(l.body.sso.used, true);
+
+  assert.ok((await jget('/.well-known/openid-configuration', {})).body.claims_supported.includes('amr'));
+  assert.equal((await jpost('/admin/clients', { name: 'x', redirect_uris: ['https://x/cb'], sso: 'yes' })).status, 400);
+});
+
+test('logout: a browser gets the page that clears the SSO session, then the redirect', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'LoS', redirect_uris: ['https://los/cb'], post_logout_redirect_uris: ['https://los/bye'], scopes: ['openid'] })).body;
+  const getCode = await signerFor('losuser', client);
+  const c = await getCode();
+  const tok = await jpost('/token', { grant_type: 'authorization_code', code: c.code, redirect_uri: 'https://los/cb', client_id: client.client_id, client_secret: client.client_secret, code_verifier: c.verifier });
+  const sub = jwtPayload(tok.body.id_token).sub;
+  const q = new URLSearchParams({ id_token_hint: tok.body.id_token, post_logout_redirect_uri: 'https://los/bye', state: 's' }).toString();
+  // browser: 200 page with the user's sub and the permitted redirect, plus the script
+  const r = await fetch(BASE + '/logout?' + q, { headers: { Accept: 'text/html' }, redirect: 'manual' });
+  assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /text\/html/);
+  const html = await r.text();
+  assert.match(html, new RegExp(`data-sub="${sub}"`)); assert.match(html, /data-redirect="https:\/\/los\/bye\?state=s"/); assert.match(html, /src="\/logout\.js"/);
+  assert.equal((await fetch(BASE + '/logout.js')).status, 200);
+  // API caller: still the bare 302 (a second logout with the same hint is fine: tokens already revoked)
+  const r2 = await rget('/logout?' + q);
+  assert.equal(r2.status, 302);
+  // browser without a hint: page with an empty sub (clears every session in that browser)
+  const r3 = await fetch(BASE + '/logout', { headers: { Accept: 'text/html' } });
+  assert.match(await r3.text(), /data-sub=""/);
+});
+
 const redisCli = (args) => execSync(`redis-cli -p ${REDIS_PORT} ${args}`).toString().trim();
 
 test('rate limiter: the counter always carries a TTL and the limit is enforced', opt, async () => {
@@ -535,6 +617,8 @@ test('rate limiter: the counter always carries a TTL and the limit is enforced',
 });
 
 test('admin auth: failed attempts are rate limited, valid calls are not', opt, async () => {
+  // the suite as a whole makes more than 60 admin calls a minute; start this test with a fresh counter
+  { const k = redisCli("keys 'rl:admin:*'").replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
   // a working session making many calls stays fine (the pre-existing 60/min limiter is behind auth)
   for (let i = 0; i < 12; i++) assert.equal((await jget('/admin/clients')).status, 200);
   // 10 wrong secrets -> the 11th is 429 even before the secret is looked at

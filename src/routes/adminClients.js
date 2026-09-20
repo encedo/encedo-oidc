@@ -18,6 +18,7 @@ function deserialize(raw) {
     scopes:           JSON.parse(raw.scopes           ?? '["openid"]'),
     pkce:             raw.pkce === 'true',
     public:           raw.public === 'true',
+    sso:              raw.sso !== 'false',      // default true
     allow_any_user:   raw.allow_any_user === 'true',
     id_token_ttl:     parseInt(raw.id_token_ttl)     || 3600,
     access_token_ttl: parseInt(raw.access_token_ttl) || 3600,
@@ -61,6 +62,7 @@ router.post('/', async (req, res, next) => {
       scopes = ['openid', 'profile', 'email'],
       pkce = true,
       public: isPublic = false,
+      sso = true,
       allow_any_user = false,
       id_token_ttl = 3600,
       access_token_ttl = 3600,
@@ -87,6 +89,9 @@ router.post('/', async (req, res, next) => {
     }
     if (isPublic && !pkce) {
       return res.status(400).json({ error: 'validation_error', error_description: 'a public client must require PKCE' });
+    }
+    if (typeof sso !== 'boolean') {
+      return res.status(400).json({ error: 'validation_error', error_description: 'sso must be a boolean' });
     }
     if (typeof allow_any_user !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
@@ -121,6 +126,9 @@ router.post('/', async (req, res, next) => {
       // PKCE alone, which /authorize makes mandatory for it. Off by default:
       // every client is confidential and MUST send its secret, even with PKCE.
       public:           String(isPublic),
+      // SSO policy of this RP: false = every sign-in needs a fresh HEM
+      // authorization (phone/passphrase) even if the browser holds a session.
+      sso:              String(sso),
       // Open client: ANY enrolled user may authenticate (skips the per-user
       // clients[] allowlist). Off by default -- admin opts in explicitly.
       allow_any_user:   String(allow_any_user),
@@ -196,6 +204,13 @@ router.patch('/:id', async (req, res, next) => {
       if (willPublic && !willPkce) {
         return res.status(400).json({ error: 'validation_error', error_description: 'a public client must require PKCE' });
       }
+    }
+
+    if (req.body.sso !== undefined) {
+      if (typeof req.body.sso !== 'boolean') {
+        return res.status(400).json({ error: 'validation_error', error_description: 'sso must be a boolean' });
+      }
+      updates.sso = String(req.body.sso);
     }
 
     if (req.body.allow_any_user !== undefined) {

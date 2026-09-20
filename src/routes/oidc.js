@@ -12,6 +12,24 @@ import { oidcIssuer } from '../services/issuer.js';
 
 const router = Router();
 
+// --- SSO session policy --------------------------------------
+// A browser that already holds a HEM token for the user's key (keymgmt:use:<kid>)
+// may sign again without a fresh phone/passphrase authorization. The token
+// never reaches this server; the page only tells us WHEN that authorization
+// happened (sso_iat) and we decide whether it still counts. Policy knobs:
+//   SSO_ENABLED=0           kill switch
+//   SSO_MAX_SECONDS         oldest authorization accepted as SSO (default 8 h)
+//   SSO_SUGGEST_SECONDS     token lifetime the page asks the HEM for (default 8 h)
+// plus client.sso and user.sso (admin, default true) and the RP's own
+// prompt=login / max_age.
+const SSO = {
+  enabled: () => process.env.SSO_ENABLED !== '0',
+  max:     () => parseInt(process.env.SSO_MAX_SECONDS     ?? '28800', 10) || 28800,
+  suggest: () => parseInt(process.env.SSO_SUGGEST_SECONDS ?? '28800', 10) || 28800,
+};
+
+const escHtml = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 // --- Paths ----------------------------------------------------
 const __dirname   = dirname(fileURLToPath(import.meta.url));
 const TRUSTED_APP = resolve(__dirname, '../../signin.html');
@@ -127,7 +145,7 @@ export function discoveryHandler(_req, res) {
     // 'none' = public client (client.public=true): PKCE only, no secret.
     token_endpoint_auth_methods_supported:  ['client_secret_basic', 'client_secret_post', 'none'],
     code_challenge_methods_supported:       ['S256'],
-    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
+    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'amr', 'nonce',
                        'name', 'email', 'email_verified', 'preferred_username'],
   });
 }
@@ -233,6 +251,7 @@ router.post('/authorize/login',
       const {
         sub: subParam, username, client_id, redirect_uri, scope,
         state, nonce, code_challenge, response_type,
+        prompt, max_age, sso_iat,
       } = req.body;
 
       if (!response_type) {
@@ -289,10 +308,28 @@ router.post('/authorize/login',
         return res.status(400).json({ error: 'access_denied', error_description: 'invalid credentials' });
       }
 
-      // Build signing_input = base64url(header).base64url(payload)
       const now        = Math.floor(Date.now() / 1000);
       const idTokenTtl = parseInt(clientRaw.id_token_ttl, 10) || 3600;
 
+      // SSO: the page claims an authorization from sso_iat. Accept it only when
+      // every policy layer agrees; otherwise carry on as a fresh sign-in and
+      // tell the page why, so it can show the reason and ask the device.
+      const ssoAllowed = SSO.enabled() && clientRaw.sso !== 'false' && user.sso !== 'false';
+      let ssoUsed = false, ssoRejected = null, authTime = now;
+      if (sso_iat !== undefined) {
+        const iat     = parseInt(sso_iat, 10);
+        const prompts = (prompt ?? '').split(' ').filter(Boolean);
+        const maxAge  = max_age !== undefined ? parseInt(max_age, 10) : null;
+        if (!SSO.enabled())                                                  ssoRejected = 'disabled';
+        else if (clientRaw.sso === 'false')                                  ssoRejected = 'client';
+        else if (user.sso === 'false')                                       ssoRejected = 'user';
+        else if (!Number.isFinite(iat) || iat > now + 60 || now - iat > SSO.max()) ssoRejected = 'too_old';
+        else if (prompts.includes('login'))                                  ssoRejected = 'prompt';
+        else if (maxAge !== null && Number.isFinite(maxAge) && now - iat > maxAge) ssoRejected = 'max_age';
+        else { ssoUsed = true; authTime = Math.min(iat, now); }
+      }
+
+      // Build signing_input = base64url(header).base64url(payload)
       const keyType = user.key_type || 'Ed25519';
       const header  = { alg: JWT_ALG[keyType] ?? 'EdDSA', kid: user.kid };
       const payload = {
@@ -301,7 +338,10 @@ router.post('/authorize/login',
         aud:                client_id,
         iat:                now,
         exp:                now + idTokenTtl,
-        auth_time:          now,
+        // auth_time is when the HEM authorized the key, not when this page was
+        // clicked (Core s.2); amr says whether that authorization was fresh.
+        auth_time:          authTime,
+        amr:                ssoUsed ? ['hwk', 'sso'] : ['hwk'],
         jti:                randomBytes(16).toString('base64url'),
         ...(nonce ? { nonce } : {}),
         email:              user.email,
@@ -324,9 +364,10 @@ router.post('/authorize/login',
         redirect_uri,
         state:          state ?? null,
         signing_input,
+        sso:            ssoUsed,
       }), { EX: 120 });
 
-      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, username: user.username, client_id, ip: req.ip });
+      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, username: user.username, client_id, sso: ssoUsed, ip: req.ip });
       console.log(`[OIDC] Login initiated: client=${client_id} session=${session_id.slice(0, 8)}...`);
 
       res.json({
@@ -336,6 +377,10 @@ router.post('/authorize/login',
         user_username: user.username,
         client_name:   clientRaw.name || client_id,
         key_type:      keyType,
+        // enabled: the page may cache the HEM token it is about to obtain;
+        // used/rejected: what happened to the sso_iat it sent (if any).
+        sso: { enabled: ssoAllowed, used: ssoUsed, rejected: ssoRejected,
+               suggest_seconds: SSO.suggest(), max_seconds: SSO.max() },
       });
 
     } catch (err) { next(err); }
@@ -405,7 +450,7 @@ router.post('/authorize/confirm',
         id_token,
       }), { EX: 60 });
 
-      await logSecurity(SEC.SIG_OK, { sub: pending.sub, username: userRaw.username, client_id: pending.client_id, ip: req.ip });
+      await logSecurity(SEC.SIG_OK, { sub: pending.sub, username: userRaw.username, client_id: pending.client_id, sso: pending.sso === true, ip: req.ip });
 
       console.log(`[OIDC] Auth confirmed: client=${pending.client_id} session=${session_id.slice(0, 8)}...`);
 
@@ -664,8 +709,23 @@ function postLogoutAllowed(url, allowed) {
   return false;
 }
 
+// The browser-facing logout answer. It must run JavaScript on the OP origin:
+// the SSO session (the HEM token) lives in this browser's localStorage and
+// only a script here can drop it. logout.js clears the entries for `sub`
+// (all of them when the hint did not name a user) and then follows
+// `redirect`, if a permitted one was given. Without JavaScript the link
+// still gets the user back to the RP; the SSO entry then simply ages out.
+function logoutPage(sub, redirect) {
+  const to = redirect ? `<p><a href="${escHtml(redirect)}">Continue</a></p><noscript><meta http-equiv="refresh" content="0;url=${escHtml(redirect)}"></noscript>` : '<p>You can close this window.</p>';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body>`
+       + `<div id="logout" data-sub="${escHtml(sub ?? '')}" data-redirect="${escHtml(redirect ?? '')}"><h1>You have been signed out.</h1>${to}</div>`
+       + `<script src="/logout.js"></script></body></html>`;
+}
+
 async function logoutHandler(params, req, res, next) {
   const { id_token_hint, post_logout_redirect_uri, state, client_id } = params;
+  let verifiedSub = null;
+  const wantsHtml = req.accepts(['json', 'html']) === 'html';
 
   function finish(allowed = null) {
     if (post_logout_redirect_uri) {
@@ -677,15 +737,15 @@ async function logoutHandler(params, req, res, next) {
       }
       if (postLogoutAllowed(url, allowed)) {
         if (state) url.searchParams.set('state', state);
+        // A browser gets the page that clears its SSO session first, then goes on.
+        if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, url.toString()));
         return res.redirect(url.toString());
       }
       // Not registered for an identified client -- do not open-redirect.
     }
     // No (permitted) redirect: tell the user agent. Browsers get a page, API
     // callers JSON. No inline style/script -- the CSP has none.
-    if (req.accepts(['json', 'html']) === 'html') {
-      return res.type('html').send('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body><h1>You have been signed out.</h1><p>You can close this window.</p></body></html>');
-    }
+    if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, null));
     res.json({ logged_out: true });
   }
 
@@ -721,6 +781,7 @@ async function logoutHandler(params, req, res, next) {
               // Revoke all active access tokens
               const revokedTokens = await revokeUserTokens(sub);
               hintClientId = typeof payload.aud === 'string' ? payload.aud : null;
+              verifiedSub  = sub;
               await logSecurity(SEC.LOGOUT, {
                 sub, username: userRaw.username, result: 'ok', revokedTokens, ip: req.ip,
               });

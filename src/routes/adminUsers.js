@@ -23,6 +23,7 @@ function deserialize(raw) {
     clients:              JSON.parse(rest.clients       ?? '[]'),
     custom_claims:        JSON.parse(rest.custom_claims ?? '{}'),
     hsm_url_in_userinfo:  rest.hsm_url_in_userinfo !== '0', // default true
+    sso:                  rest.sso !== 'false',              // default true: browser may reuse a HEM authorization
   };
 }
 
@@ -53,7 +54,10 @@ router.get('/:sub', async (req, res, next) => {
 // --- POST /admin/users ----------------------------------------
 router.post('/', async (req, res, next) => {
   try {
-    const { username, name, email, hsm_url, key_type, clients } = req.body ?? {};
+    const { username, name, email, hsm_url, key_type, clients, sso } = req.body ?? {};
+    if (sso !== undefined && typeof sso !== 'boolean') {
+      return res.status(400).json({ error: 'validation_error', error_description: 'sso must be a boolean' });
+    }
 
     const checks = [
       vUsername(username),
@@ -115,6 +119,7 @@ router.post('/', async (req, res, next) => {
       hsm_url:    hsm_url.trim(),
       clients:    JSON.stringify(grant.ids),
       email_verified: 'false',   // on-site Add: no mailbox proof; upgraded only via emailed link
+      ...(sso === false ? { sso: 'false' } : {}),
       created_at: new Date().toISOString(),
     };
 
@@ -198,6 +203,13 @@ router.patch('/:sub', async (req, res, next) => {
 
     if (req.body.hsm_url_in_userinfo !== undefined) {
       updates.hsm_url_in_userinfo = req.body.hsm_url_in_userinfo ? '1' : '0';
+    }
+
+    if (req.body.sso !== undefined) {
+      if (typeof req.body.sso !== 'boolean') {
+        return res.status(400).json({ error: 'validation_error', error_description: 'sso must be a boolean' });
+      }
+      updates.sso = String(req.body.sso);
     }
 
     if (Object.keys(updates).length === 0) {

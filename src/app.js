@@ -146,6 +146,7 @@ app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js'
 app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js')));
 app.get('/hem-sdk.browser.js.map', (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js.map')));
 app.get('/hsm-common.js',   (_req, res) => res.sendFile(resolve(ROOT, 'hsm-common.js')));   // shared by signin/enrollment/signup
+app.get('/logout.js',       (_req, res) => res.sendFile(resolve(ROOT, 'logout.js')));       // clears the SSO session on the /logout page
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));
 app.get('/enrollment.js',   (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.js')));
 app.get('/admin-panel.js',  (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.js')));
