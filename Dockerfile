@@ -21,5 +21,13 @@ COPY hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map ./hem-sdk-j
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
 
+# The app needs no privileges: it listens on an unprivileged port and only reads
+# its own files (root-owned, world-readable). Drop to the image's built-in user.
+USER node
+
 EXPOSE 3000
+# /health answers 503 when Redis is unreachable, so `docker ps` shows the
+# container unhealthy instead of a green process that can serve nothing.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "src/app.js"]

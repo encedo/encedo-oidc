@@ -42,8 +42,9 @@ npm start
 | `REDIS_URL` | `redis://127.0.0.1:6379` | Redis connection string (`rediss://` for TLS) |
 | `NODE_ENV` | `development` | Set to `production` to enable HSTS |
 | `ADMIN_ALLOWED_IPS` | `127.0.0.1,::1` | Comma-separated IPs/CIDRs allowed to reach admin API |
-| `TRUST_PROXY` | — | Set to `1` when behind nginx/Caddy (enables `req.ip` from `X-Forwarded-For`) |
+| `TRUST_PROXY` | — | **Required** behind nginx/Caddy: `1` = one trusted hop (`req.ip` from `X-Forwarded-For`). Without it every per-IP rate limit is one bucket shared by all visitors and `ADMIN_ALLOWED_IPS` is matched against the proxy |
 | `CSP_CONNECT_EXTRA` | — | Extra space-separated origins for CSP `connect-src` (EPA custom domains) |
+| `SECURITY_LOG_MAX` | `20000` | Cap of the `security:log` audit ZSET (oldest entries trimmed) |
 | `LANDING_PAGE` | — | Set to `1` to serve the product landing page at `/` (public instance). The status page is always available at `/status` |
 
 ---
@@ -908,7 +909,7 @@ failure, so they are safe to drive from cron.
 | `POST` | `/token` | Exchange code for tokens (PKCE) |
 | `GET/POST` | `/userinfo` | Return claims for access token |
 | `GET` | `/logout` | RP-initiated logout |
-| `GET` | `/health` | Liveness check |
+| `GET` | `/health` | Liveness check: 200 `{status:'ok', redis:'up'}` only when Redis answers a PING; 503 `degraded` otherwise (the Docker image's `HEALTHCHECK` polls it) |
 
 ## Web Pages
 

@@ -1,10 +1,29 @@
 import { timingSafeEqual } from 'crypto';
+import redis from '../services/redis.js';
+
+// Failed admin authentications per source IP within the window. The general
+// admin limiter (60/min) sits BEHIND requireAdminAuth, so a wrong secret never
+// reached it -- an allow-listed IP could guess ADMIN_SECRET at wire speed.
+// Only failures count here; a working panel making 60 calls/min is unaffected.
+export const ADMIN_AUTH_FAIL_MAX    = 10;
+export const ADMIN_AUTH_FAIL_WINDOW = 60;   // seconds
+
+async function failedAttempts(ip) {
+  try { return Number(await redis.get(`rl:admin-auth-fail:${ip}`)) || 0; }
+  catch { return 0; }   // fail open, like rateLimit.js
+}
+async function recordFailure(ip) {
+  try {
+    const key = `rl:admin-auth-fail:${ip}`;
+    await redis.multi().set(key, '0', { EX: ADMIN_AUTH_FAIL_WINDOW, NX: true }).incr(key).exec();
+  } catch { /* fail open */ }
+}
 
 /**
  * Middleware: Admin Bearer token auth.
  * Uses timing-safe comparison to prevent timing attacks.
  */
-export function requireAdminAuth(req, res, next) {
+export async function requireAdminAuth(req, res, next) {
   const authHeader = req.headers['authorization'] ?? '';
   const token = authHeader.startsWith('Bearer ')
     ? authHeader.slice(7).trim()
@@ -16,7 +35,14 @@ export function requireAdminAuth(req, res, next) {
     return res.status(500).json({ error: 'server_misconfigured' });
   }
 
+  if (await failedAttempts(req.ip) >= ADMIN_AUTH_FAIL_MAX) {
+    res.setHeader('Retry-After', String(ADMIN_AUTH_FAIL_WINDOW));
+    return res.status(429).json({ error: 'too_many_requests',
+      error_description: `Too many failed admin authentications. Retry after ${ADMIN_AUTH_FAIL_WINDOW}s.` });
+  }
+
   if (!token) {
+    await recordFailure(req.ip);
     return res.status(401).json({ error: 'unauthorized' });
   }
 
@@ -31,6 +57,7 @@ export function requireAdminAuth(req, res, next) {
   }
 
   if (!valid) {
+    await recordFailure(req.ip);
     // Log failed attempt (logSecurity imported lazily to avoid circular dep)
     import('../services/securityLog.js').then(({ logSecurity, SEC }) =>
       logSecurity(SEC.ADMIN_AUTH_FAIL, { ip: req.ip })

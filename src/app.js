@@ -18,6 +18,7 @@ import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
 import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler, adminSendInviteEmailHandler } from './routes/invite.js';
 import { isMailEnabled } from './services/mailer.js';
+import redis, { redisAlive } from './services/redis.js';
 import { confirmEmailHandler } from './routes/emailVerify.js';
 import { adminInviteClientHandler, adminDeleteClientInviteHandler, signupClientPrefillHandler, signupClientRegisterHandler } from './routes/inviteClient.js';
 
@@ -30,6 +31,20 @@ const app = express();
 if (process.env.TRUST_PROXY) {
   const v = process.env.TRUST_PROXY;
   app.set('trust proxy', /^\d+$/.test(v) ? Number(v) : v);
+} else {
+  // Without it, req.ip behind a reverse proxy is the proxy's own address: every
+  // per-IP rate limit collapses into one bucket shared by the whole internet
+  // and ADMIN_ALLOWED_IPS compares against the proxy. Say so, once, the moment
+  // a forwarded request shows up -- that is the configuration mistake, not the
+  // absence of the variable in a bare local run.
+  let warned = false;
+  app.use((req, _res, next) => {
+    if (!warned && req.headers['x-forwarded-for']) {
+      warned = true;
+      console.warn('[!] X-Forwarded-For received but TRUST_PROXY is not set -- rate limits and ADMIN_ALLOWED_IPS are keyed by the proxy address. Set TRUST_PROXY=1.');
+    }
+    next();
+  });
 }
 
 // --- Content-Security-Policy --------------------------------------------------
@@ -99,8 +114,16 @@ app.use(express.json({ limit: '32kb' }));
 app.use(express.urlencoded({ extended: false, limit: '32kb' }));
 
 // --- Health check -------------------------------------------------------------
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null, mail_enabled: isMailEnabled() });
+// 200 only when Redis answers: the process serves nothing useful without it,
+// and the Docker HEALTHCHECK / the operator watching /status must not be told
+// "ok" by an app whose only datastore is gone.
+app.get('/health', async (_req, res) => {
+  const redisUp = await redisAlive();
+  res.status(redisUp ? 200 : 503).json({
+    status: redisUp ? 'ok' : 'degraded',
+    redis: redisUp ? 'up' : 'down',
+    ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null, mail_enabled: isMailEnabled(),
+  });
 });
 
 // --- Static UI pages ----------------------------------------------------------
@@ -151,6 +174,8 @@ app.get('/verify-email.js',        (_req, res) => res.sendFile(resolve(ROOT, 've
 app.post('/verify-email/confirm',  rateLimit({ prefix: 'verify-email', max: 20, window: 60 }), confirmEmailHandler);
 
 // --- Admin API -- network check + auth -----------------------------------------
+// requireAdminAuth carries its own failed-attempt limiter (10 failures / min
+// per IP); the general limiter behind it only ever sees authenticated calls.
 app.use('/admin',
   requireAdminNetwork,
   requireAdminAuth,
@@ -174,7 +199,7 @@ app.use(errorHandler);
 
 // --- Start --------------------------------------------------------------------
 const PORT = process.env.PORT ?? 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Encedo OIDC Provider -- http://localhost:${PORT}`);
   console.log(`   ENV: ${process.env.NODE_ENV ?? 'development'}`);
   console.log(`   Issuer: ${process.env.ISSUER ?? '[WARNING] ISSUER not set'}`);
@@ -186,3 +211,20 @@ app.listen(PORT, () => {
     console.warn('   [!] ADMIN_ALLOWED_IPS not set -- admin endpoints restricted to localhost only');
   }
 });
+
+// --- Graceful shutdown ----------------------------------------------------------
+// docker stop / systemd send SIGTERM. Without a handler Node dies mid-request,
+// and a multi-step Redis write (user hash, index, set) can be left half done.
+// Stop accepting, let in-flight requests finish, close Redis, then exit -- with
+// a hard deadline well inside Docker's 10 s grace period.
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.once(sig, () => {
+    console.log(`[App] ${sig} received -- shutting down`);
+    const deadline = setTimeout(() => process.exit(1), 5_000);
+    deadline.unref();
+    server.close(async () => {
+      try { await redis.quit(); } catch { /* already gone */ }
+      process.exit(0);
+    });
+  });
+}

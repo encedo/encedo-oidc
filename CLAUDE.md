@@ -366,7 +366,7 @@ Open (accepted or delegated):
 - `checkHealthDebounced()` — 600ms debounce wrapper on the API-base `input` event; the secret field is only sent on Enter (never on keystroke)
 - Default API base = `window.location.origin` (not hardcoded localhost — critical for multi-tenant)
 - Version label in sidebar: `' v ' + commit` (space before v)
-- `ADMIN_ALLOWED_IPS` must include `172.16.0.0/12` for Docker nginx reverse proxy
+- `ADMIN_ALLOWED_IPS` lists the **admin networks** (workstation / VPN), because with `TRUST_PROXY=1` (mandatory behind nginx) `req.ip` is the real client. Only WITHOUT `TRUST_PROXY` would the nginx container address (172.16/12) show up — and then every per-IP limit is one shared bucket, so that is a misconfiguration, not something to allow-list. The server warns once when it sees `X-Forwarded-For` without `TRUST_PROXY`.
 - **Invites page**: merged table of user + client invites from `GET /admin/invites`; TYPE badge (user=green, client=purple)
 - **No inline handlers anywhere** (CSP has no `script-src-attr`): every clickable element carries `data-action="…"`, arguments ride in `data-*` attributes (row index into `_usersCache`/`_clientsCache`, element id), and one delegated `click` listener maps them through the `ACTIONS` table at the bottom of `admin-panel.js`. Same pattern in `signin.js`, `signup.js`, `enrollment.js`, `signup-client.js`. Never put data into an `onclick` string — that was the stored-XSS vector via client `name` (fixed 2026-09-20). `esc()` escapes `'` too; `toast()` uses `textContent`.
 - **Invite user button**: on Users page header; opens modal; sends `POST /admin/invite`; shows one-time URL
@@ -402,7 +402,7 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
 5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
-7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s)
+7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s). Since 2026-09-20 the Redis client reconnects forever after the first successful connect (before: 10 tries ≈ 3.5 s, then the client closed for good while `/health` kept saying ok), `/health` PINGs Redis and answers 503 when it is down, and the image has a `HEALTHCHECK` on it.
 8. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
 9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
 10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)

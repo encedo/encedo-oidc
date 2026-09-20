@@ -22,7 +22,8 @@ let hasRedis = true;
 try { execSync('command -v redis-server', { stdio: 'ignore' }); } catch { hasRedis = false; }
 const opt = hasRedis ? {} : { skip: 'redis-server not installed' };
 
-let redisProc, appProc;
+let redisProc, appProc, redisDir;
+const REDIS_ARGS = () => ['--port', String(REDIS_PORT), '--dir', redisDir, '--save', '', '--appendonly', 'no'];
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const b64url = (b) => Buffer.from(b).toString('base64url');
@@ -76,8 +77,8 @@ async function addUser(username, clients = []) {
 
 before(async () => {
   if (!hasRedis) return;
-  const dir = mkdtempSync(join(tmpdir(), 'oidc-test-'));
-  redisProc = spawn('redis-server', ['--port', String(REDIS_PORT), '--dir', dir, '--save', '', '--appendonly', 'no'], { stdio: 'ignore' });
+  redisDir  = mkdtempSync(join(tmpdir(), 'oidc-test-'));
+  redisProc = spawn('redis-server', REDIS_ARGS(), { stdio: 'ignore' });
   await waitPort(REDIS_PORT);
   appProc = spawn('node', ['src/app.js'], {
     stdio: 'ignore',
@@ -301,4 +302,66 @@ test('authorize: error codes and repeated parameters', opt, async () => {
   assert.equal(t.status, 400); assert.equal(t.body.error, 'invalid_request');
   t = await rpost('/token', { grant_type: 'authorization_code', code: 'x' }, { 'Content-Type': 'application/json' });
   assert.equal(t.status, 401); assert.equal(t.body.error, 'invalid_client');
+});
+
+const redisCli = (args) => execSync(`redis-cli -p ${REDIS_PORT} ${args}`).toString().trim();
+
+test('rate limiter: the counter always carries a TTL and the limit is enforced', opt, async () => {
+  // /authorize/confirm is 10/min per IP; bogus sessions are the cheapest way to hit it
+  let last;
+  for (let i = 0; i < 11; i++) {
+    last = await rpost('/authorize/confirm', { session_id: 'nope', signature: 'x'.repeat(86) }, { 'Content-Type': 'application/json' });
+  }
+  assert.equal(last.status, 429, '11th call in a minute must be rate limited');
+  assert.equal(last.headers.get('retry-after'), '60');
+  const keys = redisCli("keys 'rl:confirm:*'").split('\n').filter(Boolean);
+  assert.ok(keys.length >= 1, 'a counter key must exist');
+  for (const k of keys) {
+    const ttl = Number(redisCli(`ttl "${k}"`));
+    assert.ok(ttl > 0 && ttl <= 60, `counter ${k} must expire (ttl=${ttl})`);
+  }
+  // a counter that lost its TTL (what the old INCR-then-EXPIRE code could leave behind) is repaired on the next hit
+  redisCli(`persist "${keys[0]}"`);
+  assert.equal(redisCli(`ttl "${keys[0]}"`), '-1');
+  await rpost('/authorize/confirm', { session_id: 'nope', signature: 'x'.repeat(86) }, { 'Content-Type': 'application/json' });
+  const repaired = Number(redisCli(`ttl "${keys[0]}"`));
+  assert.ok(repaired > 0 && repaired <= 60, `TTL must be restored (ttl=${repaired})`);
+});
+
+test('admin auth: failed attempts are rate limited, valid calls are not', opt, async () => {
+  // a working session making many calls stays fine (the pre-existing 60/min limiter is behind auth)
+  for (let i = 0; i < 12; i++) assert.equal((await jget('/admin/clients')).status, 200);
+  // 10 wrong secrets -> the 11th is 429 even before the secret is looked at
+  let r;
+  for (let i = 0; i < 10; i++) r = await jget('/admin/clients', { Authorization: 'Bearer wrong' });
+  assert.equal(r.status, 401);
+  r = await rget('/admin/clients', { Authorization: 'Bearer wrong' });
+  assert.equal(r.status, 429); assert.equal(r.headers.get('retry-after'), '60');
+  // ...and so is the right secret from that IP until the window passes (lockout, not bypass)
+  assert.equal((await jget('/admin/clients')).status, 429);
+  const ttl = Number(redisCli("ttl 'rl:admin-auth-fail:" + redisCli("keys 'rl:admin-auth-fail:*'").split(':').slice(2).join(':') + "'"));
+  assert.ok(ttl > 0 && ttl <= 60, `lockout counter must expire (ttl=${ttl})`);
+  redisCli("del " + redisCli("keys 'rl:admin-auth-fail:*'").replace(/\n/g, ' '));   // unlock for anything after
+});
+
+test('health mirrors Redis, and the client reconnects after an outage longer than the old retry budget', opt, async () => {
+  let h = await rget('/health');
+  assert.equal(h.status, 200); assert.equal(h.body.redis, 'up');
+
+  redisProc.kill();
+  await sleep(1500);
+  h = await rget('/health');
+  assert.equal(h.status, 503, 'health must fail without Redis'); assert.equal(h.body.redis, 'down');
+  assert.equal(h.body.status, 'degraded');
+
+  // The old strategy gave up after 10 attempts (~3.5 s) and closed the client for good.
+  await sleep(4500);
+  redisProc = spawn('redis-server', REDIS_ARGS(), { stdio: 'ignore' });
+  await waitPort(REDIS_PORT);
+  for (let i = 0; i < 50 && (await rget('/health')).status !== 200; i++) await sleep(200);
+  h = await rget('/health');
+  assert.equal(h.status, 200, 'the app must recover once Redis is back');
+  assert.equal(h.body.redis, 'up');
+  // and it actually serves again -- a route that needs Redis
+  assert.equal((await jget('/admin/clients')).status, 200);
 });
