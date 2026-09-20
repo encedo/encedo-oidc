@@ -154,7 +154,7 @@ Modern SCADA and ICS platforms increasingly support OpenID Connect for operator 
 - **No impersonation by the operator.** The server cannot sign on behalf of a user, even with full database access.
 - **No credential exposure.** The database contains only public keys, public certificates, and display data. Nothing that enables authentication without hardware.
 - **Hardware provenance.** Keys are verified as hardware-generated at enrollment time. Attestation records are stored for audit.
-- **Standard protocol.** Full OIDC Core 1.0 compliance — PKCE, JWKS, UserInfo, discovery, RP-initiated logout.
+- **Standard protocol.** OpenID Connect Core 1.0 Authorization Code Flow — PKCE, JWKS, UserInfo, discovery, RP-initiated logout — with one deliberate difference: the ID Token is signed by the user's hardware key, so a Relying Party trusts it as the response of the token endpoint, not as a free-floating JWT.
 
 ### Defence in depth
 

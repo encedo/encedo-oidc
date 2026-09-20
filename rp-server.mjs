@@ -27,12 +27,46 @@ function pkceChallenge(verifier) {
   return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
 
-// -- JWT decode (display only -- signature NOT verified here) ---
-function decodeJwt(token) {
-  const [h, p] = token.split('.');
-  const dec = s => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
-  return { header: dec(h), payload: dec(p) };
+// -- ID Token validation (OIDC Core s.3.1.3.7) -----------------
+// A test RP that only decoded the token would stay green through a broken
+// DER->P1363 conversion, a wrong alg/kid in JWKS or a missing nonce. This RP
+// verifies what a real one must: signature via the OP's jwks_uri (the key
+// named by the header kid), iss against discovery, aud, exp/iat, nonce.
+const ES_HASH = { ES256: 'sha256', ES384: 'sha384', ES512: 'sha512' };
+const b64json = s => JSON.parse(Buffer.from(s, 'base64url').toString('utf8'));
+
+async function verifyIdToken(idToken, expectedNonce) {
+  const parts = idToken.split('.');
+  if (parts.length !== 3) throw new Error('id_token is not a compact JWS');
+  const [h, p, sig] = parts;
+  const header = b64json(h), payload = b64json(p);
+
+  const disc = await (await fetch(`${OP_BASE}/.well-known/openid-configuration`)).json();
+  if (payload.iss !== disc.issuer) throw new Error(`iss mismatch: ${payload.iss} != ${disc.issuer}`);
+  const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!aud.includes(CLIENT_ID)) throw new Error(`aud does not contain this client: ${aud}`);
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.exp !== 'number' || payload.exp < now - 60) throw new Error('id_token expired');
+  if (typeof payload.iat !== 'number' || payload.iat > now + 60)  throw new Error('iat is in the future');
+  if (payload.nonce !== expectedNonce) throw new Error('nonce mismatch');
+
+  const jwks = await (await fetch(disc.jwks_uri, { cache: 'no-store' })).json();
+  const jwk  = jwks.keys.find(k => k.kid === header.kid);
+  if (!jwk) throw new Error(`no key ${header.kid} in ${disc.jwks_uri}`);
+  const key   = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  const data  = Buffer.from(`${h}.${p}`);
+  const sigB  = Buffer.from(sig, 'base64url');
+  const ok = header.alg === 'EdDSA'
+    ? crypto.verify(null, data, key, sigB)
+    : ES_HASH[header.alg]
+      ? crypto.verify(ES_HASH[header.alg], data, { key, dsaEncoding: 'ieee-p1363' }, sigB)
+      : false;
+  if (!ok) throw new Error(`signature invalid (alg ${header.alg}, kid ${header.kid})`);
+  return { header, payload };
 }
+
+// -- HTML escaping: claims and OP error strings are untrusted -----
+const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
 // -- Tiny HTML helper -----------------------------------------
 const CSS = `
@@ -63,14 +97,15 @@ async function router(req, res) {
       return res.end(page(`
         <div class="card">
           <h2>Logged in</h2>
-          <div class="row"><span class="k">name</span>  <span class="v">${p.name||'--'}</span></div>
-          <div class="row"><span class="k">email</span> <span class="v">${p.email||'--'}</span></div>
-          <div class="row"><span class="k">sub</span>   <span class="v">${p.sub||'--'}</span></div>
-          <div class="row"><span class="k">access_token</span><span class="v green">${session.access_token.slice(0,20)}...</span></div>
+          <div class="row"><span class="k">name</span>  <span class="v">${esc(p.name||'--')}</span></div>
+          <div class="row"><span class="k">email</span> <span class="v">${esc(p.email||'--')}</span></div>
+          <div class="row"><span class="k">sub</span>   <span class="v">${esc(p.sub||'--')}</span></div>
+          <div class="row"><span class="k">id_token</span><span class="v green">signature verified (${esc(session.header.alg)}, kid ${esc(String(session.header.kid).slice(0,8))}…)</span></div>
+          <div class="row"><span class="k">access_token</span><span class="v green">${esc(session.access_token.slice(0,20))}...</span></div>
           <div class="label">id_token payload</div>
-          <pre>${JSON.stringify(p, null, 2)}</pre>
+          <pre>${esc(JSON.stringify(p, null, 2))}</pre>
           <div class="label">id_token header</div>
-          <pre>${JSON.stringify(session.header, null, 2)}</pre>
+          <pre>${esc(JSON.stringify(session.header, null, 2))}</pre>
           <br><a class="btn" href="/signout">Sign out</a>
         </div>`));
     }
@@ -78,8 +113,9 @@ async function router(req, res) {
     return res.end(page(`
       <div class="card">
         <h2>Encedo Test RP</h2>
-        <div class="row"><span class="k">OP</span>         <span class="v">${OP_BASE}</span></div>
-        <div class="row"><span class="k">client_id</span>  <span class="v">${CLIENT_ID}</span></div>
+        <div class="row"><span class="k">OP</span>         <span class="v">${esc(OP_BASE)}</span></div>
+        <div class="row"><span class="k">client_id</span>  <span class="v">${esc(CLIENT_ID)}</span></div>
+        <div class="row"><span class="k">auth</span>       <span class="v">${CLIENT_SECRET ? 'client_secret_basic + PKCE' : 'public (PKCE only)'}</span></div>
         <div class="row"><span class="k">redirect_uri</span><span class="v">${REDIRECT}</span></div>
         <div class="row"><span class="k">pkce</span>       <span class="v green">S256 ok</span></div>
         <br><a class="btn" href="/signin">Sign in with Encedo</a>
@@ -122,13 +158,17 @@ async function router(req, res) {
     if (error) {
       console.error('\n[RP] ERROR: OP returned error:', error);
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      return res.end(page(`<div class="card"><h2>Error</h2><div class="err">${error}: ${url.searchParams.get('error_description')||''}</div><br><a class="btn" href="/">Back</a></div>`));
+      return res.end(page(`<div class="card"><h2>Error</h2><div class="err">${esc(error)}: ${esc(url.searchParams.get('error_description')||'')}</div><br><a class="btn" href="/">Back</a></div>`));
     }
 
     if (!pending || state !== pending.state) {
       console.error('[RP] ERROR: State mismatch');
       res.writeHead(400, { 'Content-Type': 'text/html' });
       return res.end(page(`<div class="card"><h2>Error</h2><div class="err">State mismatch -- possible CSRF.</div></div>`));
+    }
+    if (!code) {
+      res.writeHead(400, { 'Content-Type': 'text/html' });
+      return res.end(page(`<div class="card"><h2>Error</h2><div class="err">Callback without code.</div></div>`));
     }
 
     console.log('\n[RP] <- Received callback');
@@ -155,16 +195,24 @@ async function router(req, res) {
     });
 
     const tokens = await tokenRes.json();
+    const { nonce: expectedNonce } = pending;
     pending = null;
 
     if (!tokenRes.ok) {
       console.error('[RP] ERROR: Token error:', tokens);
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      return res.end(page(`<div class="card"><h2>Token Error</h2><pre>${JSON.stringify(tokens,null,2)}</pre><br><a class="btn" href="/">Back</a></div>`));
+      return res.end(page(`<div class="card"><h2>Token Error</h2><pre>${esc(JSON.stringify(tokens,null,2))}</pre><br><a class="btn" href="/">Back</a></div>`));
     }
 
-    const jwt = decodeJwt(tokens.id_token);
-    session   = { ...tokens, payload: jwt.payload, header: jwt.header };
+    let jwt;
+    try {
+      jwt = await verifyIdToken(tokens.id_token, expectedNonce);
+    } catch (e) {
+      console.error('[RP] ERROR: id_token rejected:', e.message);
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end(page(`<div class="card"><h2>ID Token rejected</h2><div class="err">${esc(e.message)}</div><br><a class="btn" href="/">Back</a></div>`));
+    }
+    session = { ...tokens, payload: jwt.payload, header: jwt.header };
 
     console.log('[RP] Token exchange complete');
     console.log('      sub          :', jwt.payload.sub);
@@ -188,7 +236,15 @@ async function router(req, res) {
   res.end('Not found');
 }
 
-http.createServer(router).listen(RP_PORT, () => {
+http.createServer((req, res) => {
+  // An exception in an async route used to be an unhandled rejection that
+  // took the whole RP down -- answer 500 and stay up.
+  router(req, res).catch(e => {
+    console.error('[RP] ERROR:', e);
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/html' });
+    res.end(page(`<div class="card"><h2>RP error</h2><div class="err">${esc(e.message)}</div></div>`));
+  });
+}).listen(RP_PORT, () => {
   console.log(`\nEncedo Test RP -- http://localhost:${RP_PORT}`);
   console.log(`   OP base     : ${OP_BASE}`);
   console.log(`   client_id   : ${CLIENT_ID}`);

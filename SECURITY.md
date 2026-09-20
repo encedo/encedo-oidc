@@ -26,6 +26,18 @@ The backend builds `signing_input = base64url(header).base64url(payload)`. The b
 ### Public key always from Redis
 Ed25519 signature verification uses the public key from `user:{sub}.pubkey` in Redis — never from the request. The frontend cannot substitute a different key.
 
+### The ID Token is signed by the *user's* key — what that means for a Relying Party
+There is no provider signing key. `jwks.json` publishes the enrolled users' public keys, and every ID Token carries the signature the user's HSM produced over the payload the server built. That is the point of the design (the server cannot forge a login), but it moves one trust boundary that OIDC Core takes for granted: a JWT that verifies against `jwks_uri` is proof that **the user's key signed it**, not that **the provider issued it**. A user can sign any payload they like offline — their own `sub`, but someone else's `email`, `email_verified: true`, any `aud`, an `exp` years away — and it will verify against the published key.
+
+Consequences an RP must respect:
+
+- **Trust an ID Token only as the response of `POST /token`** (the code flow, server-to-server, with client authentication). That response is the provider's assertion; the signature inside it is the user's.
+- **Never accept an ID Token from another channel** as a bearer credential to an API, as a "login with JWT" input, or as an `id_token_hint` that decides anything security-relevant. `jwks_uri` verification alone is not authorisation here.
+- Claims about identity that other systems key on (`email`, `preferred_username`) are only trustworthy in the `/token` response — the Carbonio connector, which maps `email` to a mailbox, must take them from there and nowhere else.
+- `at_hash` / `c_hash` cannot be issued: the token is signed before the access token exists.
+
+Signing algorithms are those the HSM supports: `EdDSA` (Ed25519) and `ES256/ES384/ES512`. `RS256`, which OIDC Core §15.1 lists as mandatory for an OP, is **not** available (no RSA keys in the HSM); an RP library hard-wired to `RS256` must be configured for `EdDSA` or an `ES*` algorithm.
+
 ### kid is session-locked
 `POST /authorize/login` stores the user's current `kid` in the pending session. `POST /authorize/confirm` rejects any mismatch — prevents key substitution between the two calls.
 
@@ -65,12 +77,14 @@ All inputs are validated in `src/middleware/validate.js`:
 |-------|------|
 | `email` | RFC 5322 simplified, max 320 chars, lowercased |
 | `username` | `[a-zA-Z0-9._@-]`, 2–64 chars |
+| `name` (user), `name` (client) | max 128 chars, no control characters (they reach mail headers and logs) |
 | `hsm_url` | HTTPS only (localhost exempt), no credentials in URL |
-| `code_challenge` | Base64url, 43–128 chars (RFC 7636) |
+| `code_challenge` | Base64url, 43–128 chars (RFC 7636); `code_challenge_method` must be `S256` |
 | `code_verifier` | Unreserved chars, 43–128 chars (RFC 7636) |
-| `signature` | Base64url, 86–88 chars (Ed25519 = 64 bytes) |
-| `pubkey` | 64 hex chars (32-byte raw Ed25519) |
+| `signature` | Base64url, 64–200 chars (Ed25519/P-256 = 64 bytes, P-384 = 96, P-521 = 132) |
+| `pubkey` | Hex, length per key type (Ed25519 64, P-256 66, P-384 98, P-521 134 — compressed EC points) |
 | `kid` | Verified server-side: must equal `SHA1(pubkey)[:16]` |
+| OIDC parameters | Single-valued: a repeated query/form key is `invalid_request` |
 | Body size | 32 KB limit on all endpoints |
 
 ---
@@ -81,16 +95,17 @@ Redis-backed sliding window per endpoint (see `src/middleware/rateLimit.js`):
 
 | Endpoint | Max | Window | Key |
 |----------|-----|--------|-----|
-| `POST /authorize/login` | 20 | 60 s | client_id |
-| `POST /authorize/confirm` | 10 | 60 s | session_id |
-| `POST /token` | 20 | 60 s | client_id |
-| `GET /userinfo` | 60 | 60 s | access token |
+| `POST /authorize/login` | 20 + 40 | 60 s | client_id, plus an IP backstop |
+| `POST /authorize/confirm` | 10 | 60 s | IP |
+| `POST /token` | 20 | 60 s | IP |
 | `GET`/`POST /logout` | 20 | 60 s | IP |
-| `GET /enrollment/validate` | 10 | 60 s | enrollment token |
-| `POST /enrollment/submit` | 5 | 60 s | enrollment token |
-| `/admin/*` | 60 | 60 s | IP |
+| `GET /enrollment/validate` | 10 + 30 | 60 s | enrollment token, plus an IP backstop |
+| `POST /enrollment/submit` | 5 + 20 | 60 s | enrollment token, plus an IP backstop |
+| `POST /verify-email/confirm` | 20 | 60 s | IP |
+| `/admin/*` (authenticated) | 60 | 60 s | IP |
+| `/admin/*` failed authentications | 10 | 60 s | IP — then every admin call from that IP is 429 until the window passes |
 
-Rate limiter is fail-closed by design: Redis outage means the OIDC service cannot function anyway (all session state is in Redis). `GET /authorize` is not rate-limited at application level — nginx `limit_req` should handle it upstream.
+`/userinfo` is not rate-limited at application level. The limiter is **fail-open**: if Redis cannot be reached the request goes through (Redis is also the session store, so little works in that state anyway, but authentication is never blocked by the limiter itself). Counters are created with their expiry in one command (`SET NX EX` + `INCR`), so a counter can never exist without a TTL. The audit entry for a limit hit hashes any key that is not an IP or UUID — an enrollment token used as the key never lands in the log. `GET /authorize` is not rate-limited at application level — nginx `limit_req` should handle it upstream. All per-IP limits and the admin allow-list need `TRUST_PROXY=1` behind a reverse proxy; the server warns once when it sees `X-Forwarded-For` without it.
 
 The following endpoints are rate-limited **at nginx level only** (see README nginx config):
 
@@ -106,7 +121,7 @@ The following endpoints are rate-limited **at nginx level only** (see README ngi
 
 - **Network isolation:** `ADMIN_ALLOWED_IPS` restricts access by IP/CIDR. Default when unset: `127.0.0.1,::1`. IPv4-mapped IPv6 (`::ffff:x.x.x.x`) normalised automatically. Production must set this to a management network or use nginx `allow`/`deny`.
 - **Authentication:** `Authorization: Bearer <ADMIN_SECRET>` checked with `timingSafeEqual`.
-- **Rate limit:** 60 req/min per IP.
+- **Rate limit:** 60 req/min per IP for authenticated calls; 10 failed authentications per minute per IP lock that IP out of the admin API until the window passes.
 - **Startup warning:** Server logs a warning when `ADMIN_ALLOWED_IPS` is not set or `ADMIN_SECRET` uses the default.
 
 ---
@@ -135,7 +150,7 @@ The admin secret is kept in `sessionStorage` (per tab, gone when the tab closes)
 |-----------|------------|
 | Authorization code | One-time use (`getDel`), 60 s TTL |
 | Access token | Stored in Redis (`access:{token}`), deleted explicitly on logout or user delete |
-| id_token | JWT — not revocable by design (OIDC spec). TTL configurable per client. JWKS key is removed when user is deleted, invalidating future RP cache refreshes. |
+| id_token | JWT — not revocable by design (OIDC spec). TTL configurable per client. JWKS key is removed the moment the user is deleted (cache invalidated), invalidating future RP cache refreshes. |
 
 Active access tokens are tracked per user in `user_tokens:{sub}` and bulk-revoked on user deletion or re-enrollment.
 
@@ -168,8 +183,8 @@ Logged events include: login attempts, signature verification results, token iss
 
 - Enrollment token: 32 random bytes, base64url-encoded (256-bit entropy), 24 h TTL
 - Token is delivered out-of-band (email/admin channel) — not in server access logs (URL fragment)
-- Token consumed atomically with `getDel` — cannot be reused
-- Concurrent enrollment for the same user blocked with Redis NX lock (`enroll_lock:{sub}`, 30 s TTL)
+- Token consumed atomically (compare-and-delete against the validated session) **after** the signature, key type and duplicate-key checks pass — a rejected attempt leaves the link usable, a completed one cannot be replayed
+- Concurrent enrollment for the same user blocked with Redis NX lock (`enroll_lock:{sub}`, 30 s TTL); the challenge is set with compare-and-set so two first calls to `/validate` share one challenge
 - Duplicate public key rejection: checked across all users before commit
 - Token invalidated on user delete: no orphaned enrollment tokens
 
@@ -191,6 +206,10 @@ Logged events include: login attempts, signature verification results, token iss
 |------|----------|-------|
 | `GET /authorize` not rate-limited at app level | Medium | Delegated to nginx `limit_req` (see README) |
 | id_token not revocable (JWT) | Low | Standard OIDC limitation; configure short `id_token_ttl` per client; JWKS key removed on user delete |
-| Admin panel has no browser logout | Low | Bearer token in browser memory; no persistent session |
+| ID Token signed by the user's key, not a provider key | Design | See *The ID Token is signed by the user's key*: RPs must trust it only as the `/token` response, never from another channel |
+| No `RS256` | Design | HSM has no RSA; `EdDSA` / `ES256` / `ES384` / `ES512` only — configure the RP accordingly |
+| `post_logout_redirect_uri` by origin for clients without `post_logout_redirect_uris` | Low | Legacy fallback, logged once per client; register the logout URL to get exact matching |
+| Redis of every tenant on the shared `oidc-net` without a password | Medium | Any compromised container on that network reaches every tenant's data; move each tenant's Redis to an internal per-tenant network and set `requirepass` (open item) |
+| Enrollment / invite tokens sent as `?token=` on `GET /enrollment/validate` and `/signup/prefill` | Low | The first page load keeps the token in the fragment, but the follow-up API calls put it in the query string, i.e. in proxy access logs (open item: move to POST bodies) |
 | Redis without TLS | Ops | Use `rediss://` URL in production; run Redis on loopback or VPN-protected network |
 | SHA-1 for kid derivation | Accepted | Matches HSM convention; second-preimage attack (~2¹⁶⁰) infeasible; collision is cosmetic, not an auth bypass |

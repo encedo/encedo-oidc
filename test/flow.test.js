@@ -445,9 +445,58 @@ test('signup: key_type from the body is validated', opt, async () => {
   assert.equal(r.status, 201);
 });
 
+test('rp-server: verifies the id_token (signature via JWKS, iss, aud, nonce) and rejects a nonce mismatch', opt, async () => {
+  const RP_PORT = 9877;
+  const RP = `http://localhost:${RP_PORT}`;
+  const client = (await jpost('/admin/clients', { name: 'TestRP', redirect_uris: [`${RP}/callback`], scopes: ['openid', 'email', 'profile'] })).body;
+  const { sub, enrollToken } = await addUser('rpuser', [client.client_id]);
+  const key = genKey();
+  assert.equal((await submitEnroll(enrollToken, key)).status, 200);
+
+  // earlier tests have spent most of the 10/min /authorize/confirm budget for this IP
+  { const k = redisCli("keys 'rl:confirm:*'").replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
+  const rp = spawn('node', ['rp-server.mjs'], { stdio: 'ignore', env: { ...process.env, OP_BASE: BASE, RP_PORT: String(RP_PORT), RP_CLIENT_ID: client.client_id, RP_CLIENT_SECRET: client.client_secret } });
+  try {
+    await waitPort(RP_PORT);
+    // 1. RP starts the flow: read state/nonce/code_challenge from its redirect
+    const start = await fetch(`${RP}/signin`, { redirect: 'manual' });
+    assert.equal(start.status, 302);
+    const authz = new URL(start.headers.get('location'));
+    const q = Object.fromEntries(authz.searchParams);
+    assert.equal(q.client_id, client.client_id);
+
+    // 2. The user signs at the OP (software key stands in for the HSM)
+    async function signWith(params) {
+      const login = await jpost('/authorize/login', { sub, ...params });
+      assert.equal(login.status, 200);
+      const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
+      return new URL(confirm.body.redirect_url);
+    }
+    const cb = await signWith(q);
+
+    // 3. RP callback: exchanges the code with client_secret_basic and verifies the id_token
+    const done = await fetch(cb, { redirect: 'manual' });
+    assert.equal(done.status, 302, 'RP must accept a genuine id_token');
+    const home = await (await fetch(`${RP}/`)).text();
+    assert.match(home, /signature verified \(EdDSA/);
+    assert.match(home, /rpuser@f\.com/);
+
+    // 4. Same flow but the token is minted for a DIFFERENT nonce than the RP remembers
+    await fetch(`${RP}/signout`, { redirect: 'manual' });
+    const start2 = await fetch(`${RP}/signin`, { redirect: 'manual' });
+    const q2 = Object.fromEntries(new URL(start2.headers.get('location')).searchParams);
+    const cb2 = await signWith({ ...q2, nonce: 'not-the-rp-nonce' });
+    const bad = await (await fetch(cb2, { redirect: 'manual' })).text();
+    assert.match(bad, /ID Token rejected/); assert.match(bad, /nonce mismatch/);
+  } finally {
+    rp.kill();
+  }
+});
+
 const redisCli = (args) => execSync(`redis-cli -p ${REDIS_PORT} ${args}`).toString().trim();
 
 test('rate limiter: the counter always carries a TTL and the limit is enforced', opt, async () => {
+  { const k = redisCli("keys 'rl:confirm:*'").replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
   // /authorize/confirm is 10/min per IP; bogus sessions are the cheapest way to hit it
   let last;
   for (let i = 0; i < 11; i++) {

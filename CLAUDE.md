@@ -358,6 +358,9 @@ Open (accepted or delegated):
 - id_token not revocable → OIDC spec limitation, configure short TTL
 - Admin panel: secret is per-tab (`sessionStorage`) + “Forget secret” button (2026-09-20)
 - Redis TLS → ops configuration (`rediss://`)
+- **ID Token signed by the user's key** (design): RPs trust it only as the `/token` response — documented in SECURITY.md / README; never "fix" this in code
+- No RS256 (HSM has no RSA) — documented, not fixable
+- Open from the 2026-09-20 review (deployment changes, user's call): per-tenant Redis network + `requirepass` (M13); enrollment/invite token in POST bodies instead of `?token=` (M16). Full list: `../REVIEW-2026-09-20.md`
 
 ---
 

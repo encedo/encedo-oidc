@@ -719,6 +719,8 @@ curl -s -X POST $BASE/admin/clients \
 
 Note the `client_id` and `client_secret` from the response — configure these in your RP (e.g. Nextcloud).
 
+> **For the Relying Party:** treat the ID Token as trustworthy **only when it arrives as the response of `POST /token`**. The token is signed by the *user's* HSM key (there is no provider signing key — `jwks.json` lists user keys), so a JWT that merely verifies against `jwks_uri` proves who signed it, not that this provider issued it. Do not accept ID Tokens from any other channel as a credential. Signing algorithms: `EdDSA`, `ES256`, `ES384`, `ES512` (no `RS256`). Details in `SECURITY.md`.
+
 Every client is **confidential** by default: `/token` always requires the `client_secret` (HTTP Basic or
 `client_secret_post`), and PKCE is checked *in addition* when the authorization request carried a
 `code_challenge`. A browser-only or native app that cannot keep a secret is registered with `"public": true`
