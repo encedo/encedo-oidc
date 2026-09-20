@@ -33,8 +33,11 @@ Ed25519 signature verification uses the public key from `user:{sub}.pubkey` in R
 
 ## Authentication Controls
 
+### Client authentication at `/token` (RFC 6749 §3.2.1)
+Every client is confidential unless registered with `public: true`. A confidential client must present its `client_secret` on every token request (`client_secret_basic` or `client_secret_post`) — PKCE never substitutes for it, it is verified in addition whenever the authorization request carried a `code_challenge`. A public client (SPA / native app, `token_endpoint_auth_method=none`) has no secret; it is bound to its code by PKCE alone, which the authorization endpoint makes mandatory for it. `invalid_client` is answered with 401 and, for HTTP Basic, a matching `WWW-Authenticate`. Token responses carry `Cache-Control: no-store`.
+
 ### PKCE S256 (RFC 7636)
-Required per client (configurable, default on). Protects against authorization code interception. Code verifier 43–128 characters, challenge method must be `S256`.
+Required per client (configurable, default on; always on for public clients). Protects against authorization code interception. Code verifier 43–128 characters, challenge method must be `S256` — a `code_challenge` without `code_challenge_method=S256` is refused at the authorization endpoint.
 
 ### Timing-safe comparisons
 `client_secret` and `ADMIN_SECRET` are compared using `crypto.timingSafeEqual`. Prevents secret length/value leakage via timing side-channel.
@@ -157,7 +160,7 @@ Logged events include: login attempts, signature verification results, token iss
 | `/token`, `/userinfo` | `Access-Control-Allow-Origin: *` |
 | `/authorize`, `/enrollment`, `/admin/*` | No CORS headers |
 
-`/token` requires PKCE or `client_secret`. CORS `*` on `/token` is standard OIDC practice — the authorization code is single-use and bound to `redirect_uri`, limiting the attack surface.
+`/token` requires the `client_secret` for confidential clients and PKCE for public ones (see *Client authentication*). CORS `*` on `/token` is standard OIDC practice — the authorization code is single-use and bound to `redirect_uri`, limiting the attack surface.
 
 ---
 

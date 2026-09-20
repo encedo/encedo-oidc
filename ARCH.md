@@ -196,7 +196,8 @@ client:{client_id}       Hash
   client_secret          stored in plain text — use strong random value
   redirect_uris          JSON array
   scopes                 JSON array
-  pkce                   'true' | 'false'
+  pkce                   'true' | 'false'   -- PKCE required at /authorize
+  public                 'true' | 'false'   -- no secret, PKCE only (token_endpoint_auth_method=none); default false: secret always required
   id_token_ttl           seconds (integer string)
   access_token_ttl       seconds (integer string)
   created_at             ISO 8601
@@ -264,7 +265,7 @@ Applied per endpoint via `src/middleware/rateLimit.js` (sliding window, Redis-ba
 |----------|-------|--------|-----|
 | `POST /authorize/login` | 20 | 60s | `client_id` |
 | `POST /authorize/confirm` | 10 | 60s | `session_id` |
-| `POST /token` | 20 | 60s | `client_id` |
+| `POST /token` | 20 | 60s | IP |
 | `GET /userinfo` | 60 | 60s | `Bearer token` |
 | `GET /logout` | 20 | 60s | IP |
 | `GET /enrollment/validate` | 10 | 60s | `token` |

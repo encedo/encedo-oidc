@@ -704,6 +704,16 @@ html.light .client-check-name{color:var(--text)}
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
         </div>
       </div>
+      <div class="section-label" style="margin-top:14px">Client type</div>
+      <div class="pkce-row" id="c-public" data-action="toggle-pkce">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Public client (no secret)</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">SPA / native app that cannot keep a secret &mdash; authenticates with PKCE only. Off = confidential: the client_secret is always required at /token</div>
+        </div>
+      </div>
       <div class="section-label" style="margin-top:14px">Open access</div>
       <div class="pkce-row" id="c-open" data-action="toggle-pkce">
         <div class="pkce-check">
@@ -783,6 +793,16 @@ html.light .client-check-name{color:var(--text)}
         <div>
           <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Require PKCE (S256)</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">Recommended for browser-based clients</div>
+        </div>
+      </div>
+      <div class="section-label" style="margin-top:14px">Client type</div>
+      <div class="pkce-row" id="ec-public" data-action="toggle-pkce">
+        <div class="pkce-check">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Public client (no secret)</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted)">SPA / native app that cannot keep a secret &mdash; authenticates with PKCE only. Off = confidential: the client_secret is always required at /token</div>
         </div>
       </div>
       <div class="section-label" style="margin-top:14px">Open access</div>

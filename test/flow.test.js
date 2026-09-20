@@ -52,6 +52,11 @@ const jpost = (p, b, h = H) => fetch(BASE + p, { method: 'POST', headers: h, bod
   .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
 const jget  = (p, h = H) => fetch(BASE + p, { headers: h })
   .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
+// Same as jpost/jget but keeps the response headers (Cache-Control, WWW-Authenticate).
+const rpost = (p, b, h = H) => fetch(BASE + p, { method: 'POST', headers: h, body: JSON.stringify(b) })
+  .then(async r => ({ status: r.status, headers: r.headers, body: await r.json().catch(() => null) }));
+const rget  = (p, h = {}) => fetch(BASE + p, { headers: h, redirect: 'manual' })
+  .then(async r => ({ status: r.status, headers: r.headers, body: await r.json().catch(() => null) }));
 
 function genKey() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -132,7 +137,7 @@ test('login: PKCE S256 + one-time authorization code', opt, async () => {
   }
 
   const exchange = (code, verifier) => jpost('/token', { grant_type: 'authorization_code', code,
-    redirect_uri: 'https://rp/cb', client_id: client.client_id, code_verifier: verifier });
+    redirect_uri: 'https://rp/cb', client_id: client.client_id, client_secret: client.client_secret, code_verifier: verifier });
 
   // correct PKCE -> tokens; the same code cannot be reused (one-time)
   const c1 = await getCode();
@@ -164,4 +169,136 @@ test('email_verified: set true only when signup carries the invite nonce', opt, 
 
   assert.equal(await signupEnroll('noemail', false), 'false', 'no nonce -> not verified');
   assert.equal(await signupEnroll('yesemail', true),  'true',  'invite nonce -> verified');
+});
+
+// Shared sign-in helper for the token-endpoint tests: enrolls a software key
+// for `username`, grants it `client`, and returns a function that mints a
+// fresh authorization code (optionally with PKCE).
+async function signerFor(username, client) {
+  const { sub, enrollToken } = await addUser(username, [client.client_id]);
+  const key = genKey();
+  assert.equal((await submitEnroll(enrollToken, key)).status, 200);
+  return async function getCode({ pkce = true } = {}) {
+    const verifier = b64url(crypto.randomBytes(32));
+    const chal     = crypto.createHash('sha256').update(verifier).digest('base64url');
+    const body = { sub, client_id: client.client_id, redirect_uri: client.redirect_uris[0], response_type: 'code', scope: 'openid', nonce: 'n' };
+    if (pkce) Object.assign(body, { code_challenge: chal, code_challenge_method: 'S256' });
+    const login = await jpost('/authorize/login', body);
+    if (login.status !== 200) return { login };
+    const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
+    assert.equal(confirm.status, 200);
+    return { login, code: new URL(confirm.body.redirect_url).searchParams.get('code'), verifier };
+  };
+}
+
+test('token: a confidential client must present its secret even when the code carries PKCE', opt, async () => {
+  // pkce:false = the client does not REQUIRE PKCE; it is still confidential (public defaults to false)
+  const client = (await jpost('/admin/clients', { name: 'Conf', redirect_uris: ['https://conf/cb'], scopes: ['openid'], pkce: false })).body;
+  assert.equal(client.public, false, 'clients are confidential by default');
+  const getCode = await signerFor('conf1', client);
+  const tokenReq = (extra, h = H) => rpost('/token', { grant_type: 'authorization_code', redirect_uri: 'https://conf/cb', client_id: client.client_id, ...extra }, h);
+
+  // PKCE alone (the old bypass) -> invalid_client
+  let c = await getCode();
+  let r = await tokenReq({ code: c.code, code_verifier: c.verifier });
+  assert.equal(r.status, 401); assert.equal(r.body.error, 'invalid_client');
+  assert.equal(r.headers.get('cache-control'), 'no-store'); assert.equal(r.headers.get('pragma'), 'no-cache');
+
+  // secret in the body (client_secret_post) + PKCE -> tokens
+  c = await getCode();
+  r = await tokenReq({ code: c.code, code_verifier: c.verifier, client_secret: client.client_secret });
+  assert.equal(r.status, 200, 'secret + PKCE must succeed'); assert.ok(r.body.id_token);
+  assert.equal(r.headers.get('cache-control'), 'no-store'); assert.equal(r.headers.get('pragma'), 'no-cache');
+
+  // secret via HTTP Basic (client_secret_basic)
+  c = await getCode();
+  const basic = 'Basic ' + Buffer.from(`${encodeURIComponent(client.client_id)}:${encodeURIComponent(client.client_secret)}`).toString('base64');
+  r = await tokenReq({ code: c.code, code_verifier: c.verifier }, { 'Content-Type': 'application/json', Authorization: basic });
+  assert.equal(r.status, 200, 'Basic auth must succeed');
+
+  // wrong secret via Basic -> 401 + WWW-Authenticate matching the scheme
+  c = await getCode();
+  const bad = 'Basic ' + Buffer.from(`${client.client_id}:nope`).toString('base64');
+  r = await tokenReq({ code: c.code, code_verifier: c.verifier }, { 'Content-Type': 'application/json', Authorization: bad });
+  assert.equal(r.status, 401); assert.equal(r.body.error, 'invalid_client');
+  assert.match(r.headers.get('www-authenticate') ?? '', /^Basic/);
+
+  // no PKCE at all, secret only -> tokens (PKCE is not required for this client)
+  c = await getCode({ pkce: false });
+  r = await tokenReq({ code: c.code, client_secret: client.client_secret });
+  assert.equal(r.status, 200, 'secret without PKCE must succeed for a client that does not require PKCE');
+});
+
+test('token: a public client is PKCE-only, and PKCE is mandatory for it', opt, async () => {
+  let r = await jpost('/admin/clients', { name: 'Pub', redirect_uris: ['https://pub/cb'], scopes: ['openid'], public: true, pkce: false });
+  assert.equal(r.status, 400, 'a public client cannot opt out of PKCE');
+  const client = (await jpost('/admin/clients', { name: 'Pub', redirect_uris: ['https://pub/cb'], scopes: ['openid'], public: true })).body;
+  assert.equal(client.public, true);
+  const getCode = await signerFor('pub1', client);
+
+  // no code_challenge -> refused at the authorization endpoint
+  let c = await getCode({ pkce: false });
+  assert.equal(c.login.status, 400); assert.equal(c.login.body.error, 'invalid_request');
+
+  // PKCE without any secret -> tokens
+  c = await getCode();
+  r = await jpost('/token', { grant_type: 'authorization_code', code: c.code, redirect_uri: 'https://pub/cb', client_id: client.client_id, code_verifier: c.verifier });
+  assert.equal(r.status, 200, 'public client + PKCE must succeed'); assert.ok(r.body.access_token);
+
+  // userinfo: valid token -> 200; bogus token -> 401 with a Bearer challenge naming the error
+  let u = await rget('/userinfo', { Authorization: `Bearer ${r.body.access_token}` });
+  assert.equal(u.status, 200); assert.equal(u.body.sub, JSON.parse(Buffer.from(r.body.id_token.split('.')[1], 'base64url')).sub);
+  u = await rget('/userinfo', { Authorization: 'Bearer not-a-token' });
+  assert.equal(u.status, 401);
+  assert.match(u.headers.get('www-authenticate') ?? '', /^Bearer error="invalid_token"/);
+  u = await rget('/userinfo');
+  assert.equal(u.status, 401); assert.equal(u.headers.get('www-authenticate'), 'Bearer');
+});
+
+test('discovery advertises exactly what the OP does', opt, async () => {
+  const d = (await jget('/.well-known/openid-configuration', {})).body;
+  assert.equal(d.issuer, BASE);
+  assert.deepEqual(d.grant_types_supported, ['authorization_code']);
+  assert.deepEqual(d.response_modes_supported, ['query']);
+  assert.equal(d.request_parameter_supported, false);
+  assert.equal(d.request_uri_parameter_supported, false);
+  assert.deepEqual(d.code_challenge_methods_supported, ['S256']);
+  assert.ok(d.claims_supported.includes('email_verified') && d.claims_supported.includes('auth_time'));
+  assert.ok(d.token_endpoint_auth_methods_supported.includes('none'));
+});
+
+test('authorize: error codes and repeated parameters', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'Err', redirect_uris: ['https://err/cb'], scopes: ['openid'] })).body;
+  const q = (o) => '/authorize?' + new URLSearchParams(o).toString();
+
+  // unknown client / unregistered redirect_uri: answered directly, never redirected
+  let r = await rget(q({ client_id: 'nope', redirect_uri: 'https://err/cb', response_type: 'code', scope: 'openid' }));
+  assert.equal(r.status, 400); assert.equal(r.body.error, 'invalid_request');
+  r = await rget(q({ client_id: client.client_id, redirect_uri: 'https://evil/cb', response_type: 'code', scope: 'openid' }));
+  assert.equal(r.status, 400); assert.equal(r.body.error, 'invalid_request');
+
+  // registered redirect_uri + bad response_type: redirected with error + state
+  r = await rget(q({ client_id: client.client_id, redirect_uri: 'https://err/cb', response_type: 'token', scope: 'openid', state: 'xyz' }));
+  assert.equal(r.status, 302);
+  const loc = new URL(r.headers.get('location'));
+  assert.equal(loc.origin + loc.pathname, 'https://err/cb');
+  assert.equal(loc.searchParams.get('error'), 'unsupported_response_type');
+  assert.equal(loc.searchParams.get('state'), 'xyz');
+
+  // code_challenge without S256 method (= plain) is refused at the authorization endpoint
+  r = await rget(q({ client_id: client.client_id, redirect_uri: 'https://err/cb', response_type: 'code', scope: 'openid', code_challenge: 'a'.repeat(43) }));
+  assert.equal(r.status, 302);
+  assert.equal(new URL(r.headers.get('location')).searchParams.get('error'), 'invalid_request');
+
+  // a repeated parameter used to be a 500 (Array.split)
+  r = await rget(q({ client_id: client.client_id, redirect_uri: 'https://err/cb', response_type: 'code' }) + '&scope=openid&scope=email');
+  assert.equal(r.status, 400); assert.equal(r.body.error, 'invalid_request');
+  r = await rget('/logout?id_token_hint=a&id_token_hint=b');
+  assert.equal(r.status, 400);
+
+  // token endpoint: missing grant_type / client_id
+  let t = await rpost('/token', { code: 'x' }, { 'Content-Type': 'application/json' });
+  assert.equal(t.status, 400); assert.equal(t.body.error, 'invalid_request');
+  t = await rpost('/token', { grant_type: 'authorization_code', code: 'x' }, { 'Content-Type': 'application/json' });
+  assert.equal(t.status, 401); assert.equal(t.body.error, 'invalid_client');
 });

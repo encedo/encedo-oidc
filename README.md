@@ -710,11 +710,18 @@ curl -s -X POST $BASE/admin/clients \
     "name": "My App",
     "redirect_uris": ["https://myapp.example.com/callback"],
     "scopes": ["openid", "profile", "email"],
-    "pkce": true
+    "pkce": true,
+    "public": false
   }' | tee client.json
 ```
 
 Note the `client_id` and `client_secret` from the response — configure these in your RP (e.g. Nextcloud).
+
+Every client is **confidential** by default: `/token` always requires the `client_secret` (HTTP Basic or
+`client_secret_post`), and PKCE is checked *in addition* when the authorization request carried a
+`code_challenge`. A browser-only or native app that cannot keep a secret is registered with `"public": true`
+(admin panel: *Public client*): it authenticates with PKCE alone, which the authorization endpoint then makes
+mandatory for it (`token_endpoint_auth_method=none`).
 
 ### 2. Create a user
 

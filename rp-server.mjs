@@ -9,6 +9,7 @@ import { URLSearchParams } from 'url';
 
 const OP_BASE    = process.env.OP_BASE    || 'http://localhost:3000';
 const CLIENT_ID  = process.env.RP_CLIENT_ID  || '';
+const CLIENT_SECRET = process.env.RP_CLIENT_SECRET || '';   // empty = registered as a public client (PKCE only)
 const RP_PORT    = process.env.RP_PORT    || 9876;
 const REDIRECT   = `http://localhost:${RP_PORT}/callback`;
 
@@ -138,11 +139,16 @@ async function router(req, res) {
     console.log('[RP] -> POST /token (server-to-server)');
     const tokenRes = await fetch(`${OP_BASE}/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        // Confidential client: client_secret_basic. Without RP_CLIENT_SECRET the
+        // OP must have this client registered as public, or /token answers 401.
+        ...(CLIENT_SECRET ? { Authorization: 'Basic ' + Buffer.from(`${encodeURIComponent(CLIENT_ID)}:${encodeURIComponent(CLIENT_SECRET)}`).toString('base64') } : {}),
+      },
       body: new URLSearchParams({
         grant_type:    'authorization_code',
         code,
-        client_id:     CLIENT_ID,
+        ...(CLIENT_SECRET ? {} : { client_id: CLIENT_ID }),
         redirect_uri:  REDIRECT,
         code_verifier: pending.verifier,
       }),

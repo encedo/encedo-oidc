@@ -699,12 +699,16 @@ async function loadClients() {
       const openBadge = c.allow_any_user
         ? `<span class="link-pill is-empty" style="cursor:default" title="Any enrolled user can sign in — the per-user allow-list is bypassed"><span class="dot"></span>open</span>`
         : '';
+      const publicBadge = c.public
+        ? `<span class="link-pill is-empty" style="cursor:default" title="Public client: no client_secret, PKCE only"><span class="dot"></span>public</span>`
+        : '';
       return `<div class="client-card">
         <div class="client-card-body">
           <div class="client-card-name">${esc(c.name)}</div>
           <div class="client-card-meta">id: <span>${esc(c.client_id)}</span> &nbsp;&middot;&nbsp; ${esc(urimeta)}</div>
           <div class="client-card-scopes">${scopePills}
             ${linkPill('client-users', c.client_id, userCount)}
+            ${publicBadge}
             ${openBadge}
           </div>
         </div>
@@ -724,6 +728,7 @@ function openAddClient() {
   $('c-id-ttl').value = 3600; $('c-at-ttl').value = 3600;
   setScopesIn('c-scopes', ['openid','profile','email']);
   $('c-pkce').classList.add('on');
+  $('c-public').classList.remove('on'); // confidential by default -- secret required at /token
   $('c-open').classList.remove('on');   // open access off by default -- explicit opt-in
   initScopeTags('c-scopes');
   openModal('modal-add-client');
@@ -734,7 +739,8 @@ async function submitAddClient() {
   const name   = $('c-name').value.trim();
   const uris   = $('c-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('c-scopes');
-  const pkce   = $('c-pkce').classList.contains('on');
+  const isPublic = $('c-public').classList.contains('on');
+  const pkce   = isPublic || $('c-pkce').classList.contains('on');   // a public client is PKCE-only
   const allow_any_user = $('c-open').classList.contains('on');
   const id_token_ttl     = parseInt($('c-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('c-at-ttl').value) || 3600;
@@ -742,7 +748,7 @@ async function submitAddClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-add-client');
     $('rc-id').textContent = c.client_id;
@@ -763,6 +769,7 @@ function openEditClient(idx) {
   setScopesIn('ec-scopes', c.scopes || ['openid','profile','email']);
   if (c.pkce !== false) $('ec-pkce').classList.add('on');
   else $('ec-pkce').classList.remove('on');
+  $('ec-public').classList.toggle('on', c.public === true);
   if (c.allow_any_user) $('ec-open').classList.add('on');
   else $('ec-open').classList.remove('on');
   initScopeTags('ec-scopes');
@@ -774,7 +781,8 @@ async function submitEditClient() {
   const name   = $('ec-name').value.trim();
   const uris   = $('ec-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('ec-scopes');
-  const pkce   = $('ec-pkce').classList.contains('on');
+  const isPublic = $('ec-public').classList.contains('on');
+  const pkce   = isPublic || $('ec-pkce').classList.contains('on');
   const allow_any_user = $('ec-open').classList.contains('on');
   const id_token_ttl     = parseInt($('ec-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('ec-at-ttl').value) || 3600;
@@ -782,7 +790,7 @@ async function submitEditClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-edit-client');
     toast('Client updated');

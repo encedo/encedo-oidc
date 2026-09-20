@@ -8,6 +8,7 @@ import { rateLimit }                             from '../middleware/rateLimit.j
 import { validate, vState, vNonce, vCodeChallenge, vCodeVerifier, vSignature } from '../middleware/validate.js';
 import { revokeUserTokens } from '../services/tokens.js';
 import { JWT_ALG, b64urlStr, verifySignature, buildJwk } from '../services/jwt.js';
+import { oidcIssuer } from '../services/issuer.js';
 
 const router = Router();
 
@@ -40,6 +41,31 @@ async function findUserByUsername(username) {
 }
 
 /**
+ * Express parses a repeated query/form key (?scope=a&scope=b) into an array.
+ * Every OIDC parameter is single-valued, and the handlers below call string
+ * methods on them, so a repeated key would surface as a 500. Reject it up
+ * front with the error the spec has for a malformed request.
+ */
+function singleValued(req, res, next) {
+  for (const src of [req.query, req.body]) {
+    if (!src || typeof src !== 'object') continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (v !== undefined && typeof v !== 'string') {
+        return res.status(400).json({ error: 'invalid_request', error_description: `parameter ${k} must be a single string value` });
+      }
+    }
+  }
+  next();
+}
+
+/** RFC 6749 s.5.1/s.5.2: token responses (success and error) must not be cached. */
+function noStore(_req, res, next) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  next();
+}
+
+/**
  * Validate the scope, PKCE and OIDC request params shared by GET /authorize and
  * POST /authorize/login. The caller MUST have already validated client_id and
  * redirect_uri -- ordering is security-sensitive (an error must never touch an
@@ -53,8 +79,17 @@ function validateAuthParams({ scope, code_challenge, code_challenge_method, nonc
   const allowedScopes = JSON.parse(clientRaw.scopes ?? '["openid"]');
   if (!requestedScopes.every(s => allowedScopes.includes(s))) return { error: 'invalid_scope' };
 
-  if (clientRaw.pkce === 'true' && (!code_challenge || code_challenge_method !== 'S256')) {
+  // PKCE is mandatory for a client that opted in AND for every public client
+  // (no secret -- PKCE is the only thing binding the code to the requester).
+  const pkceRequired = clientRaw.pkce === 'true' || clientRaw.public === 'true';
+  if (pkceRequired && !code_challenge) {
     return { error: 'invalid_request', error_description: 'PKCE S256 required' };
+  }
+  // RFC 7636 s.4.3: a missing code_challenge_method means "plain", which this
+  // OP does not support (Discovery says S256 only). Say so here, at the
+  // authorization endpoint, instead of letting /token fail with invalid_grant.
+  if (code_challenge && code_challenge_method !== 'S256') {
+    return { error: 'invalid_request', error_description: 'code_challenge_method must be S256' };
   }
 
   const paramErr = validate(
@@ -69,7 +104,7 @@ function validateAuthParams({ scope, code_challenge, code_challenge_method, nonc
 
 // --- 1. GET /.well-known/openid-configuration -----------------
 export function discoveryHandler(_req, res) {
-  const issuer = process.env.ISSUER;
+  const issuer = oidcIssuer();
   res.json({
     issuer,
     authorization_endpoint:                `${issuer}/authorize`,
@@ -79,18 +114,26 @@ export function discoveryHandler(_req, res) {
     end_session_endpoint:                   `${issuer}/logout`,
     scopes_supported:                       ['openid', 'email', 'profile'],
     response_types_supported:               ['code'],
+    // Discovery 1.0 s.3 defaults would otherwise advertise implicit,
+    // fragment responses and request_uri -- none of which exist here.
+    grant_types_supported:                  ['authorization_code'],
+    response_modes_supported:               ['query'],
+    request_parameter_supported:            false,
+    request_uri_parameter_supported:        false,
+    claims_parameter_supported:             false,
     subject_types_supported:               ['public'],
     id_token_signing_alg_values_supported:  ['EdDSA', 'ES256', 'ES384', 'ES512'],
     userinfo_signing_alg_values_supported:  ['none'],
+    // 'none' = public client (client.public=true): PKCE only, no secret.
     token_endpoint_auth_methods_supported:  ['client_secret_basic', 'client_secret_post', 'none'],
     code_challenge_methods_supported:       ['S256'],
-    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'nonce',
-                       'name', 'email', 'preferred_username'],
+    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
+                       'name', 'email', 'email_verified', 'preferred_username'],
   });
 }
 
 // --- 2. GET /jwks.json ----------------------------------------
-router.get('/jwks.json', async (req, res, next) => {
+router.get('/jwks.json', singleValued, async (req, res, next) => {
   try {
     if (!jwksCache || Date.now() > jwksCache.expiresAt) {
       const users = await getAllUsers();
@@ -112,23 +155,29 @@ router.get('/jwks.json', async (req, res, next) => {
 });
 
 // --- 3. GET /authorize -- validate params, serve Trusted App ---
-router.get('/authorize', async (req, res, next) => {
+router.get('/authorize', singleValued, async (req, res, next) => {
   try {
     const { client_id, redirect_uri, response_type, state } = req.query;
 
     // Validate client + redirect_uri FIRST -- an error must never be redirected
     // to an unvalidated redirect_uri (open-redirect prevention, OAuth 2.0 s.4.1.2.1).
-    const clientRaw = await redis.hGetAll(`client:${client_id}`);
+    // These two are answered to the user agent directly (RFC 6749 s.4.1.2.1:
+    // "inform the resource owner", never redirect) with the registry code for
+    // a malformed request.
+    const clientRaw = client_id ? await redis.hGetAll(`client:${client_id}`) : null;
     if (!clientRaw?.client_id) {
-      return res.status(400).json({ error: 'unauthorized_client' });
+      return res.status(400).json({ error: 'invalid_request', error_description: 'unknown client_id' });
     }
 
     const allowedRedirects = JSON.parse(clientRaw.redirect_uris ?? '[]');
     if (!redirect_uri || !allowedRedirects.includes(redirect_uri)) {
-      return res.status(400).json({ error: 'invalid_redirect_uri' });
+      return res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri is not registered for this client' });
     }
 
     // redirect_uri is now trusted -- subsequent errors may safely redirect to it.
+    if (!response_type) {
+      return sendAuthError(res, redirect_uri, 'invalid_request', state, 'response_type is required');
+    }
     if (response_type !== 'code') {
       return sendAuthError(res, redirect_uri, 'unsupported_response_type', state);
     }
@@ -147,7 +196,8 @@ router.post('/authorize/login',
   // rotating client_id, but the caller cannot rotate their source IP as cheaply.
   rateLimit({ prefix: 'login-ip', max: 40, window: 60 }),
   rateLimit({ prefix: 'login', max: 20, window: 60,
-    keyFn: req => req.body?.client_id ?? req.ip }),
+    keyFn: req => (typeof req.body?.client_id === 'string' && req.body.client_id) || req.ip }),
+  singleValued,
   async (req, res, next) => {
     try {
       const {
@@ -155,18 +205,21 @@ router.post('/authorize/login',
         state, nonce, code_challenge, response_type,
       } = req.body;
 
+      if (!response_type) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'response_type is required' });
+      }
       if (response_type !== 'code') {
         return res.status(400).json({ error: 'unsupported_response_type' });
       }
 
-      const clientRaw = await redis.hGetAll(`client:${client_id}`);
+      const clientRaw = client_id ? await redis.hGetAll(`client:${client_id}`) : null;
       if (!clientRaw?.client_id) {
-        return res.status(400).json({ error: 'unauthorized_client' });
+        return res.status(400).json({ error: 'invalid_request', error_description: 'unknown client_id' });
       }
 
       const allowedRedirects = JSON.parse(clientRaw.redirect_uris ?? '[]');
-      if (!allowedRedirects.includes(redirect_uri)) {
-        return res.status(400).json({ error: 'invalid_redirect_uri' });
+      if (!redirect_uri || !allowedRedirects.includes(redirect_uri)) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'redirect_uri is not registered for this client' });
       }
 
       const authErr = validateAuthParams(req.body, clientRaw);
@@ -213,7 +266,7 @@ router.post('/authorize/login',
       const keyType = user.key_type || 'Ed25519';
       const header  = { alg: JWT_ALG[keyType] ?? 'EdDSA', kid: user.kid };
       const payload = {
-        iss:                process.env.ISSUER,
+        iss:                oidcIssuer(),
         sub:                user.sub,
         aud:                client_id,
         iat:                now,
@@ -262,6 +315,7 @@ router.post('/authorize/login',
 // --- 5. POST /authorize/confirm -------------------------------
 router.post('/authorize/confirm',
   rateLimit({ prefix: 'confirm', max: 10, window: 60 }),
+  singleValued,
   async (req, res, next) => {
     try {
       const { session_id, signature } = req.body;
@@ -336,8 +390,19 @@ router.post('/authorize/confirm',
 );
 
 // --- 6. POST /token -------------------------------------------
+// Client authentication (RFC 6749 s.3.2.1 / OIDC Core s.9): a confidential
+// client -- every client unless registered with public=true -- MUST present its
+// client_secret, via HTTP Basic or the request body. PKCE is verified IN
+// ADDITION whenever the code carries a code_challenge; it never replaces the
+// secret. (It used to: any code minted with a code_challenge skipped the
+// secret check, so an attacker who planted their own challenge in the
+// authorization link could redeem a leaked code without the secret.) A public
+// client has no secret and is bound to the code by PKCE alone, which the
+// authorization endpoint makes mandatory for it.
 router.post('/token',
   rateLimit({ prefix: 'token', max: 20, window: 60 }),
+  noStore,
+  singleValued,
   async (req, res, next) => {
     try {
       let {
@@ -345,22 +410,41 @@ router.post('/token',
         client_id, client_secret, code_verifier,
       } = req.body;
 
-      // M6: also accept client credentials via HTTP Basic Auth (RFC 6749 s.2.3.1)
+      // Client credentials via HTTP Basic (RFC 6749 s.2.3.1): the two parts are
+      // form-urlencoded before being joined with ':' and base64-encoded.
       const basicHeader = req.headers['authorization'];
-      if (basicHeader?.startsWith('Basic ')) {
+      const usedBasic   = typeof basicHeader === 'string' && basicHeader.startsWith('Basic ');
+      if (usedBasic) {
         const decoded = Buffer.from(basicHeader.slice(6), 'base64').toString();
         const colon   = decoded.indexOf(':');
         if (colon > 0) {
-          client_id     = decoded.slice(0, colon);
-          client_secret = decoded.slice(colon + 1);
+          try {
+            client_id     = decodeURIComponent(decoded.slice(0, colon));
+            client_secret = decodeURIComponent(decoded.slice(colon + 1));
+          } catch {
+            client_id = client_secret = undefined;
+          }
         }
       }
 
+      // RFC 6749 s.5.2: invalid_client is 401, and when the client used the
+      // Authorization header the response carries a matching WWW-Authenticate.
+      const invalidClient = (description) => {
+        if (usedBasic) res.setHeader('WWW-Authenticate', 'Basic realm="token"');
+        return res.status(401).json({ error: 'invalid_client', ...(description ? { error_description: description } : {}) });
+      };
+
+      if (!grant_type) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'grant_type is required' });
+      }
       if (grant_type !== 'authorization_code') {
         return res.status(400).json({ error: 'unsupported_grant_type' });
       }
       if (!code) {
         return res.status(400).json({ error: 'invalid_request', error_description: 'missing code' });
+      }
+      if (!client_id) {
+        return invalidClient('client_id is required');
       }
 
       // Consume auth code (one-time use)
@@ -379,28 +463,14 @@ router.post('/token',
 
       const clientRaw = await redis.hGetAll(`client:${client_id}`);
       if (!clientRaw?.client_id) {
-        return res.status(401).json({ error: 'invalid_client' });
+        return invalidClient();
       }
 
-      // Authenticate client: PKCE or client_secret (timing-safe)
-      if (codeData.code_challenge) {
-        if (!code_verifier) {
-          return res.status(400).json({ error: 'invalid_request', error_description: 'code_verifier required' });
-        }
-        const verifierErr = vCodeVerifier(code_verifier);
-        if (verifierErr) return res.status(400).json({ error: 'invalid_request', error_description: verifierErr });
-        const expected = createHash('sha256').update(code_verifier).digest('base64url');
-        // timing-safe compare
-        let match = false;
-        try {
-          match = timingSafeEqual(Buffer.from(expected), Buffer.from(codeData.code_challenge));
-        } catch { match = false; }
-        if (!match) {
-          return res.status(400).json({ error: 'invalid_grant', error_description: 'code_verifier mismatch' });
-        }
-      } else {
+      // 1. Client authentication -- confidential clients always, regardless of PKCE.
+      const isPublic = clientRaw.public === 'true';
+      if (!isPublic) {
         if (!client_secret) {
-          return res.status(401).json({ error: 'invalid_client' });
+          return invalidClient('client authentication required');
         }
         let match = false;
         try {
@@ -409,7 +479,28 @@ router.post('/token',
           match = a.length === b.length && timingSafeEqual(a, b);
         } catch { match = false; }
         if (!match) {
-          return res.status(401).json({ error: 'invalid_client' });
+          return invalidClient();
+        }
+      } else if (!codeData.code_challenge) {
+        // The authorization endpoint refuses a public client without PKCE, so
+        // this is a defence in depth against a code minted some other way.
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'PKCE is required for a public client' });
+      }
+
+      // 2. PKCE -- whenever the code was bound to a challenge (RFC 7636 s.4.6).
+      if (codeData.code_challenge) {
+        if (!code_verifier) {
+          return res.status(400).json({ error: 'invalid_request', error_description: 'code_verifier required' });
+        }
+        const verifierErr = vCodeVerifier(code_verifier);
+        if (verifierErr) return res.status(400).json({ error: 'invalid_request', error_description: verifierErr });
+        const expected = createHash('sha256').update(code_verifier).digest('base64url');
+        let match = false;
+        try {
+          match = timingSafeEqual(Buffer.from(expected), Buffer.from(codeData.code_challenge));
+        } catch { match = false; }
+        if (!match) {
+          return res.status(400).json({ error: 'invalid_grant', error_description: 'code_verifier mismatch' });
         }
       }
 
@@ -456,26 +547,31 @@ router.post('/token',
 // RFC 6750: token via Authorization header (GET/POST) or body param (POST only)
 async function userinfoHandler(req, res, next) {
   try {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Pragma', 'no-cache');
+
     const authHeader = req.headers['authorization'] ?? '';
     const token = authHeader.startsWith('Bearer ')
       ? authHeader.slice(7)
-      : req.body?.access_token ?? null;   // POST body fallback (RFC 6750 s.2.2)
+      : (typeof req.body?.access_token === 'string' ? req.body.access_token : null);   // POST body fallback (RFC 6750 s.2.2)
 
+    // RFC 6750 s.3: a request without credentials gets a bare challenge; one
+    // with a bad token gets the challenge plus error="invalid_token".
     if (!token) {
       res.setHeader('WWW-Authenticate', 'Bearer');
       return res.status(401).json({ error: 'invalid_token' });
     }
+    const rejectToken = (description) => {
+      res.setHeader('WWW-Authenticate', `Bearer error="invalid_token", error_description="${description}"`);
+      return res.status(401).json({ error: 'invalid_token', error_description: description });
+    };
 
     const sessionRaw = await redis.get(`access:${token}`);
-    if (!sessionRaw) {
-      return res.status(401).json({ error: 'invalid_token', error_description: 'token expired or not found' });
-    }
+    if (!sessionRaw) return rejectToken('token expired or not found');
     const session = JSON.parse(sessionRaw);
 
     const userRaw = await redis.hGetAll(`user:${session.sub}`);
-    if (!userRaw?.sub) {
-      return res.status(400).json({ error: 'invalid_token', error_description: 'user not found' });
-    }
+    if (!userRaw?.sub) return rejectToken('user not found');
 
     const customClaims = JSON.parse(userRaw.custom_claims ?? '{}');
     const hsmUrlInUserinfo = userRaw.hsm_url_in_userinfo !== '0';
@@ -499,6 +595,7 @@ router.post('/userinfo', userinfoHandler);
 // --- 8. GET /logout (RP-initiated logout) ---------------------
 router.get('/logout',
   rateLimit({ prefix: 'logout', max: 20, window: 60 }),
+  singleValued,
   async (req, res, next) => {
     const { id_token_hint, post_logout_redirect_uri, state } = req.query;
 
@@ -539,7 +636,7 @@ router.get('/logout',
       if (!sub) return finish();
 
       // Verify issuer -- reject tokens from foreign OIDC providers
-      const issuerCheck = process.env.ISSUER ?? '';
+      const issuerCheck = oidcIssuer();
       if (issuerCheck && payload.iss !== issuerCheck) {
         await logSecurity(SEC.LOGOUT, { result: 'wrong_issuer', ip: req.ip });
         return finish();

@@ -28,7 +28,7 @@ jobs:
       - name: Run tests
         run: |
           sudo apt-get update && sudo apt-get install -y redis-server
-          node --test
+          node --test test/*.test.js
 
       - name: Build ZIP archive
         run: |

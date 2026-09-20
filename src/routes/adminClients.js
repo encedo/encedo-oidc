@@ -16,6 +16,7 @@ function deserialize(raw) {
     redirect_uris:    JSON.parse(raw.redirect_uris    ?? '[]'),
     scopes:           JSON.parse(raw.scopes           ?? '["openid"]'),
     pkce:             raw.pkce === 'true',
+    public:           raw.public === 'true',
     allow_any_user:   raw.allow_any_user === 'true',
     id_token_ttl:     parseInt(raw.id_token_ttl)     || 3600,
     access_token_ttl: parseInt(raw.access_token_ttl) || 3600,
@@ -57,6 +58,7 @@ router.post('/', async (req, res, next) => {
       name, redirect_uris = [],
       scopes = ['openid', 'profile', 'email'],
       pkce = true,
+      public: isPublic = false,
       allow_any_user = false,
       id_token_ttl = 3600,
       access_token_ttl = 3600,
@@ -74,6 +76,12 @@ router.post('/', async (req, res, next) => {
     }
     if (typeof pkce !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'pkce must be a boolean' });
+    }
+    if (typeof isPublic !== 'boolean') {
+      return res.status(400).json({ error: 'validation_error', error_description: 'public must be a boolean' });
+    }
+    if (isPublic && !pkce) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'a public client must require PKCE' });
     }
     if (typeof allow_any_user !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
@@ -95,6 +103,11 @@ router.post('/', async (req, res, next) => {
       redirect_uris:    JSON.stringify(redirect_uris),
       scopes:           JSON.stringify(validScopes),
       pkce:             String(pkce),
+      // Public client (token_endpoint_auth_method=none): a browser/native app
+      // that cannot keep a secret. /token then skips the secret and relies on
+      // PKCE alone, which /authorize makes mandatory for it. Off by default:
+      // every client is confidential and MUST send its secret, even with PKCE.
+      public:           String(isPublic),
       // Open client: ANY enrolled user may authenticate (skips the per-user
       // clients[] allowlist). Off by default -- admin opts in explicitly.
       allow_any_user:   String(allow_any_user),
@@ -145,6 +158,22 @@ router.patch('/:id', async (req, res, next) => {
         return res.status(400).json({ error: 'validation_error', error_description: 'pkce must be a boolean' });
       }
       updates.pkce = String(req.body.pkce);
+    }
+
+    if (req.body.public !== undefined) {
+      if (typeof req.body.public !== 'boolean') {
+        return res.status(400).json({ error: 'validation_error', error_description: 'public must be a boolean' });
+      }
+      updates.public = String(req.body.public);
+    }
+    // A public client is only ever bound to its code by PKCE.
+    {
+      const current    = await redis.hGetAll(`client:${id}`);
+      const willPublic = (updates.public ?? current.public) === 'true';
+      const willPkce   = (updates.pkce   ?? current.pkce)   === 'true';
+      if (willPublic && !willPkce) {
+        return res.status(400).json({ error: 'validation_error', error_description: 'a public client must require PKCE' });
+      }
     }
 
     if (req.body.allow_any_user !== undefined) {

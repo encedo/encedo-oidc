@@ -93,6 +93,7 @@ export async function signupClientRegisterHandler(req, res, next) {
       redirect_uris:    JSON.stringify(redirect_uris),
       scopes:           JSON.stringify(validScopes),
       pkce:             String(pkceEnabled),
+      public:           'false',   // self-registered clients are confidential; the admin can flip it
       id_token_ttl:     '3600',
       access_token_ttl: '3600',
       created_at:       new Date().toISOString(),

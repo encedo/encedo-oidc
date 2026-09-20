@@ -8,3 +8,12 @@
 export function issuer() {
   return process.env.ISSUER ?? `http://localhost:${process.env.PORT ?? 3000}`;
 }
+
+// The OIDC issuer identifier: ISSUER with any trailing slash removed, no
+// localhost fallback (Discovery 1.0 s.3: the value must be a URL with no
+// query/fragment, and RPs derive /.well-known/openid-configuration from it, so
+// "https://op.example/" and "https://op.example" would be two different
+// issuers). Empty when ISSUER is unset -- app.js warns about that at boot.
+export function oidcIssuer() {
+  return (process.env.ISSUER ?? '').replace(/\/+$/, '');
+}

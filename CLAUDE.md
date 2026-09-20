@@ -12,7 +12,7 @@ Read only when you need to know the HSM API.
 - `GET /authorize` — OIDC param validation, serves `signin.html`
 - `POST /authorize/login` — user lookup (by `sub` or `username`), builds `signing_input`, Redis session TTL 120s
 - `POST /authorize/confirm` — Ed25519 verify, assembles JWT, emits code
-- `POST /token` — PKCE S256, returns pre-signed `id_token` + `access_token`
+- `POST /token` — client_secret ALWAYS for confidential clients (Basic or POST) + PKCE S256 when the code has a challenge; `public=true` clients are PKCE-only. `Cache-Control: no-store`. Returns pre-signed `id_token` + `access_token`
 - `GET/POST /userinfo` — Bearer token
 - `GET /jwks.json` — with 60s in-process cache, invalidated on enrollment
 - `GET /.well-known/openid-configuration`
@@ -268,7 +268,7 @@ email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; 
 users             Set  { sub, ... }
 
 client:{id}       Hash { client_id, client_secret, name,
-                        redirect_uris, scopes, pkce, allow_any_user,
+                        redirect_uris, scopes, pkce, public, allow_any_user,
                         id_token_ttl, access_token_ttl, created_at }
                   allow_any_user: 'true'|'false' (default 'false') — open client: any ENROLLED user may
                     authenticate (login gate ORs it with user.clients[]); never auto-creates the identity
