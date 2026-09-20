@@ -27,7 +27,7 @@ Read only when you need to know the HSM API.
 
 ### Trusted App (`signin.js`) — 100%
 - Login screen — HSM URL only (no username/password fields)
-- Step A: `searchKeys(null, '^RVhUQUlE')` — mobile mode detection
+- Step A: `searchKeys(null, 'EXTAID')` — mobile mode detection (SDK anchors + base64-encodes the pattern)
 - Step B: `searchKeys(token?, '^ETSOIDC...')` — find OIDC keys
 - Auto-select when single key (skip s-keys)
 - s-keys screen — key list, selection
@@ -299,7 +299,7 @@ security:events   Pub/Sub channel
 ```
 doLogin()
   → hemCheckin()
-  → Step A: searchKeys(null, '^RVhUQUlE')
+  → Step A: searchKeys(null, 'EXTAID')
       ok  → session.openSearch=true, session.hasMobileApp=(keys.length>0)
       4xx → session.openSearch=false → showPinScreen() [pendingAfterPin='search']
   → Step B (only if openSearch):

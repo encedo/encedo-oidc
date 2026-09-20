@@ -94,9 +94,9 @@ Matches Encedo HSM convention. SHA-1 second-preimage resistance (~2¹⁶⁰) mak
 description = btoa('ETSOIDC' + sub)
 
 // Searched with:
-searchKeys(token, '^' + btoa('ETSOIDC'))  // pattern prefix match
+searchKeys(token, 'ETSOIDC')  // the SDK sends '^' + base64(pattern) -- anchored prefix match
 ```
-This links HSM keys to user subs. Mobile app detection uses prefix `^RVhUQUlE` (= `btoa('EXTAID')`).
+This links HSM keys to user subs. Mobile app detection searches for `EXTAID` (sent on the wire as `^RVhUQUlE`).
 
 ### EdDSA signing in HEM SDK
 ```javascript
