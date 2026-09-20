@@ -120,6 +120,26 @@
   }
   .field-input::placeholder { color: #aaa; }
 
+  /* -- SSO accounts -- */
+  .acct {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; text-align: left;
+    padding: 12px 14px; margin-bottom: 10px;
+    border: 1px solid var(--border); border-radius: 14px;
+    background: var(--white); cursor: pointer; font-family: inherit;
+    transition: border-color .15s;
+  }
+  .acct:hover:not(:disabled) { border-color: var(--purple); }
+  .acct:disabled { opacity: .55; cursor: default; }
+  .acct-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .acct-name { font-weight: 600; color: var(--text); font-size: 15px; }
+  .acct-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .remember-row {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 13px; color: var(--muted); line-height: 1.4;
+    margin: 4px 0 14px; cursor: pointer; user-select: none;
+  }
+
   /* -- Key select -- */
   .key-select {
     display: block;
@@ -315,6 +335,26 @@
   </div>
 </div>
 
+<!-- --- SSO ACCOUNTS --------------------------------- -->
+<div class="screen" id="s-accounts">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Choose account</div>
+  </div>
+  <div class="card">
+    <div class="rp-badge">
+      <div class="rp-dot"></div>
+      <div class="rp-label">
+        Sign in to&nbsp;<strong id="rp-label-accounts">Loading&hellip;</strong>
+      </div>
+    </div>
+    <div id="acct-list"></div>
+    <div class="err-msg" id="acct-err"></div>
+    <button class="btn btn-ghost btn-full" data-action="show-screen" data-screen="s-login">Use another account or key</button>
+    <div class="hint-row"><a href="#" data-action="sso-forget-all">Forget all sessions in this browser</a></div>
+  </div>
+</div>
+
 <!-- --- KEY SELECTION ------------------------------- -->
 <div class="screen" id="s-keys">
   <div class="logo-block">
@@ -349,6 +389,11 @@
       <div class="info-row"><span class="info-key">expires</span><span class="info-value" id="tc-exp"></span></div>
       <div id="tc-extra"></div>
     </div>
+    <div class="hint-row" id="tc-note" style="display:none;margin-bottom:10px;"></div>
+    <label class="remember-row" id="tc-remember-row">
+      <input type="checkbox" id="tc-remember" checked style="accent-color:var(--purple);width:16px;height:16px;margin-top:2px;flex-shrink:0;">
+      <span>Remember in this browser &mdash; sign in to other apps with this key without the phone or passphrase, for up to <strong id="tc-remember-hours">8</strong>&nbsp;h</span>
+    </label>
     <div class="btn-row">
       <button class="btn btn-ghost" data-action="do-cancel">Cancel</button>
       <button class="btn btn-primary" id="tc-approve-btn" data-action="do-approve-sign">Approve &rarr;</button>

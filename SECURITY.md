@@ -51,6 +51,16 @@ Every client is confidential unless registered with `public: true`. A confidenti
 ### PKCE S256 (RFC 7636)
 Required per client (configurable, default on; always on for public clients). Protects against authorization code interception. Code verifier 43–128 characters, challenge method must be `S256` — a `code_challenge` without `code_challenge_method=S256` is refused at the authorization endpoint.
 
+### Single sign-on session (HEM token in the browser)
+After an authorization the sign-in page may keep the HEM-issued token for the user's key (`keymgmt:use:<kid>`) in `localStorage` of the provider origin and reuse it to have the HEM sign further ID Tokens without a new phone/passphrase confirmation. Properties:
+
+- The token is a bearer credential to sign with that key until it expires. It is worth nothing without network access to the HEM, and it **never reaches the server** — the page reports only the authorization time (`sso_iat`); a server holding the token could sign without the device, which would break the core guarantee.
+- Lifetime is decided by the device/user (the page suggests `SSO_SUGGEST_SECONDS`, default 8 h; the user may change it on the phone). The server refuses a session older than `SSO_MAX_SECONDS` (8 h) regardless.
+- Policy is a conjunction: `SSO_ENABLED`, `client.sso`, `user.sso`, the browser tick, and the RP's `prompt`/`max_age`. Any refusal turns the attempt into a normal interactive sign-in; the reason is reported to the page.
+- `auth_time` in the ID Token is the original HEM authorization; `amr` distinguishes `["hwk"]` from `["hwk","sso"]`, so an RP can require freshness on its own.
+- Ending a session: token expiry, `/logout` on the provider (its page runs `logout.js`, which clears the entries for the signed-out user), “Forget all sessions in this browser”, or the device refusing the token (unplugged/rebooted — the HEM issues no long-lived state to the phone app).
+- Exposure: an XSS on the provider origin could read the token — the same threat as a session cookie without HttpOnly; the CSP (no inline script, no inline handlers) is the control. A stolen token is usable only while the HEM stays reachable to the thief.
+
 ### Timing-safe comparisons
 `client_secret` and `ADMIN_SECRET` are compared using `crypto.timingSafeEqual`. Prevents secret length/value leakage via timing side-channel.
 

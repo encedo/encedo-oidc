@@ -169,6 +169,22 @@ encedo-oidc/
 
 ---
 
+## Single sign-on
+
+```
+browser (OP origin localStorage)           OP server                      HEM
+ encedo_sso:<hsm_url>|<kid> = {token,iat,exp,sub,…}
+   │  /authorize (client B)
+   ├─ accounts screen ── click ─────────►  /authorize/login {sub, sso_iat}
+   │                                       policy: SSO_ENABLED ∧ client.sso ∧ user.sso
+   │                                               ∧ age ≤ SSO_MAX ∧ ¬prompt=login ∧ age ≤ max_age
+   │                       ◄── signing_input (auth_time = iat, amr = [hwk,sso]) ──┤
+   ├─ getVersion (reachable?) ───────────────────────────────────────────────────►
+   ├─ exdsaSign(cached token) ──────────────────────────────────────────────────►  401 → drop entry, fresh sign-in
+   └─ /authorize/confirm ──────────────►  code → redirect
+```
+The token never leaves the browser. `/logout` serves a page whose `logout.js` removes the entries of the signed-out user before following the post-logout redirect.
+
 ## Redis Schema
 
 ```

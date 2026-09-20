@@ -1,5 +1,17 @@
-import { HEM } from '/hem-sdk.js';
+import { HEM, jwtParse } from '/hem-sdk.js';
 import { exdsaAlg, derToP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg } from '/hsm-common.js';
+
+// --- Test hook: broker override, localhost only -------
+// The SDK talks to api.encedo.com for check-in and mobile push. The browser
+// E2E test (test/e2e/sso.mjs) runs a fake device AND a fake broker; it names
+// the broker with ?hem_broker=. Honoured only when the page itself is served
+// from localhost, so no RP can ever point a real deployment at a broker of
+// its choosing.
+const HEM_OPTS = (() => {
+  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
+  const b = new URLSearchParams(location.search).get('hem_broker');
+  return isLocal && b ? { broker: b } : {};
+})();
 
 // --- OIDC params --------------------------------------
 const params = new URLSearchParams(window.location.search);
@@ -12,7 +24,21 @@ const OIDC = {
   nonce:                 params.get('nonce')                 || '',
   code_challenge:        params.get('code_challenge')        || '',
   code_challenge_method: params.get('code_challenge_method') || '',
+  // SSO policy inputs from the RP -- sent along so the server can refuse a
+  // reused authorization (prompt=login, max_age shorter than the session).
+  prompt:                params.get('prompt')                || '',
+  max_age:               params.get('max_age')               || '',
+  login_hint:            params.get('login_hint')            || '',
 };
+// What every /authorize/login call carries. Empty optionals are left out
+// (the server treats a present-but-empty max_age as a number to parse).
+function oidcBody(extra = {}) {
+  const b = { ...OIDC, ...extra };
+  for (const k of ['prompt', 'max_age', 'login_hint', 'state', 'nonce', 'code_challenge', 'code_challenge_method']) {
+    if (b[k] === '') delete b[k];
+  }
+  return b;
+}
 
 // The device pages its search at 15 entries by default; ask for more so a
 // second account or a re-enrolled key on the same HSM is never silently cut off.
@@ -32,6 +58,8 @@ function freshSession() {
     keys:            [],     // last key list from searchKeys -- to re-pick by kid
     pendingAfterPin: null,   // 'search' | 'use'
     pendingSign:     null,   // { useToken, kid, label, loginData } -- set before s-token-confirm
+    ssoEntry:        null,   // the cached HEM session being reused (accounts screen), else null
+    rememberSso:     false,  // user ticked "remember in this browser" on the confirm screen
   };
 }
 let session = freshSession();
@@ -69,6 +97,43 @@ function lsRestoreHints() {
     }
   } catch {}
 }
+
+// --- SSO sessions (per HEM + key) ---------------------
+// A HEM token for keymgmt:use:<kid> is a bearer credential to sign with that
+// key until it expires. Kept ONLY here, on the OP origin, never sent to the
+// server (which must not be able to sign without the device). One entry per
+// device+key; /logout (logout.js) and "Forget" remove them.
+const SSO_PREFIX = 'encedo_sso:';
+const ssoKey = (hsmUrl, kid) => SSO_PREFIX + hsmUrl.replace(/\/+$/, '') + '|' + kid;
+
+function ssoList() {
+  const now = Math.floor(Date.now() / 1000);
+  const out = [];
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    for (const k of keys) {
+      if (!k?.startsWith(SSO_PREFIX)) continue;
+      let v = null;
+      try { v = JSON.parse(localStorage.getItem(k)); } catch { v = null; }
+      if (v?.token && v.exp > now + 30 && v.hsm_url && v.kid) out.push({ key: k, ...v });
+      else localStorage.removeItem(k);          // expired or malformed
+    }
+  } catch { /* storage unavailable */ }
+  return out.sort((a, b) => (b.iat ?? 0) - (a.iat ?? 0));
+}
+function ssoSave(entry)   { try { localStorage.setItem(ssoKey(entry.hsm_url, entry.kid), JSON.stringify(entry)); } catch {} }
+function ssoForget(key)   { try { localStorage.removeItem(key); } catch {} }
+function ssoForgetAll()   { for (const e of ssoList()) ssoForget(e.key); }
+
+const SSO_REJECT_TEXT = {
+  client:   'This application requires confirmation on your HEM at every sign-in.',
+  user:     'Your account requires confirmation on your HEM at every sign-in.',
+  prompt:   'The application asked for a fresh sign-in.',
+  max_age:  'The application requires a more recent sign-in.',
+  too_old:  'Your browser session is too old for single sign-on.',
+  disabled: 'Single sign-on is disabled on this server.',
+};
 
 // --- Fasttrack cache (per redirect_uri) ---------------
 function ftKey() { return 'encedo_ft_' + OIDC.redirect_uri; }
@@ -112,13 +177,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const rpHost = new URL(OIDC.redirect_uri).hostname;
     document.getElementById('rp-label-login').textContent = rpHost;
     document.getElementById('sign-audience').textContent  = rpHost;
+    document.getElementById('rp-label-accounts').textContent = rpHost;
   } catch {
     const label = OIDC.client_id || 'Unknown client';
     document.getElementById('rp-label-login').textContent = label;
+    document.getElementById('rp-label-accounts').textContent = label;
   }
 
   lsRestoreHints();
   ftRestoreUI();
+  maybeShowAccounts();
 
   document.getElementById('hsm-url-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
@@ -134,6 +202,138 @@ function showScreen(id) {
   document.getElementById(id).classList.add('visible');
   // Leaving the passphrase screen ("Back") must not leave the passphrase in the input.
   if (id !== 's-pin') document.getElementById('pin-input').value = '';
+}
+
+// --- SSO: accounts screen -----------------------------
+// With a usable session in this browser the page opens on the account list
+// instead of the HSM URL form. prompt=login from the RP skips it (the server
+// would refuse the session anyway; no point offering it).
+function maybeShowAccounts() {
+  if ((OIDC.prompt || '').split(' ').includes('login')) return false;
+  const list = ssoList();
+  if (!list.length) return false;
+  renderAccounts(list);
+  showScreen('s-accounts');
+  return true;
+}
+
+function renderAccounts(list) {
+  const box = document.getElementById('acct-list');
+  box.replaceChildren();
+  const hint = (OIDC.login_hint || '').toLowerCase();
+  const ordered = hint
+    ? [...list].sort((a, b) => Number((b.username || '').toLowerCase() === hint) - Number((a.username || '').toLowerCase() === hint))
+    : list;
+  for (const e of ordered) {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'acct';
+    btn.dataset.action = 'sso-pick'; btn.dataset.key = e.key;
+    const dot = document.createElement('span'); dot.className = 'acct-dot';
+    const txt = document.createElement('span');
+    const name = document.createElement('div'); name.className = 'acct-name'; name.textContent = e.username || e.sub;
+    const meta = document.createElement('div'); meta.className = 'acct-meta';
+    let host = e.hsm_url; try { host = new URL(e.hsm_url).host; } catch { /* keep */ }
+    const until = new Date(e.exp * 1000);
+    meta.textContent = `HEM ${host} · ${e.label || e.kid.slice(0, 8)} · session until ${until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    txt.append(name, meta);
+    btn.append(dot, txt);
+    box.appendChild(btn);
+  }
+}
+
+// One click: prove the device is there, ask the server to reuse the
+// authorization, sign with the cached token. Anything the server or the
+// device refuses turns into the ordinary confirm-and-authorize path.
+async function doSsoPick(key) {
+  const entry = ssoList().find(e => e.key === key);
+  if (!entry) { maybeShowAccounts() || showScreen('s-login'); return; }
+  const errEl = document.getElementById('acct-err');
+  const btns  = [...document.querySelectorAll('#acct-list .acct')];
+  if (btns.some(b => b.disabled)) return;
+  errEl.textContent = '';
+  btns.forEach(b => { b.disabled = true; });
+
+  try {
+    session = freshSession();
+    session.hsm_url     = entry.hsm_url;
+    session.hem         = new HEM(entry.hsm_url, HEM_OPTS);
+    session.ssoEntry    = entry;
+    session.selectedKey = { kid: entry.kid, label: entry.label || '', sub: entry.sub };
+    session.keys        = [{ kid: entry.kid, label: entry.label || '' }];
+    lsSaveHints(entry.hsm_url);
+
+    try {
+      await session.hem.getVersion({ timeoutMs: 4000 });
+    } catch {
+      throw Object.assign(new Error('Your HEM is not reachable. Plug it in or check that it is online, then try again.'), { code: 'hem_unreachable' });
+    }
+
+    const loginData = await fetchJson('/authorize/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(oidcBody({ sub: entry.sub, sso_iat: String(entry.iat) })),
+    });
+    const { kid } = entry; const label = entry.label || '';
+    // The server pins the registered key; a stale entry (re-enrolled key) is useless.
+    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    if (expectedKid && expectedKid !== kid) {
+      ssoForget(entry.key);
+      throw new Error('This session belongs to a key that is no longer registered. Sign in with your HEM.');
+    }
+
+    if (loginData.sso?.used) {
+      session.pendingSign = { kid, label, loginData };
+      await doCompleteSign(entry.token, kid, label, loginData);
+      return;
+    }
+    // Refused by policy: fresh authorization, with the reason on the confirm screen.
+    session.ssoEntry = null;
+    showConfirm(loginData, kid, label, SSO_REJECT_TEXT[loginData.sso?.rejected] || 'Confirmation on your HEM is required.');
+  } catch (e) {
+    errEl.textContent = e.code === 'hem_unreachable' ? e.message : (e.status ? e.message : hemErrMsg(e));
+    btns.forEach(b => { b.disabled = false; });
+  }
+}
+
+// Populate and show the confirm screen for a /authorize/login response.
+function showConfirm(loginData, kid, label, note = null) {
+  const payload = decodeJwtPayload(loginData.signing_input);
+  document.getElementById('tc-username').textContent = loginData.user_username || '';
+  document.getElementById('tc-audience').textContent = loginData.client_name || payload?.aud || OIDC.client_id;
+  document.getElementById('tc-iss').textContent      = payload?.iss || '';
+  document.getElementById('tc-iat').textContent      = payload?.iat ? fmtTs(payload.iat) : '\u2014';
+  document.getElementById('tc-exp').textContent      = payload?.exp ? fmtTs(payload.exp) : '\u2014';
+
+  const extra = document.getElementById('tc-extra');
+  extra.innerHTML = '';
+  const CLAIM_LABELS = { preferred_username: 'username' };
+  for (const key of ['preferred_username', 'name', 'email']) {
+    if (payload?.[key]) {
+      const row = document.createElement('div');
+      row.className = 'info-row';
+      const k = document.createElement('span'); k.className = 'info-key';   k.textContent = CLAIM_LABELS[key] ?? key;
+      const v = document.createElement('span'); v.className = 'info-value'; v.textContent = payload[key];
+      row.append(k, v);
+      extra.appendChild(row);
+    }
+  }
+
+  const noteEl = document.getElementById('tc-note');
+  noteEl.textContent = note || '';
+  noteEl.style.display = note ? '' : 'none';
+  // "Remember" only when client and user policy allow caching this authorization.
+  const canSso = !!loginData.sso?.enabled;
+  document.getElementById('tc-remember-row').style.display = canSso ? '' : 'none';
+  document.getElementById('tc-remember-hours').textContent = String(Math.max(1, Math.round((loginData.sso?.suggest_seconds ?? 28800) / 3600)));
+
+  session.pendingSign = { kid, label, loginData };
+  showScreen('s-token-confirm');
+}
+
+// The lifetime to ask the HEM for: the server's suggestion when this
+// authorization is going to be kept for SSO, else the SDK's short default.
+function authorizeLifetime(loginData) {
+  return session.rememberSso && loginData?.sso?.enabled ? loginData.sso.suggest_seconds : 300;
 }
 
 // --- Step 1: Login -> HSM checkin -> detect capabilities -> search keys -----
@@ -155,7 +355,7 @@ async function doLogin() {
     session.password = null;
     lsSaveHints(hsmUrl);
 
-    const hem = new HEM(hsmUrl);
+    const hem = new HEM(hsmUrl, HEM_OPTS);
     session.hem = hem;
     btn.textContent = 'Connecting to HSM...';
     await hem.hemCheckin();
@@ -224,7 +424,7 @@ async function tryFasttrack(kid, label, sub, btn) {
     const loginData = await fetchJson('/authorize/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ sub, ...OIDC }),
+      body:    JSON.stringify(oidcBody({ sub })),
     });
     // The server pins the registered key in the JWT header. A cached kid from
     // before a re-enrollment would sign with the wrong key and fail at
@@ -296,7 +496,7 @@ async function doSubmitPin() {
       // Passphrase for signing -- authorize + complete sign
       const { kid, label, loginData } = session.pendingSign;
       const scope = `keymgmt:use:${kid}`;
-      const useToken = await session.hem.authorizePassword(pin, scope);
+      const useToken = await session.hem.authorizePassword(pin, scope, authorizeLifetime(loginData));
       btn.disabled = false;
       btn.textContent = 'Continue \u2192';
       await doCompleteSign(useToken, kid, label, loginData);
@@ -382,7 +582,7 @@ async function doSelectKey() {
     const loginData = await fetchJson('/authorize/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ sub, ...OIDC }),
+      body:    JSON.stringify(oidcBody({ sub })),
     });
 
     // The JWT header names the key registered for this account. Several keys
@@ -401,32 +601,9 @@ async function doSelectKey() {
       session.selectedKey = { kid, label, sub };
     }
 
-    // Decode JWT payload and populate confirm screen
-    const payload = decodeJwtPayload(loginData.signing_input);
-    document.getElementById('tc-username').textContent = loginData.user_username || '';
-    document.getElementById('tc-audience').textContent = loginData.client_name || payload?.aud || OIDC.client_id;
-    document.getElementById('tc-iss').textContent      = payload?.iss || '';
-    document.getElementById('tc-iat').textContent      = payload?.iat ? fmtTs(payload.iat) : '\u2014';
-    document.getElementById('tc-exp').textContent      = payload?.exp ? fmtTs(payload.exp) : '\u2014';
-
-    const extra = document.getElementById('tc-extra');
-    extra.innerHTML = '';
-    const CLAIM_LABELS = { preferred_username: 'username' };
-    for (const key of ['preferred_username', 'name', 'email']) {
-      if (payload?.[key]) {
-        const row = document.createElement('div');
-        row.className = 'info-row';
-        const k = document.createElement('span'); k.className = 'info-key';   k.textContent = CLAIM_LABELS[key] ?? key;
-        const v = document.createElement('span'); v.className = 'info-value'; v.textContent = payload[key];
-        row.append(k, v);
-        extra.appendChild(row);
-      }
-    }
-
-    session.pendingSign = { kid, label, loginData };
     btn.disabled = false;
     btn.textContent = 'Next \u2192';
-    showScreen('s-token-confirm');
+    showConfirm(loginData, kid, label);
 
   } catch (err) {
     console.error('[doSelectKey]', err);
@@ -464,12 +641,14 @@ async function doApproveSign() {
   const scope = `keymgmt:use:${kid}`;
   const opId  = Symbol();
   currentOpId = opId;
+  session.rememberSso = !!(document.getElementById('tc-remember')?.checked && loginData?.sso?.enabled);
+  const expSeconds = authorizeLifetime(loginData);
 
   try {
     let useToken;
 
     if (session.password) {
-      useToken = await session.hem.authorizePassword(session.password, scope);
+      useToken = await session.hem.authorizePassword(session.password, scope, expSeconds);
       if (currentOpId !== opId) return;
 
     } else if (session.hasMobileApp) {
@@ -484,6 +663,7 @@ async function doApproveSign() {
 
       mobileAbortCtrl = new AbortController();
       useToken = await session.hem.authorizeRemote(scope, {
+        expSeconds,
         pollInterval: 2_000, pollTimeout: 60_000,
         onPending: () => console.debug(`[HEM] ${scope}: waiting\u2026`),
         signal: mobileAbortCtrl.signal,
@@ -527,7 +707,26 @@ async function doCompleteSign(useToken, kid, label, loginData) {
   showScreen('s-signing');
 
   try {
-    const rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, exdsaAlg(loginData.key_type));
+    let rawSigBytes;
+    try {
+      rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, exdsaAlg(loginData.key_type));
+    } catch (e) {
+      // A cached SSO token the device no longer accepts (expired, device
+      // rebooted or unplugged, token revoked): drop it and start a fresh,
+      // interactive sign-in for the same key.
+      if (session.ssoEntry && (e?.code === 'http_401' || e?.code === 'http_403')) {
+        ssoForget(session.ssoEntry.key);
+        session.ssoEntry = null;
+        const fresh = await fetchJson('/authorize/login', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(oidcBody({ sub: session.selectedKey?.sub })),
+        });
+        showConfirm(fresh, kid, label, 'Your HEM session has ended. Confirm this sign-in on your HEM.');
+        return;
+      }
+      throw e;
+    }
     const sigBytes  = loginData.key_type !== 'Ed25519' ? derToP1363(rawSigBytes, loginData.key_type) : rawSigBytes;
     const signature = bytesToBase64url(sigBytes);
 
@@ -553,6 +752,22 @@ async function doCompleteSign(useToken, kid, label, loginData) {
     document.getElementById('ft-row').style.display = '';
     document.getElementById('ft-key-label').textContent = label || kid;
 
+    // Keep this authorization for SSO when the user asked and policy allows.
+    // exp/iat come from the HEM token itself: the device (or the user on the
+    // phone) decides the lifetime, not the page.
+    if (session.rememberSso && !session.ssoEntry && loginData.sso?.enabled) {
+      const now = Math.floor(Date.now() / 1000);
+      const tp  = jwtParse(useToken) || {};
+      ssoSave({
+        token: useToken,
+        iat: Number.isFinite(tp.iat) ? tp.iat : now,
+        exp: Number.isFinite(tp.exp) ? tp.exp : now + (loginData.sso.suggest_seconds || 300),
+        sub: session.selectedKey?.sub || decodeJwtPayload(loginData.signing_input)?.sub || null,
+        username: loginData.user_username || '',
+        label, kid, hsm_url: session.hsm_url, key_type: loginData.key_type,
+      });
+    }
+
     // Countdown 5->1 -- code issued but RP hasn't received it yet; user can still cancel
     const statusEl = document.getElementById('sign-status');
     const cancelBtn = document.getElementById('cancel-redirect-btn');
@@ -561,7 +776,7 @@ async function doCompleteSign(useToken, kid, label, loginData) {
     let cancelled = false;
     cancelRedirect = () => { cancelled = true; };
 
-    let count = fasttrackActive ? 3 : 5;
+    let count = (fasttrackActive || session.ssoEntry) ? 3 : 5;
     fasttrackActive = false;
     statusEl.textContent = `Redirecting in ${count}\u2026`;
     await new Promise(resolve => {
@@ -615,7 +830,7 @@ function doTryAgain() {
   session = freshSession();
   document.getElementById('login-err').textContent = '';
   ftRestoreUI();
-  showScreen('s-login');
+  if (!maybeShowAccounts()) showScreen('s-login');
 }
 
 
@@ -636,6 +851,8 @@ const ACTIONS = {
   'do-approve-sign':    () => doApproveSign(),
   'do-cancel-redirect': () => doCancelRedirect(),
   'show-screen':        el => showScreen(el.dataset.screen),
+  'sso-pick':           el => doSsoPick(el.dataset.key),
+  'sso-forget-all':     () => { ssoForgetAll(); showScreen('s-login'); },
 };
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');

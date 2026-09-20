@@ -331,6 +331,7 @@ async function openEditUser(idx) {
   $('eu-email').value           = u.email || '';
   _setEmailStatus(u.email_verified === true || u.email_verified === 'true');   // cached, may be stale
   $('eu-verify-btn').style.display = _mailEnabled ? '' : 'none';
+  $('eu-sso').checked = u.sso !== false;
   // email_verified can flip OUTSIDE the panel (the user clicks the emailed link),
   // so the cache is often stale here -- refresh this one field from the server.
   refreshEmailStatus(u.sub);
@@ -412,6 +413,7 @@ async function submitEditUser() {
     email    : $('eu-email').value.trim(),
     hsm_url  : $('eu-hsm').value.trim(),
     clients  : [...document.querySelectorAll('#eu-clients-list input:checked')].map(el => el.dataset.cid),
+    sso      : $('eu-sso').checked,
   };
   if (!updates.username) return toast('Username required', 'err');
   if (!updates.hsm_url)  return toast('HSM URL required', 'err');
@@ -729,6 +731,7 @@ function openAddClient() {
   setScopesIn('c-scopes', ['openid','profile','email']);
   $('c-pkce').classList.add('on');
   $('c-public').classList.remove('on'); // confidential by default -- secret required at /token
+  $('c-sso').classList.add('on');       // SSO allowed by default
   $('c-open').classList.remove('on');   // open access off by default -- explicit opt-in
   initScopeTags('c-scopes');
   openModal('modal-add-client');
@@ -741,6 +744,7 @@ async function submitAddClient() {
   const post_logout_redirect_uris = $('c-plr').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('c-scopes');
   const isPublic = $('c-public').classList.contains('on');
+  const sso      = $('c-sso').classList.contains('on');
   const pkce   = isPublic || $('c-pkce').classList.contains('on');   // a public client is PKCE-only
   const allow_any_user = $('c-open').classList.contains('on');
   const id_token_ttl     = parseInt($('c-id-ttl').value) || 3600;
@@ -749,7 +753,7 @@ async function submitAddClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
-      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-add-client');
     $('rc-id').textContent = c.client_id;
@@ -772,6 +776,7 @@ function openEditClient(idx) {
   if (c.pkce !== false) $('ec-pkce').classList.add('on');
   else $('ec-pkce').classList.remove('on');
   $('ec-public').classList.toggle('on', c.public === true);
+  $('ec-sso').classList.toggle('on', c.sso !== false);
   if (c.allow_any_user) $('ec-open').classList.add('on');
   else $('ec-open').classList.remove('on');
   initScopeTags('ec-scopes');
@@ -785,6 +790,7 @@ async function submitEditClient() {
   const post_logout_redirect_uris = $('ec-plr').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('ec-scopes');
   const isPublic = $('ec-public').classList.contains('on');
+  const sso      = $('ec-sso').classList.contains('on');
   const pkce   = isPublic || $('ec-pkce').classList.contains('on');
   const allow_any_user = $('ec-open').classList.contains('on');
   const id_token_ttl     = parseInt($('ec-id-ttl').value) || 3600;
@@ -793,7 +799,7 @@ async function submitEditClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
-      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-edit-client');
     toast('Client updated');

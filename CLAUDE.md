@@ -24,6 +24,7 @@ Read only when you need to know the HSM API.
 - Invite flow (user): `POST /admin/invite` → one-time token → `POST /signup/prefill` + `POST /signup/register` (token always in the JSON body, never `?token=`)
 - Invite flow (client): `POST /admin/invite-client` → one-time token → `POST /signup-client/prefill` + `POST /signup-client/register`
 - Invites admin API: `GET /admin/invites`, `DELETE /admin/invites/:token`, `DELETE /admin/client-invites/:token`
+- **SSO** (2026-09-20): `/authorize/login` takes `sso_iat` (+ `prompt`, `max_age`), answers `sso: {enabled, used, rejected, suggest_seconds, max_seconds}`; ID Token `auth_time`/`amr`; `client.sso`, `user.sso` (default true); env `SSO_ENABLED`/`SSO_MAX_SECONDS`/`SSO_SUGGEST_SECONDS`; `/logout` page + `logout.js` clears `encedo_sso:*`. Design: `../SSO-PLAN.md`.
 
 ### Trusted App (`signin.js`) — 100%
 - Login screen — HSM URL only (no username/password fields)
@@ -40,6 +41,7 @@ Read only when you need to know the HSM API.
 - 5→1 countdown before RP redirect; Cancel button stops redirect (code expires naturally after 60s)
 - `CLAIM_LABELS` map: `{ preferred_username: 'username' }` — translates JWT claim names to display labels
 - Module-level vars: `currentOpId` (Symbol|null), `mobileAbortCtrl` (AbortController|null), `cancelRedirect` (fn|null)
+- **SSO accounts screen** (`s-accounts`): `ssoList/ssoSave/ssoForget` over `localStorage` `encedo_sso:<hsm_url>|<kid>`; `doSsoPick()` = getVersion → `/authorize/login` with `sso_iat` → `exdsaSign` with the cached token (401 → drop + fresh `showConfirm` with a note); `showConfirm()` shared by the normal path; `authorizeLifetime()` = suggest_seconds when “remember” ticked; entry saved in `doCompleteSign` after a successful confirm. `HEM_OPTS`: `?hem_broker=` honoured on localhost only (E2E test).
 
 ### enrollment.js — 100%
 - pubkey converted base64 → hex before sending to backend
@@ -402,6 +404,11 @@ Run `node update-csp-hashes.js` after any `<style>` block change.
 JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks and no `on*=` attributes (there is no `script-src-attr`, so the browser blocks them). Wire clicks through `data-action` + the page's `ACTIONS` map.
 
 ---
+
+## Testing
+
+- `npm test` = `test/*.test.js` (node --test): validators, hsm-common, OIDC flows against a spawned app + Redis with a software key. No browser, no HEM.
+- `node test/e2e/sso.mjs` = browser E2E of the sign-in page (headless Chromium over CDP) with **`test/e2e/fake-hem.mjs`** — a fake device + broker + RP callback that verifies the SDK's eJWT, issues tokens with the requested lifetime and signs with a software Ed25519 key. Covers SSO flows A/B/C, fallback on device 401, `prompt=login`/`max_age`, `user.sso=false`. Needs `chromium` (or `CHROME=`) and `redis-server`; not in CI. Extend it before touching `signin.js` — it is the only automated test of that file.
 
 ## Known Issues / Notes
 

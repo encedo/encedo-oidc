@@ -46,6 +46,9 @@ npm start
 | `CSP_CONNECT_EXTRA` | — | Extra space-separated origins for CSP `connect-src` (EPA custom domains) |
 | `SECURITY_LOG_MAX` | `20000` | Cap of the `security:log` audit ZSET (oldest entries trimmed) |
 | `LANDING_PAGE` | — | Set to `1` to serve the product landing page at `/` (public instance). The status page is always available at `/status` |
+| `SSO_ENABLED` | `1` | `0` switches single sign-on off for every client and user (see *Single sign-on*) |
+| `SSO_MAX_SECONDS` | `28800` | Oldest HEM authorization a browser may reuse as SSO (8 h) |
+| `SSO_SUGGEST_SECONDS` | `28800` | Token lifetime the sign-in page asks the HEM for when the user ticks “remember” |
 
 ---
 
@@ -707,6 +710,23 @@ certbot's systemd timer runs `certbot renew` twice a day — no cron needed. Let
 > After this, all renewals are fully automatic.
 
 ---
+
+## Single sign-on
+
+One HEM authorization can serve several relying parties. When the user ticks **Remember in this browser** on the
+sign-in page, the token the HEM issued for the key (`keymgmt:use:<kid>`, lifetime `SSO_SUGGEST_SECONDS`, changeable
+by the user on the phone) is kept in that browser's `localStorage` on the provider's origin — and nowhere else: the
+server never sees it and therefore still cannot sign anything without the device. The next sign-in to any other
+client opens on an **account chooser**; one click checks that the HEM is reachable, has it sign the new ID Token with
+the cached token, and redirects. No phone, no passphrase — but the HEM must be present, because it does the signing.
+
+Every layer has to allow it: `SSO_ENABLED`, the client's *Allow single sign-on* toggle (admin panel), the user's
+*Allow single sign-on* checkbox (admin panel, Edit user), the “remember” tick in the browser, and the relying party
+itself (`prompt=login` or a `max_age` shorter than the session age force a fresh authorization). The ID Token tells
+the RP what happened: `auth_time` is the time of the HEM authorization, `amr` is `["hwk"]` for a fresh one and
+`["hwk","sso"]` for a reused one. A session ends when the token expires, on RP-initiated logout at the provider (the
+`/logout` page clears it), with *Forget all sessions in this browser*, or when the device refuses the token
+(unplugged, rebooted) — the page then falls back to a normal sign-in.
 
 ## First Steps After Startup
 
