@@ -288,6 +288,8 @@ bigcorp.oidc.encedo.com ──┼── nginx ──► oidc-acme    ──► r
 
 Redis data lives in named Docker volumes (`redis-{tenant}-data`) — survives container restarts and `docker compose down`.
 
+Each tenant's Redis runs **only on that tenant's internal Docker network** (`oidc-{tenant}-internal`, no route to nginx, to other tenants or outside) and requires the password from `REDIS_PASSWORD` in the tenant `.env`. The OIDC container is on both networks: `oidc-net` for nginx, the internal one for its Redis. A compromised container anywhere on `oidc-net` therefore cannot read another tenant's users, client secrets or access tokens.
+
 ### Step-by-step on Ubuntu 24.04
 
 #### 1. Install Docker and git
@@ -531,7 +533,7 @@ TENANT=acme
 PORT=3000
 NODE_ENV=production
 ISSUER=https://acme.oidc.encedo.com
-REDIS_URL=redis://redis-acme:6379
+REDIS_PASSWORD=<openssl rand -base64 32 | tr -d '/+='>   # compose builds REDIS_URL from it
 ADMIN_SECRET=replace-with-strong-secret-acme
 ADMIN_ALLOWED_IPS=127.0.0.1,::1,YOUR.ADMIN.IP.HERE
 TRUST_PROXY=1
@@ -543,7 +545,7 @@ TENANT=bigcorp
 PORT=3000
 NODE_ENV=production
 ISSUER=https://bigcorp.oidc.encedo.com
-REDIS_URL=redis://redis-bigcorp:6379
+REDIS_PASSWORD=<another random secret>
 ADMIN_SECRET=replace-with-strong-secret-bigcorp
 ADMIN_ALLOWED_IPS=127.0.0.1,::1,YOUR.ADMIN.IP.HERE
 TRUST_PROXY=1
@@ -646,6 +648,36 @@ for dir in /opt/encedo-oidc/tenants/*/; do
   [ -f "$dir/docker-compose.yml" ] && docker compose -f "$dir/docker-compose.yml" up -d --no-deps oidc
 done
 ```
+
+### One-time migration: isolate each tenant's Redis (password + private network)
+
+Tenants created before this template kept every Redis on the shared `oidc-net` without a password. Migrating a tenant restarts its Redis and OIDC container once (about ten seconds of downtime for that tenant; the data volume is untouched). Do one tenant at a time, test first.
+
+```
+T=test   # then demo, then prod
+cd /opt/encedo-oidc/tenants/$T
+
+# 0. Safety: backup + flush the RDB to disk before Redis is recreated
+docker exec oidc-$T node src/cli/backup.js --file - > /var/backups/oidc/pre-isolate-$T-$(date +%F).ndjson.gz
+docker exec redis-$T redis-cli SAVE
+
+# 1. Password into .env (written once; compose derives REDIS_URL from it)
+echo "REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d '/+=' | cut -c1-40)" >> .env
+sed -i '/^REDIS_URL=/d' .env          # the template sets REDIS_URL itself
+
+# 2. New template (creates oidc-$T-internal, recreates both containers)
+cp /opt/encedo-oidc/src/tenants/docker-compose.yml docker-compose.yml
+docker compose up -d
+
+# 3. Verify
+docker ps --format '{{.Names}} {{.Status}}' | grep "$T"                 # both up, oidc healthy after ~30 s
+curl -s https://$T.oidc.encedo.com/health                                # {"status":"ok","redis":"up",...}
+docker network inspect oidc-net --format '{{range .Containers}}{{.Name}} {{end}}'   # no redis-$T here any more
+docker exec redis-$T redis-cli ping                                      # NOAUTH -- password is enforced
+docker exec oidc-$T node src/cli/backup.js --file - | gzip -t && echo backup ok   # the app still reaches Redis
+```
+
+After the migration, anything that talks to Redis by hand needs the password: `docker exec redis-$T redis-cli -a "$REDIS_PASSWORD" ...`. The backup cron is unaffected — it runs inside `oidc-<tenant>`, which gets `REDIS_URL` with the password from compose. The throwaway `redis-verify` container in the restore check below must be started on the tenant's internal network instead of `oidc-net`: `--network oidc-$T-internal`.
 
 ### Cert renewal
 
@@ -805,7 +837,7 @@ npm run backup -- --file - | age -r age1... > backup.age
 
 ### Docker (multi-tenant)
 
-`redis-<tenant>` publishes no port — it is reachable only inside `oidc-net`. So run the backup from
+`redis-<tenant>` publishes no port — it is reachable only inside the tenant's internal network. So run the backup from
 the `oidc-<tenant>` container, which is already on that network and already has `REDIS_URL` in its
 env (no `--url` needed).
 
@@ -860,7 +892,7 @@ docker exec oidc-acme node src/cli/backup.js --skip-ephemeral --out /backups
 **Verify a backup is actually restorable** — into a throwaway Redis, never the live one:
 
 ```bash
-docker run -d --rm --name redis-verify --network oidc-net redis:7-alpine
+docker run -d --rm --name redis-verify --network oidc-acme-internal redis:7-alpine
 docker cp /var/backups/oidc-acme-2026-07-13.ndjson.gz oidc-acme:/tmp/verify.gz
 docker exec oidc-acme node src/cli/restore.js /tmp/verify.gz --url redis://redis-verify:6379
 docker exec redis-verify redis-cli dbsize        # must match the key count reported above

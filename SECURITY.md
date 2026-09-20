@@ -209,6 +209,6 @@ Logged events include: login attempts, signature verification results, token iss
 | ID Token signed by the user's key, not a provider key | Design | See *The ID Token is signed by the user's key*: RPs must trust it only as the `/token` response, never from another channel |
 | No `RS256` | Design | HSM has no RSA; `EdDSA` / `ES256` / `ES384` / `ES512` only — configure the RP accordingly |
 | `post_logout_redirect_uri` by origin for clients without `post_logout_redirect_uris` | Low | Legacy fallback, logged once per client; register the logout URL to get exact matching |
-| Redis of every tenant on the shared `oidc-net` without a password | Medium | Any compromised container on that network reaches every tenant's data; move each tenant's Redis to an internal per-tenant network and set `requirepass` (open item) |
+| Redis of every tenant on the shared `oidc-net` without a password | Medium | Fixed in `tenants/docker-compose.yml` (per-tenant `internal` network + `requirepass`); deployments created earlier must run the one-time migration in README §*Isolate each tenant's Redis* |
 | Redis without TLS | Ops | Use `rediss://` URL in production; run Redis on loopback or VPN-protected network |
 | SHA-1 for kid derivation | Accepted | Matches HSM convention; second-preimage attack (~2¹⁶⁰) infeasible; collision is cosmetic, not an auth bypass |

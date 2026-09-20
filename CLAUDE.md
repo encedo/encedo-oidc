@@ -382,9 +382,13 @@ Open (accepted or delegated):
 ```
 nginx container  (nginx/docker-compose.yml)   ports 80+443, shared oidc-net
 per-tenant/      (tenants/docker-compose.yml template)
-  redis-${TENANT}   redis:7-alpine, volume redis-${TENANT}-data
-  oidc-${TENANT}    encedo-oidc:latest, env_file: .env
+  redis-${TENANT}   redis:7-alpine, --requirepass ${REDIS_PASSWORD}, volume redis-${TENANT}-data,
+                    ONLY on oidc-${TENANT}-internal (internal: true)
+  oidc-${TENANT}    encedo-oidc:latest, env_file: .env, on oidc-net + oidc-${TENANT}-internal;
+                    REDIS_URL set by compose from REDIS_PASSWORD (overrides .env)
 ```
+Tenants created before 2026-09-20 still have Redis on `oidc-net` without a password until the one-time
+migration in README §*Isolate each tenant's Redis* is run (user does it, one tenant at a time).
 
 - Build: `docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) -t encedo-oidc:latest .`
 - SSL: `--standalone` for initial cert, `--webroot` for renewal

@@ -1,6 +1,14 @@
 # Tenant template — do not edit per tenant.
-# Container names and volume names are derived from TENANT variable in .env.
+# Container names, volume names and network names are derived from TENANT in .env.
 # Copy this file as-is to each tenants/{name}/ folder.
+#
+# Network layout (one tenant):
+#   nginx ──oidc-net──► oidc-${TENANT} ──oidc-${TENANT}-internal──► redis-${TENANT}
+# Redis sits ONLY on the tenant's own internal network (no route to other
+# tenants, to nginx, or to the internet) and requires a password. A compromised
+# container elsewhere on oidc-net therefore cannot reach this tenant's data.
+# REDIS_PASSWORD comes from the tenant .env (compose interpolates it here);
+# the app receives it inside REDIS_URL below, so .env needs it only once.
 
 services:
   redis:
@@ -9,9 +17,10 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
-    command: redis-server --save 60 1 --loglevel warning
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning",
+              "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in the tenant .env}"]
     networks:
-      - oidc-net
+      - internal
 
   oidc:
     image: encedo-oidc:latest
@@ -19,8 +28,13 @@ services:
     restart: unless-stopped
     depends_on: [redis]
     env_file: .env
+    environment:
+      # Overrides any REDIS_URL in .env: password and host derived from the same
+      # two variables the compose file already uses.
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis-${TENANT}:6379"
     networks:
-      - oidc-net
+      - oidc-net    # reachable by nginx
+      - internal    # reaches its own Redis
 
 volumes:
   redis-data:
@@ -29,3 +43,6 @@ volumes:
 networks:
   oidc-net:
     external: true
+  internal:
+    name: oidc-${TENANT}-internal
+    internal: true
