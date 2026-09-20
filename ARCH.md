@@ -106,7 +106,7 @@ body.msg = toB64(strToBytes(signing_input));
 ```
 
 ### Enrollment challenge-response
-`GET /enrollment/validate` issues a 32-byte random challenge. The frontend signs it with the newly created HSM key and sends `signature` to `/enrollment/submit`. The backend verifies the signature using the submitted pubkey. This proves the enrolling party actually possesses the private key.
+`POST /enrollment/validate` (token in the JSON body) issues a 32-byte random challenge. The frontend signs it with the newly created HSM key and sends `signature` to `/enrollment/submit`. The backend verifies the signature using the submitted pubkey. This proves the enrolling party actually possesses the private key.
 
 ### Hardware attestation
 ```
@@ -270,7 +270,7 @@ Applied per endpoint via `src/middleware/rateLimit.js` (sliding window, Redis-ba
 | `POST /token` | 20 | 60s | IP |
 | `GET /userinfo` | 60 | 60s | `Bearer token` |
 | `GET`/`POST /logout` | 20 | 60s | IP |
-| `GET /enrollment/validate` | 10 | 60s | `token` |
+| `POST /enrollment/validate` | 10 | 60s | `token` |
 | `POST /enrollment/submit` | 5 | 60s | `token` |
 | `POST /admin/*` | 60 | 60s | IP |
 

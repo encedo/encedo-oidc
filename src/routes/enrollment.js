@@ -91,20 +91,24 @@ function verifyEnrollmentSig(key_type, compressedHex, msg, sigB64url) {
   return verify(ECDSA_HASH[key_type], msgBuf, { key: publicKey, dsaEncoding: 'ieee-p1363' }, sigBuf);
 }
 
-// --- GET /enrollment/validate?token= --------------------------
+// --- POST /enrollment/validate  { token } ----------------------
 // Returns user info + challenge for key-possession proof.
 // Calling validate activates the session: TTL shortened to 30 min,
 // challenge generated (idempotent on repeated calls).
-router.get('/validate',
+// The token travels in the JSON body, never in the query string: the page
+// keeps it in the URL fragment for the same reason -- a query string lands
+// in the reverse proxy's access log, and this token IS the credential.
+router.post('/validate',
   // IP backstop -- the per-token limit below is bypassable by sending random
   // tokens (each is its own bucket); the source IP is not as cheap to rotate.
   rateLimit({ prefix: 'enroll-validate-ip', max: 30, window: 60 }),
   rateLimit({ prefix: 'enroll-validate', max: 10, window: 60,
-    keyFn: req => req.query.token ?? req.ip }),
+    keyFn: req => (typeof req.body?.token === 'string' && req.body.token) || req.ip }),
   async (req, res, next) => {
   try {
-    const { token } = req.query;
+    const token = typeof req.body?.token === 'string' ? req.body.token : '';
     if (!token) return res.status(400).json({ error: 'missing_token' });
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return res.status(400).json({ error: 'invalid_token_format' });
 
     const raw = await redis.get(`enrollment:${token}`);
     if (!raw) return res.status(404).json({ error: 'invalid_or_expired_token' });
@@ -144,7 +148,7 @@ router.get('/validate',
 router.post('/submit',
   rateLimit({ prefix: 'enroll-submit-ip', max: 20, window: 60 }),   // IP backstop (see /validate)
   rateLimit({ prefix: 'enroll-submit', max: 5, window: 60,
-    keyFn: req => req.body?.token ?? req.ip }),
+    keyFn: req => (typeof req.body?.token === 'string' && req.body.token) || req.ip }),
   async (req, res, next) => {
   try {
     const { token, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n } = req.body;

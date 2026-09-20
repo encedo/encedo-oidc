@@ -99,7 +99,7 @@ Redis-backed sliding window per endpoint (see `src/middleware/rateLimit.js`):
 | `POST /authorize/confirm` | 10 | 60 s | IP |
 | `POST /token` | 20 | 60 s | IP |
 | `GET`/`POST /logout` | 20 | 60 s | IP |
-| `GET /enrollment/validate` | 10 + 30 | 60 s | enrollment token, plus an IP backstop |
+| `POST /enrollment/validate` | 10 + 30 | 60 s | enrollment token, plus an IP backstop |
 | `POST /enrollment/submit` | 5 + 20 | 60 s | enrollment token, plus an IP backstop |
 | `POST /verify-email/confirm` | 20 | 60 s | IP |
 | `/admin/*` (authenticated) | 60 | 60 s | IP |
@@ -111,7 +111,7 @@ The following endpoints are rate-limited **at nginx level only** (see README ngi
 
 | Endpoint | Zone | Limit |
 |----------|------|-------|
-| `GET /signup/prefill`, `GET /signup-client/prefill` | `oidc_signup` | 20 r/m, burst 5 |
+| `POST /signup/prefill`, `POST /signup-client/prefill` | `oidc_signup` | 20 r/m, burst 5 |
 | `POST /signup/register`, `POST /signup-client/register` | `oidc_login` | 5 r/m, burst 2 |
 | `POST /admin/invite`, `POST /admin/invite-client` | `oidc_login` | 5 r/m, burst 2 |
 
@@ -182,7 +182,7 @@ Logged events include: login attempts, signature verification results, token iss
 ## Enrollment Security
 
 - Enrollment token: 32 random bytes, base64url-encoded (256-bit entropy), 24 h TTL
-- Token is delivered out-of-band (email/admin channel) — not in server access logs (URL fragment)
+- Token is delivered out-of-band (email/admin channel) — not in server access logs: the link carries it in the URL fragment and every API call (`/enrollment/validate`, `/signup/prefill`, `/signup-client/prefill`, `/enrollment/submit`) sends it in a POST body, never in a query string
 - Token consumed atomically (compare-and-delete against the validated session) **after** the signature, key type and duplicate-key checks pass — a rejected attempt leaves the link usable, a completed one cannot be replayed
 - Concurrent enrollment for the same user blocked with Redis NX lock (`enroll_lock:{sub}`, 30 s TTL); the challenge is set with compare-and-set so two first calls to `/validate` share one challenge
 - Duplicate public key rejection: checked across all users before commit
@@ -210,6 +210,5 @@ Logged events include: login attempts, signature verification results, token iss
 | No `RS256` | Design | HSM has no RSA; `EdDSA` / `ES256` / `ES384` / `ES512` only — configure the RP accordingly |
 | `post_logout_redirect_uri` by origin for clients without `post_logout_redirect_uris` | Low | Legacy fallback, logged once per client; register the logout URL to get exact matching |
 | Redis of every tenant on the shared `oidc-net` without a password | Medium | Any compromised container on that network reaches every tenant's data; move each tenant's Redis to an internal per-tenant network and set `requirepass` (open item) |
-| Enrollment / invite tokens sent as `?token=` on `GET /enrollment/validate` and `/signup/prefill` | Low | The first page load keeps the token in the fragment, but the follow-up API calls put it in the query string, i.e. in proxy access logs (open item: move to POST bodies) |
 | Redis without TLS | Ops | Use `rediss://` URL in production; run Redis on loopback or VPN-protected network |
 | SHA-1 for kid derivation | Accepted | Matches HSM convention; second-preimage attack (~2¹⁶⁰) infeasible; collision is cosmetic, not an auth bypass |

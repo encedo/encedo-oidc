@@ -38,9 +38,10 @@ export async function adminDeleteClientInviteHandler(req, res, next) {
 }
 
 // --- GET /signup-client/prefill?token= ------------------------
+// POST { token } -- body, not query string (see enrollment.js /validate).
 export async function signupClientPrefillHandler(req, res, next) {
   try {
-    const { token } = req.query;
+    const token = typeof req.body?.token === 'string' ? req.body.token : '';
     if (!token || !TOKEN_RE.test(token)) {
       return res.status(400).json({ error: 'invalid_token' });
     }

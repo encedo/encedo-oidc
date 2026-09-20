@@ -21,8 +21,8 @@ Read only when you need to know the HSM API.
 - Enrollment: challenge-response + hardware attestation via api.encedo.com
 - Security log: Redis ZSET + stderr dual-write
 - Audit log in admin panel: pagination, filtering
-- Invite flow (user): `POST /admin/invite` → one-time token → `GET /signup/prefill` + `POST /signup/register`
-- Invite flow (client): `POST /admin/invite-client` → one-time token → `GET /signup-client/prefill` + `POST /signup-client/register`
+- Invite flow (user): `POST /admin/invite` → one-time token → `POST /signup/prefill` + `POST /signup/register` (token always in the JSON body, never `?token=`)
+- Invite flow (client): `POST /admin/invite-client` → one-time token → `POST /signup-client/prefill` + `POST /signup-client/register`
 - Invites admin API: `GET /admin/invites`, `DELETE /admin/invites/:token`, `DELETE /admin/client-invites/:token`
 
 ### Trusted App (`signin.js`) — 100%

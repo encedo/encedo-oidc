@@ -41,7 +41,7 @@ if (!token) {
 } else {
   try {
     let d;
-    try { d = await fetchJson(`/signup/prefill?token=${encodeURIComponent(token)}`); } catch { d = null; }
+    try { d = await fetchJson('/signup/prefill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }); } catch { d = null; }
     if (!d) { show('s-invalid'); }
     else {
       clientName    = d.client_name || 'this service';
@@ -168,7 +168,7 @@ async function doSubmit() {
     const pubkey = bytesToHex(base64ToBytes(keyInfo.pubkey));
 
     setStatus('Signing challenge…');
-    const chalData = await fetchJson(`/enrollment/validate?token=${encodeURIComponent(enrollment_token)}`);
+    const chalData = await fetchJson('/enrollment/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: enrollment_token }) });
     const rawSigBytes = await hem.exdsaSign(useToken, kid, chalData.challenge, exdsaAlg(kt));
     const sigBytes    = kt !== 'Ed25519' ? derToP1363(rawSigBytes, kt) : rawSigBytes;
     const signature   = bytesToBase64url(sigBytes);

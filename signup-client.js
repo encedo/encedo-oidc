@@ -10,7 +10,7 @@ if (!token) {
   show('s-invalid');
 } else {
   try {
-    const r = await fetch(`/signup-client/prefill?token=${encodeURIComponent(token)}`);
+    const r = await fetch('/signup-client/prefill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });   // token in the body, not the URL
     if (!r.ok) { show('s-invalid'); }
     else {
       show('s-form');

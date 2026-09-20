@@ -161,12 +161,12 @@ app.use('/enrollment', enrollment);
 
 // --- Signup (invite flow, public) ---------------------------------------------
 app.get('/signup',                 (_req, res) => res.sendFile(resolve(ROOT, 'signup.html')));
-app.get('/signup/prefill',         signupPrefillHandler);
+app.post('/signup/prefill',        signupPrefillHandler);   // token in the body, not the query string
 app.post('/signup/register',       signupRegisterHandler);
 
 // --- Signup client (client invite flow, public) --------------------------------
 app.get('/signup-client',          (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.html')));
-app.get('/signup-client/prefill',  signupClientPrefillHandler);
+app.post('/signup-client/prefill', signupClientPrefillHandler);
 app.post('/signup-client/register', signupClientRegisterHandler);
 
 // --- Email verification (public -- the token in the link is the credential) ----

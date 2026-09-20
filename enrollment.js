@@ -28,7 +28,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     let data;
     try {
-      data = await fetchJson('/enrollment/validate?token=' + encodeURIComponent(token));
+      // token in the body: a query string would land in the proxy access log
+      data = await fetchJson('/enrollment/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
     } catch (e) {
       if (!e.status) throw e;
       showError(e.code === 'invalid_or_expired_token'

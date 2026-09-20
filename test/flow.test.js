@@ -95,7 +95,7 @@ after(() => { try { appProc?.kill(); } catch {} try { redisProc?.kill(); } catch
 // still uses fresh tokens per case and the "retry" test relies on the new rule.
 async function submitEnroll(enrollToken, key, { kid, signMessage } = {}) {
   // Always call validate: it activates the session and generates the challenge.
-  const challenge = (await jget(`/enrollment/validate?token=${enrollToken}`)).body.challenge;
+  const challenge = (await jpost('/enrollment/validate', { token: enrollToken })).body.challenge;
   return jpost('/enrollment/submit', { token: enrollToken, hsm_url: 'https://sw.ence.do',
     kid: kid ?? key.kid, pubkey: key.pubHex, key_type: 'Ed25519', signature: key.sign(signMessage ?? challenge) });
 }
@@ -162,7 +162,7 @@ test('email_verified: set true only when signup carries the invite nonce', opt, 
     // the emailed link's nonce lives on the record; read it only for the "verified" case
     const nonce = sendNonce ? JSON.parse(execSync(`redis-cli -p ${REDIS_PORT} get invite:${token}`).toString()).email_nonce : '';
     const reg = await jpost('/signup/register', { token, hsm_url: 'https://sw.ence.do', n: nonce });
-    const val = await jget(`/enrollment/validate?token=${reg.body.enrollment_token}`);
+    const val = await jpost('/enrollment/validate', { token: reg.body.enrollment_token });
     const key = genKey();
     await jpost('/enrollment/submit', { token: reg.body.enrollment_token, hsm_url: 'https://sw.ence.do',
       kid: key.kid, pubkey: key.pubHex, key_type: 'Ed25519', signature: key.sign(val.body.challenge), n: nonce });
@@ -395,8 +395,24 @@ test('enrollment: a rejected submit keeps the link usable; a completed one is co
   r = await submitEnroll(enrollToken, good);
   assert.equal(r.status, 200, 'the link must survive rejected attempts');
   // ...and is gone afterwards
-  r = await jget(`/enrollment/validate?token=${enrollToken}`);
+  r = await jpost('/enrollment/validate', { token: enrollToken });
   assert.equal(r.status, 404);
+});
+
+test('enrollment/invite tokens are accepted in POST bodies only, never in the query string', opt, async () => {
+  const { enrollToken } = await addUser('bodytok');
+  assert.equal((await jget(`/enrollment/validate?token=${enrollToken}`)).status, 404, 'GET with ?token= must not exist');
+  assert.equal((await jpost('/enrollment/validate', { token: enrollToken })).status, 200);
+  assert.equal((await jpost('/enrollment/validate', { token: 'short' })).status, 400);
+  const client = (await jpost('/admin/clients', { name: 'BT', redirect_uris: ['https://bt/cb'], scopes: ['openid'] })).body;
+  const inv = (await jpost('/admin/invite', { clients: [client.client_id], username: 'btuser', email: 'bt@f.com' })).body;
+  const token = inv.invite_url.split('#token=')[1];
+  assert.equal((await jget(`/signup/prefill?token=${token}`)).status, 404);
+  assert.equal((await jpost('/signup/prefill', { token })).status, 200);
+  const cinv = (await jpost('/admin/invite-client', { note: 'x' })).body;
+  const ctoken = cinv.invite_url.split('#token=')[1];
+  assert.equal((await jget(`/signup-client/prefill?token=${ctoken}`)).status, 404);
+  assert.equal((await jpost('/signup-client/prefill', { token: ctoken })).status, 200);
 });
 
 test('admin users: concurrent creates with one email yield one account; null clears a field; bad input is 400 not 500', opt, async () => {
