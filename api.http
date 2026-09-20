@@ -168,6 +168,7 @@ GET {{base}}/userinfo
 Authorization: Bearer YOUR-ACCESS-TOKEN
 
 ### Logout (RP-initiated)
+# post_logout_redirect_uri must exactly match one of the client's post_logout_redirect_uris
 GET {{base}}/logout?id_token_hint=YOUR-ID-TOKEN&post_logout_redirect_uri=http://localhost:9876/&state=random-state
 
 ### ══════════════════════════════════

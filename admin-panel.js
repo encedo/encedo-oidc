@@ -724,7 +724,7 @@ async function loadClients() {
 }
 
 function openAddClient() {
-  $('c-name').value = ''; $('c-uris').value = '';
+  $('c-name').value = ''; $('c-uris').value = ''; $('c-plr').value = '';
   $('c-id-ttl').value = 3600; $('c-at-ttl').value = 3600;
   setScopesIn('c-scopes', ['openid','profile','email']);
   $('c-pkce').classList.add('on');
@@ -738,6 +738,7 @@ function openAddClient() {
 async function submitAddClient() {
   const name   = $('c-name').value.trim();
   const uris   = $('c-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const post_logout_redirect_uris = $('c-plr').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('c-scopes');
   const isPublic = $('c-public').classList.contains('on');
   const pkce   = isPublic || $('c-pkce').classList.contains('on');   // a public client is PKCE-only
@@ -748,7 +749,7 @@ async function submitAddClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-add-client');
     $('rc-id').textContent = c.client_id;
@@ -764,6 +765,7 @@ function openEditClient(idx) {
   $('ec-id-display').textContent = c.client_id;
   $('ec-name').value = c.name || '';
   $('ec-uris').value = (c.redirect_uris || []).join('\n');
+  $('ec-plr').value  = (c.post_logout_redirect_uris || []).join('\n');
   $('ec-id-ttl').value = c.id_token_ttl || 3600;
   $('ec-at-ttl').value = c.access_token_ttl || 3600;
   setScopesIn('ec-scopes', c.scopes || ['openid','profile','email']);
@@ -780,6 +782,7 @@ function openEditClient(idx) {
 async function submitEditClient() {
   const name   = $('ec-name').value.trim();
   const uris   = $('ec-uris').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const post_logout_redirect_uris = $('ec-plr').value.split('\n').map(s => s.trim()).filter(Boolean);
   const scopes = getScopesFrom('ec-scopes');
   const isPublic = $('ec-public').classList.contains('on');
   const pkce   = isPublic || $('ec-pkce').classList.contains('on');
@@ -790,7 +793,7 @@ async function submitEditClient() {
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
-      name, redirect_uris:uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, allow_any_user, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-edit-client');
     toast('Client updated');

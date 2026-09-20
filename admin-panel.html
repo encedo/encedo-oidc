@@ -672,6 +672,11 @@ html.light .client-check-name{color:var(--text)}
         <textarea class="field-textarea" id="c-uris" placeholder="https://cloud.example.com/apps/user_oidc/code&#10;http://localhost:8080/callback"></textarea>
         <div class="field-hint">One URI per line &#183; HTTPS required (localhost http allowed)</div>
       </div>
+      <div class="field">
+        <label class="field-label">Post-logout redirect URIs</label>
+        <textarea class="field-textarea" id="c-plr" placeholder="https://cloud.example.com/"></textarea>
+        <div class="field-hint">Where /logout may send the browser back &#183; exact match &#183; one per line (optional)</div>
+      </div>
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap" id="c-scopes">
@@ -762,6 +767,11 @@ html.light .client-check-name{color:var(--text)}
         <label class="field-label">Redirect URIs</label>
         <textarea class="field-textarea" id="ec-uris"></textarea>
         <div class="field-hint">One URI per line</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Post-logout redirect URIs</label>
+        <textarea class="field-textarea" id="ec-plr"></textarea>
+        <div class="field-hint">Exact match for /logout &#183; one per line &#183; empty = origin of a redirect URI is accepted (legacy)</div>
       </div>
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Allowed scopes</div>

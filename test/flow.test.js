@@ -304,6 +304,83 @@ test('authorize: error codes and repeated parameters', opt, async () => {
   assert.equal(t.status, 401); assert.equal(t.body.error, 'invalid_client');
 });
 
+const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' };
+const form = (path, o, extra = {}) => fetch(BASE + path, { method: 'POST', redirect: 'manual', headers: { ...FORM, ...extra }, body: new URLSearchParams(o) });
+
+test('authorize: prompt handling and the POST form', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'Pr', redirect_uris: ['https://pr/cb'], scopes: ['openid'], pkce: false })).body;
+  const base = { client_id: client.client_id, redirect_uri: 'https://pr/cb', response_type: 'code', scope: 'openid', state: 'st' };
+  const q = (o) => '/authorize?' + new URLSearchParams(o).toString();
+
+  // prompt=none: the OP has no session -> login_required, redirected with state, no UI
+  let r = await rget(q({ ...base, prompt: 'none' }));
+  assert.equal(r.status, 302);
+  let loc = new URL(r.headers.get('location'));
+  assert.equal(loc.searchParams.get('error'), 'login_required'); assert.equal(loc.searchParams.get('state'), 'st');
+  r = await rget(q({ ...base, prompt: 'none login' }));
+  assert.equal(new URL(r.headers.get('location')).searchParams.get('error'), 'invalid_request');
+  r = await rget(q({ ...base, prompt: 'bogus' }));
+  assert.equal(new URL(r.headers.get('location')).searchParams.get('error'), 'invalid_request');
+  // prompt=login / consent: every sign-in is interactive anyway -> the page
+  r = await fetch(BASE + q({ ...base, prompt: 'login consent' }), { redirect: 'manual' });
+  assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /text\/html/);
+
+  // POST form -> 303 to the GET form carrying the same parameters
+  r = await form('/authorize', base);
+  assert.equal(r.status, 303);
+  loc = new URL(r.headers.get('location'), BASE);
+  assert.equal(loc.pathname, '/authorize');
+  assert.equal(loc.searchParams.get('client_id'), client.client_id); assert.equal(loc.searchParams.get('state'), 'st');
+  // POST with an unregistered redirect_uri is refused, never redirected
+  r = await form('/authorize', { ...base, redirect_uri: 'https://evil/' });
+  assert.equal(r.status, 400);
+});
+
+test('logout: exact post_logout_redirect_uris, client_id, POST, legacy origin fallback', opt, async () => {
+  const client = (await jpost('/admin/clients', { name: 'Lo', redirect_uris: ['https://lo/cb'], post_logout_redirect_uris: ['https://lo/bye'], scopes: ['openid'] })).body;
+  assert.deepEqual(client.post_logout_redirect_uris, ['https://lo/bye']);
+  const getCode = await signerFor('lo1', client);
+  const c = await getCode();
+  const tok = await jpost('/token', { grant_type: 'authorization_code', code: c.code, redirect_uri: 'https://lo/cb',
+    client_id: client.client_id, client_secret: client.client_secret, code_verifier: c.verifier });
+  assert.equal(tok.status, 200);
+  const lq = (o) => '/logout?' + new URLSearchParams(o).toString();
+
+  // verified hint + exact match -> redirect with state; the access token is revoked
+  let r = await rget(lq({ id_token_hint: tok.body.id_token, post_logout_redirect_uri: 'https://lo/bye', state: 'z' }));
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), 'https://lo/bye?state=z');
+  assert.equal((await rget('/userinfo', { Authorization: `Bearer ${tok.body.access_token}` })).status, 401, 'logout must revoke the access token');
+
+  // same origin, different path -> no redirect once a list is registered
+  r = await rget(lq({ id_token_hint: tok.body.id_token, post_logout_redirect_uri: 'https://lo/other' }));
+  assert.equal(r.status, 200); assert.deepEqual(r.body, { logged_out: true });
+
+  // client_id alone identifies the client; no client at all never redirects
+  r = await rget(lq({ client_id: client.client_id, post_logout_redirect_uri: 'https://lo/bye' }));
+  assert.equal(r.status, 302);
+  r = await rget(lq({ post_logout_redirect_uri: 'https://lo/bye' }));
+  assert.equal(r.status, 200);
+
+  // POST is accepted
+  r = await form('/logout', { client_id: client.client_id, post_logout_redirect_uri: 'https://lo/bye', state: 'p' });
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), 'https://lo/bye?state=p');
+
+  // a browser gets a page, not JSON
+  r = await fetch(BASE + '/logout', { headers: { Accept: 'text/html' } });
+  assert.match(r.headers.get('content-type'), /text\/html/);
+
+  // legacy client (nothing registered): the origin of a redirect_uri is accepted, anything else is not
+  const legacy = (await jpost('/admin/clients', { name: 'Leg', redirect_uris: ['https://leg/cb'], scopes: ['openid'] })).body;
+  r = await rget(lq({ client_id: legacy.client_id, post_logout_redirect_uri: 'https://leg/anywhere' }));
+  assert.equal(r.status, 302);
+  r = await rget(lq({ client_id: legacy.client_id, post_logout_redirect_uri: 'https://evil/' }));
+  assert.equal(r.status, 200);
+
+  // a hint whose audience disagrees with client_id is refused
+  r = await rget(lq({ id_token_hint: tok.body.id_token, client_id: legacy.client_id }));
+  assert.equal(r.status, 400);
+});
+
 const redisCli = (args) => execSync(`redis-cli -p ${REDIS_PORT} ${args}`).toString().trim();
 
 test('rate limiter: the counter always carries a TTL and the limit is enforced', opt, async () => {

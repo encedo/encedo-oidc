@@ -85,7 +85,7 @@ Redis-backed sliding window per endpoint (see `src/middleware/rateLimit.js`):
 | `POST /authorize/confirm` | 10 | 60 s | session_id |
 | `POST /token` | 20 | 60 s | client_id |
 | `GET /userinfo` | 60 | 60 s | access token |
-| `GET /logout` | 20 | 60 s | IP |
+| `GET`/`POST /logout` | 20 | 60 s | IP |
 | `GET /enrollment/validate` | 10 | 60 s | enrollment token |
 | `POST /enrollment/submit` | 5 | 60 s | enrollment token |
 | `/admin/*` | 60 | 60 s | IP |

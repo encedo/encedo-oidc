@@ -196,6 +196,7 @@ client:{client_id}       Hash
   client_secret          stored in plain text — use strong random value
   redirect_uris          JSON array
   scopes                 JSON array
+  post_logout_redirect_uris JSON array       -- exact-match targets for /logout (empty = origin of redirect_uris, legacy)
   pkce                   'true' | 'false'   -- PKCE required at /authorize
   public                 'true' | 'false'   -- no secret, PKCE only (token_endpoint_auth_method=none); default false: secret always required
   id_token_ttl           seconds (integer string)
@@ -267,7 +268,7 @@ Applied per endpoint via `src/middleware/rateLimit.js` (sliding window, Redis-ba
 | `POST /authorize/confirm` | 10 | 60s | `session_id` |
 | `POST /token` | 20 | 60s | IP |
 | `GET /userinfo` | 60 | 60s | `Bearer token` |
-| `GET /logout` | 20 | 60s | IP |
+| `GET`/`POST /logout` | 20 | 60s | IP |
 | `GET /enrollment/validate` | 10 | 60s | `token` |
 | `POST /enrollment/submit` | 5 | 60s | `token` |
 | `POST /admin/*` | 60 | 60s | IP |

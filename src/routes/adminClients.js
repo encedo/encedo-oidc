@@ -14,6 +14,7 @@ function deserialize(raw) {
   return {
     ...raw,
     redirect_uris:    JSON.parse(raw.redirect_uris    ?? '[]'),
+    post_logout_redirect_uris: JSON.parse(raw.post_logout_redirect_uris ?? '[]'),
     scopes:           JSON.parse(raw.scopes           ?? '["openid"]'),
     pkce:             raw.pkce === 'true',
     public:           raw.public === 'true',
@@ -56,6 +57,7 @@ router.post('/', async (req, res, next) => {
   try {
     const {
       name, redirect_uris = [],
+      post_logout_redirect_uris = [],
       scopes = ['openid', 'profile', 'email'],
       pkce = true,
       public: isPublic = false,
@@ -89,6 +91,11 @@ router.post('/', async (req, res, next) => {
 
     const uriErr = validateRedirectUris(redirect_uris);
     if (uriErr) return res.status(400).json({ error: 'validation_error', error_description: uriErr });
+    if (!Array.isArray(post_logout_redirect_uris)) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'post_logout_redirect_uris must be an array' });
+    }
+    const plrErr = validateRedirectUris(post_logout_redirect_uris);
+    if (plrErr) return res.status(400).json({ error: 'validation_error', error_description: plrErr });
 
     const validScopes = scopes.filter(s => ALLOWED_SCOPES.includes(s));
     if (!validScopes.includes('openid')) validScopes.unshift('openid');
@@ -101,6 +108,9 @@ router.post('/', async (req, res, next) => {
       client_secret,
       name:             name.trim(),
       redirect_uris:    JSON.stringify(redirect_uris),
+      // RP-Initiated Logout: post_logout_redirect_uri must EXACTLY match one
+      // of these. Empty = legacy origin fallback in /logout (see oidc.js).
+      post_logout_redirect_uris: JSON.stringify(post_logout_redirect_uris),
       scopes:           JSON.stringify(validScopes),
       pkce:             String(pkce),
       // Public client (token_endpoint_auth_method=none): a browser/native app
@@ -145,6 +155,15 @@ router.patch('/:id', async (req, res, next) => {
       const e = validateRedirectUris(req.body.redirect_uris);
       if (e) return res.status(400).json({ error: 'validation_error', error_description: e });
       updates.redirect_uris = JSON.stringify(req.body.redirect_uris);
+    }
+
+    if (req.body.post_logout_redirect_uris !== undefined) {
+      if (!Array.isArray(req.body.post_logout_redirect_uris)) {
+        return res.status(400).json({ error: 'validation_error', error_description: 'post_logout_redirect_uris must be an array' });
+      }
+      const e = validateRedirectUris(req.body.post_logout_redirect_uris);
+      if (e) return res.status(400).json({ error: 'validation_error', error_description: e });
+      updates.post_logout_redirect_uris = JSON.stringify(req.body.post_logout_redirect_uris);
     }
 
     if (Array.isArray(req.body.scopes)) {

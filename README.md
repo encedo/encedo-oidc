@@ -710,6 +710,7 @@ curl -s -X POST $BASE/admin/clients \
   -d '{
     "name": "My App",
     "redirect_uris": ["https://myapp.example.com/callback"],
+    "post_logout_redirect_uris": ["https://myapp.example.com/"],
     "scopes": ["openid", "profile", "email"],
     "pkce": true,
     "public": false
@@ -908,7 +909,7 @@ failure, so they are safe to drive from cron.
 | `POST` | `/authorize/confirm` | Submit HSM signature, get auth code |
 | `POST` | `/token` | Exchange code for tokens (PKCE) |
 | `GET/POST` | `/userinfo` | Return claims for access token |
-| `GET` | `/logout` | RP-initiated logout |
+| `GET`/`POST` | `/logout` | RP-initiated logout. `post_logout_redirect_uri` must exactly match one of the client's registered `post_logout_redirect_uris` (identified by `id_token_hint` and/or `client_id`); a client with none registered still gets the origin of its `redirect_uris` accepted (legacy, logged) |
 | `GET` | `/health` | Liveness check: 200 `{status:'ok', redis:'up'}` only when Redis answers a PING; 503 `degraded` otherwise (the Docker image's `HEALTHCHECK` polls it) |
 
 ## Web Pages

@@ -9,14 +9,14 @@ Read only when you need to know the HSM API.
 ## Project Status — Complete
 
 ### Backend (`src/`) — 100%
-- `GET /authorize` — OIDC param validation, serves `signin.html`
+- `GET`/`POST /authorize` — OIDC param validation, serves `signin.html` (POST → 303 to the GET form so signin.js reads the params from the URL); `prompt=none` → `login_required` (the OP has no session)
 - `POST /authorize/login` — user lookup (by `sub` or `username`), builds `signing_input`, Redis session TTL 120s
 - `POST /authorize/confirm` — Ed25519 verify, assembles JWT, emits code
 - `POST /token` — client_secret ALWAYS for confidential clients (Basic or POST) + PKCE S256 when the code has a challenge; `public=true` clients are PKCE-only. `Cache-Control: no-store`. Returns pre-signed `id_token` + `access_token`
 - `GET/POST /userinfo` — Bearer token
 - `GET /jwks.json` — with 60s in-process cache, invalidated on enrollment
 - `GET /.well-known/openid-configuration`
-- `GET /logout` — RP-initiated logout with Ed25519 signature verification + issuer check
+- `GET`/`POST /logout` — RP-initiated logout: `id_token_hint` verified (signature + issuer), `client_id` accepted, `post_logout_redirect_uri` exact-matched against the client's `post_logout_redirect_uris` (legacy origin fallback when the list is empty, logged once)
 - Admin API: full CRUD users + clients
 - Enrollment: challenge-response + hardware attestation via api.encedo.com
 - Security log: Redis ZSET + stderr dual-write
@@ -268,7 +268,7 @@ email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; 
 users             Set  { sub, ... }
 
 client:{id}       Hash { client_id, client_secret, name,
-                        redirect_uris, scopes, pkce, public, allow_any_user,
+                        redirect_uris, post_logout_redirect_uris, scopes, pkce, public, allow_any_user,
                         id_token_ttl, access_token_ttl, created_at }
                   allow_any_user: 'true'|'false' (default 'false') — open client: any ENROLLED user may
                     authenticate (login gate ORs it with user.clients[]); never auto-creates the identity

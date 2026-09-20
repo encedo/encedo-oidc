@@ -154,10 +154,16 @@ router.get('/jwks.json', singleValued, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// --- 3. GET /authorize -- validate params, serve Trusted App ---
-router.get('/authorize', singleValued, async (req, res, next) => {
+// --- 3. GET|POST /authorize -- validate params, serve Trusted App ---
+// OIDC Core s.3.1.2.1: the authorization endpoint MUST accept GET and POST.
+// The Trusted App (signin.js) reads the request from the page URL, so a POST
+// is validated exactly like a GET and then answered with a 303 to the GET
+// form of the same request -- the browser lands on the same page either way.
+const PROMPT_VALUES = ['none', 'login', 'consent', 'select_account'];
+
+async function authorizeRequest(params, req, res, next, { viaPost = false } = {}) {
   try {
-    const { client_id, redirect_uri, response_type, state } = req.query;
+    const { client_id, redirect_uri, response_type, state, prompt } = params;
 
     // Validate client + redirect_uri FIRST -- an error must never be redirected
     // to an unvalidated redirect_uri (open-redirect prevention, OAuth 2.0 s.4.1.2.1).
@@ -182,13 +188,37 @@ router.get('/authorize', singleValued, async (req, res, next) => {
       return sendAuthError(res, redirect_uri, 'unsupported_response_type', state);
     }
 
-    const authErr = validateAuthParams(req.query, clientRaw);
+    const authErr = validateAuthParams(params, clientRaw);
     if (authErr) return sendAuthError(res, redirect_uri, authErr.error, state, authErr.error_description);
 
+    // prompt (Core s.3.1.2.1, mandatory for an OP per s.15.1). This OP keeps no
+    // end-user session -- every sign-in is a fresh HSM signature -- so
+    // prompt=none can never be satisfied without interaction and MUST come
+    // back as login_required instead of showing the sign-in page (a silent
+    // renew in a hidden iframe would otherwise hang on it). login / consent /
+    // select_account all describe what happens here anyway.
+    const prompts = (prompt ?? '').split(' ').filter(Boolean);
+    const unknownPrompt = prompts.find(v => !PROMPT_VALUES.includes(v));
+    if (unknownPrompt) {
+      return sendAuthError(res, redirect_uri, 'invalid_request', state, `unsupported prompt value: ${unknownPrompt}`);
+    }
+    if (prompts.includes('none')) {
+      if (prompts.length > 1) {
+        return sendAuthError(res, redirect_uri, 'invalid_request', state, 'prompt=none cannot be combined with other values');
+      }
+      return sendAuthError(res, redirect_uri, 'login_required', state, 'the OP holds no end-user session; authentication requires interaction');
+    }
+
+    if (viaPost) {
+      return res.redirect(303, `/authorize?${new URLSearchParams(params).toString()}`);
+    }
     res.sendFile(TRUSTED_APP);
 
   } catch (err) { next(err); }
-});
+}
+
+router.get('/authorize',  singleValued, (req, res, next) => authorizeRequest(req.query, req, res, next));
+router.post('/authorize', singleValued, (req, res, next) => authorizeRequest(req.body ?? {}, req, res, next, { viaPost: true }));
 
 // --- 4. POST /authorize/login ---------------------------------
 router.post('/authorize/login',
@@ -592,95 +622,140 @@ async function userinfoHandler(req, res, next) {
 router.get('/userinfo',  userinfoHandler);
 router.post('/userinfo', userinfoHandler);
 
-// --- 8. GET /logout (RP-initiated logout) ---------------------
+// --- 8. GET|POST /logout (RP-initiated logout) -----------------
+// OpenID Connect RP-Initiated Logout 1.0 s.2: GET and POST; the RP is
+// identified by a verified id_token_hint (aud) and/or client_id; the OP MUST
+// NOT redirect unless post_logout_redirect_uri exactly matches a value the
+// client registered as post_logout_redirect_uris.
+//
+// Compatibility: clients created before that list existed have none. For
+// them -- and only them -- the origin of a registered redirect_uri is still
+// accepted, as the old code did, so a deployed RP keeps working until the
+// operator registers its logout URL. That fallback is logged once per client.
+const legacyLogoutWarned = new Set();
+
+async function allowedPostLogoutUris(clientId) {
+  if (!clientId) return null;
+  const clientRaw = await redis.hGetAll(`client:${clientId}`);
+  if (!clientRaw?.client_id) return null;
+  let exact = [];
+  try { exact = JSON.parse(clientRaw.post_logout_redirect_uris ?? '[]'); } catch { exact = []; }
+  let legacyOrigins = [];
+  if (!exact.length) {
+    try {
+      legacyOrigins = JSON.parse(clientRaw.redirect_uris ?? '[]')
+        .map(u => { try { return new URL(u).origin; } catch { return null; } })
+        .filter(Boolean);
+    } catch { legacyOrigins = []; }
+  }
+  return { exact, legacyOrigins, clientId };
+}
+
+function postLogoutAllowed(url, allowed) {
+  if (!allowed) return false;
+  if (allowed.exact.includes(url.toString()) || allowed.exact.includes(url.href.replace(/\/$/, ''))) return true;
+  if (allowed.exact.length === 0 && allowed.legacyOrigins.includes(url.origin)) {
+    if (!legacyLogoutWarned.has(allowed.clientId)) {
+      legacyLogoutWarned.add(allowed.clientId);
+      console.warn(`[OIDC] client ${allowed.clientId} has no post_logout_redirect_uris registered -- accepting ${url.origin} by origin of redirect_uris (deprecated; register the logout URL)`);
+    }
+    return true;
+  }
+  return false;
+}
+
+async function logoutHandler(params, req, res, next) {
+  const { id_token_hint, post_logout_redirect_uri, state, client_id } = params;
+
+  function finish(allowed = null) {
+    if (post_logout_redirect_uri) {
+      let url;
+      try {
+        url = new URL(post_logout_redirect_uri);
+      } catch {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'invalid post_logout_redirect_uri' });
+      }
+      if (postLogoutAllowed(url, allowed)) {
+        if (state) url.searchParams.set('state', state);
+        return res.redirect(url.toString());
+      }
+      // Not registered for an identified client -- do not open-redirect.
+    }
+    // No (permitted) redirect: tell the user agent. Browsers get a page, API
+    // callers JSON. No inline style/script -- the CSP has none.
+    if (req.accepts(['json', 'html']) === 'html') {
+      return res.type('html').send('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body><h1>You have been signed out.</h1><p>You can close this window.</p></body></html>');
+    }
+    res.json({ logged_out: true });
+  }
+
+  try {
+    let hintClientId = null;
+
+    if (id_token_hint) {
+      // Decode JWT hint (header.payload.signature)
+      const parts = id_token_hint.split('.');
+      if (parts.length === 3) {
+        let payload = null;
+        try { payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString()); } catch { payload = null; }
+        const sub = payload?.sub;
+
+        // Verify issuer -- reject tokens from foreign OIDC providers
+        const issuerCheck = oidcIssuer();
+        if (sub && issuerCheck && payload.iss !== issuerCheck) {
+          await logSecurity(SEC.LOGOUT, { result: 'wrong_issuer', ip: req.ip });
+        } else if (sub) {
+          const userRaw = await redis.hGetAll(`user:${sub}`);
+          if (!userRaw?.pubkey) {
+            await logSecurity(SEC.LOGOUT, { sub, result: 'user_not_found', ip: req.ip });
+          } else {
+            // Verify JWT signature -- prevents one user from logging out another
+            let valid = false;
+            try {
+              valid = verifySignature(userRaw.key_type, userRaw.pubkey, `${parts[0]}.${parts[1]}`, parts[2]);
+            } catch { valid = false; }
+
+            if (!valid) {
+              await logSecurity(SEC.LOGOUT, { sub, result: 'invalid_signature', ip: req.ip });
+            } else {
+              // Revoke all active access tokens
+              const revokedTokens = await revokeUserTokens(sub);
+              hintClientId = typeof payload.aud === 'string' ? payload.aud : null;
+              await logSecurity(SEC.LOGOUT, {
+                sub, username: userRaw.username, result: 'ok', revokedTokens, ip: req.ip,
+              });
+              console.log(`[OIDC] Logout: revoked=${revokedTokens} tokens`);
+            }
+          }
+        }
+      }
+    }
+
+    // Which client asked? A verified hint names it (aud); client_id may be
+    // sent alone or alongside -- if both are present they must agree, or we
+    // do not know whose logout URLs to trust.
+    let effectiveClient = hintClientId;
+    if (client_id) {
+      if (hintClientId && hintClientId !== client_id) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'client_id does not match the id_token_hint audience' });
+      }
+      effectiveClient = client_id;
+    }
+
+    finish(await allowedPostLogoutUris(effectiveClient));
+
+  } catch (err) { next(err); }
+}
+
 router.get('/logout',
   rateLimit({ prefix: 'logout', max: 20, window: 60 }),
   singleValued,
-  async (req, res, next) => {
-    const { id_token_hint, post_logout_redirect_uri, state } = req.query;
-
-    // Redirect to post_logout_redirect_uri ONLY when its origin is registered for
-    // the client identified (and verified) via id_token_hint. Without a verified
-    // hint we cannot identify the client, so we never redirect to an unvalidated
-    // URI -- prevents open redirect (OIDC RP-Initiated Logout s.2).
-    function finish(allowedOrigins = null) {
-      if (post_logout_redirect_uri) {
-        let url;
-        try {
-          url = new URL(post_logout_redirect_uri);
-        } catch {
-          return res.status(400).json({ error: 'invalid_request', error_description: 'invalid post_logout_redirect_uri' });
-        }
-        if (allowedOrigins?.includes(url.origin)) {
-          if (state) url.searchParams.set('state', state);
-          return res.redirect(url.toString());
-        }
-        // Not registered for a verified client -- do not open-redirect.
-      }
-      res.json({ logged_out: true });
-    }
-
-    if (!id_token_hint) return finish();
-
-    try {
-      // Decode JWT hint (header.payload.signature)
-      const parts = id_token_hint.split('.');
-      if (parts.length !== 3) return finish();
-
-      let payload;
-      try {
-        payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-      } catch { return finish(); }
-
-      const sub = payload?.sub;
-      if (!sub) return finish();
-
-      // Verify issuer -- reject tokens from foreign OIDC providers
-      const issuerCheck = oidcIssuer();
-      if (issuerCheck && payload.iss !== issuerCheck) {
-        await logSecurity(SEC.LOGOUT, { result: 'wrong_issuer', ip: req.ip });
-        return finish();
-      }
-
-      // Load user
-      const userRaw = await redis.hGetAll(`user:${sub}`);
-      if (!userRaw?.pubkey) {
-        await logSecurity(SEC.LOGOUT, { sub, result: 'user_not_found', ip: req.ip });
-        return finish();
-      }
-
-      // Verify JWT signature -- prevents one user from logging out another
-      let valid = false;
-      try {
-        valid = verifySignature(userRaw.key_type, userRaw.pubkey, `${parts[0]}.${parts[1]}`, parts[2]);
-      } catch { valid = false; }
-
-      if (!valid) {
-        await logSecurity(SEC.LOGOUT, { sub, result: 'invalid_signature', ip: req.ip });
-        return finish(); // redirect anyway -- logout is fail-safe direction
-      }
-
-      // Revoke all active access tokens
-      const revokedTokens = await revokeUserTokens(sub);
-
-      // Hint verified -- resolve which post-logout origins are allowed for this
-      // client (origins of its registered redirect_uris). aud is the client_id.
-      let allowedOrigins = null;
-      try {
-        const clientRaw = await redis.hGetAll(`client:${payload.aud}`);
-        allowedOrigins = JSON.parse(clientRaw?.redirect_uris ?? '[]')
-          .map(u => { try { return new URL(u).origin; } catch { return null; } })
-          .filter(Boolean);
-      } catch { allowedOrigins = null; }
-
-      await logSecurity(SEC.LOGOUT, {
-        sub, username: userRaw.username, result: 'ok', revokedTokens, ip: req.ip,
-      });
-      console.log(`[OIDC] Logout: revoked=${revokedTokens} tokens`);
-      finish(allowedOrigins);
-
-    } catch (err) { next(err); }
-  }
+  (req, res, next) => logoutHandler(req.query, req, res, next),
+);
+router.post('/logout',
+  rateLimit({ prefix: 'logout', max: 20, window: 60 }),
+  singleValued,
+  (req, res, next) => logoutHandler(req.body ?? {}, req, res, next),
 );
 
 // --- Internal helpers -----------------------------------------
