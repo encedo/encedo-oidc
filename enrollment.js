@@ -1,4 +1,5 @@
-import { HEM, HemError } from '/hem-sdk.js';
+import { HEM } from '/hem-sdk.js';
+import { hsmKeyType, exdsaAlg, keyTypeLabel, derToP1363, bytesToBase64url, bytesToHex, base64ToBytes, fetchJson, hemErrMsg, authorizeScope } from '/hsm-common.js';
 
 // Read token from URL fragment (#token=...) -- fragment is never sent to the server,
 // so it won't appear in access logs or Referer headers.
@@ -8,57 +9,7 @@ const emailNonce = params.get('n') || '';   // present when arriving via the ema
 
 let userData = { sub: '', username: '' };
 let clientRedirectOrigin = null;
-
-// --- Key type helpers -----------------------------------------
-
-/** Maps key_type to HSM createKeyPair type string. */
-function hsmKeyType(keyType) {
-  if (keyType === 'P256') return 'SECP256R1';
-  if (keyType === 'P384') return 'SECP384R1';
-  if (keyType === 'P521') return 'SECP521R1';
-  return 'ED25519';
-}
-
-/** Maps key_type to exdsaSign alg string. */
-function exdsaAlg(keyType) {
-  if (keyType === 'P256') return 'SHA256WithECDSA';
-  if (keyType === 'P384') return 'SHA384WithECDSA';
-  if (keyType === 'P521') return 'SHA512WithECDSA';
-  return 'Ed25519';
-}
-
-/**
- * Convert DER-encoded ECDSA signature to IEEE P1363 (r||s, fixed-width).
- * HSM returns DER; JWT and our backend expect P1363.
- */
-function derToP1363(derBytes, keyType) {
-  const n = { P256: 32, P384: 48, P521: 66 }[keyType];
-  // Skip SEQUENCE header: tag (1) + length (1 or 2 bytes for P-521 where len > 127)
-  let pos = 1;
-  pos += derBytes[pos] & 0x80 ? 1 + (derBytes[pos] & 0x7f) : 1;
-  function readInt() {
-    pos++;                              // skip 0x02 INTEGER tag
-    const len = derBytes[pos++];
-    const val = derBytes.slice(pos, pos + len);
-    pos += len;
-    const trimmed = val[0] === 0 ? val.slice(1) : val; // strip sign byte
-    const out = new Uint8Array(n);
-    out.set(trimmed, n - trimmed.length);               // right-align
-    return out;
-  }
-  const r = readInt(), s = readInt();
-  const out = new Uint8Array(n * 2);
-  out.set(r, 0); out.set(s, n);
-  return out;
-}
-
-/** Human-readable label for key type. */
-function keyTypeLabel(keyType) {
-  if (keyType === 'P256') return 'P-256 (ECDSA)';
-  if (keyType === 'P384') return 'P-384 (ECDSA)';
-  if (keyType === 'P521') return 'P-521 (ECDSA)';
-  return 'Ed25519 (EdDSA)';
-}
+let createdKid = null;   // key pair from an earlier attempt on this page -- reused, not cloned
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
@@ -75,13 +26,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!token) return showError('No enrollment token provided.');
 
   try {
-    const res  = await fetch('/enrollment/validate?token=' + encodeURIComponent(token));
-    const data = await res.json();
-
-    if (!res.ok) {
-      showError(data.error === 'invalid_or_expired_token'
+    let data;
+    try {
+      data = await fetchJson('/enrollment/validate?token=' + encodeURIComponent(token));
+    } catch (e) {
+      if (!e.status) throw e;
+      showError(e.code === 'invalid_or_expired_token'
         ? 'This enrollment link has expired or was already used.'
-        : data.error || 'Invalid link.');
+        : e.message);
       return;
     }
 
@@ -133,24 +85,16 @@ async function doSubmit() {
     return;
   }
 
+  if (btn.disabled) return;
   btn.disabled = true;
   formErr.textContent = '';
 
   const hem = new HEM(hsm_url);
 
   // Helper: authorize for a given scope (passphrase or mobile)
-  async function authorize(scope, label) {
-    if (password) {
-      btn.textContent = label;
-      return hem.authorizePassword(password, scope);
-    } else {
-      btn.textContent = label + ' (confirm on mobile...)';
-      return hem.authorizeRemote(scope, {
-        pollInterval: 2_000,
-        pollTimeout:  60_000,
-        onPending: () => console.debug(`[HEM] ${scope}: still waiting...`),
-      });
-    }
+  function authorize(scope, label) {
+    btn.textContent = password ? label : label + ' (confirm on mobile...)';
+    return authorizeScope(hem, password, scope, { onPending: () => console.debug(`[HEM] ${scope}: still waiting...`) });
   }
 
   try {
@@ -158,17 +102,19 @@ async function doSubmit() {
     btn.textContent = 'Connecting to HSM...';
     await hem.hemCheckin();
 
-    // -- Step 1: authorize keymgmt:gen ----------------------------
-    const genToken = await authorize('keymgmt:gen', 'Authorizing key generation...');
-
-    // -- Step 2: create key pair -----------------------------------
-    btn.textContent = `Creating ${keyTypeLabel(key_type)} key...`;
-    const label    = `Encedo OIDC - ${username}`.slice(0, 32);
-    const descrB64 = btoa(`ETSOIDC${sub}`);
-    const hsmMode  = key_type !== 'Ed25519' ? 'ExDSA' : undefined;
-    const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), descrB64, hsmMode);
-    const kid      = created.kid;
-    if (!kid) throw new Error('No kid in createKeyPair response');
+    // -- Step 1+2: create key pair (once -- a retry reuses the kid) ----
+    let kid = createdKid;
+    if (!kid) {
+      const genToken = await authorize('keymgmt:gen', 'Authorizing key generation...');
+      btn.textContent = `Creating ${keyTypeLabel(key_type)} key...`;
+      const label    = `Encedo OIDC - ${username}`.slice(0, 32);
+      const descrB64 = btoa(`ETSOIDC${sub}`);
+      const hsmMode  = key_type !== 'Ed25519' ? 'ExDSA' : undefined;
+      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), descrB64, hsmMode);
+      kid = created.kid;
+      if (!kid) throw new Error('No kid in createKeyPair response');
+      createdKid = kid;
+    }
 
     // -- Step 3: authorize keymgmt:use:<kid> ----------------------
     const useToken = await authorize(`keymgmt:use:${kid}`, 'Authorizing key access...');
@@ -178,8 +124,7 @@ async function doSubmit() {
     const keyInfo = await hem.getPubKey(useToken, kid);
     if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
     // HSM returns pubkey as standard base64 -- convert to hex
-    const pubkeyBytes = Uint8Array.from(atob(keyInfo.pubkey), c => c.charCodeAt(0));
-    const pubkey      = Array.from(pubkeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const pubkey = bytesToHex(base64ToBytes(keyInfo.pubkey));
 
     // -- Step 5: sign the challenge -- key-possession proof ---------
     btn.textContent = 'Signing challenge...';
@@ -187,8 +132,7 @@ async function doSubmit() {
     if (!challenge) throw new Error('No challenge received from server -- call validate first');
     const rawSigBytes = await hem.exdsaSign(useToken, kid, challenge, exdsaAlg(key_type));
     const sigBytes  = key_type !== 'Ed25519' ? derToP1363(rawSigBytes, key_type) : rawSigBytes;
-    const signature = btoa(String.fromCharCode(...sigBytes))
-                        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const signature = bytesToBase64url(sigBytes);
 
     // -- Step 6: HSM attestation -- hardware origin proof -----------
     btn.textContent = 'Fetching attestation...';
@@ -204,18 +148,18 @@ async function doSubmit() {
 
     // -- Step 7: submit to backend ---------------------------------
     btn.textContent = 'Saving...';
-    const res  = await fetch('/enrollment/submit', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n: emailNonce }),
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      formErr.textContent =
-        data.error === 'invalid_or_expired_token'
-          ? 'Link has expired -- request a new one from your administrator.'
-          : data.error || 'Submission failed.';
+    let data;
+    try {
+      data = await fetchJson('/enrollment/submit', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n: emailNonce }),
+      });
+    } catch (e) {
+      if (!e.status) throw e;
+      formErr.textContent = e.code === 'invalid_or_expired_token'
+        ? 'Link has expired -- request a new one from your administrator.'
+        : e.message;
       btn.disabled = false;
       btn.textContent = 'Link HSM ->';
       return;
@@ -232,13 +176,11 @@ async function doSubmit() {
 
   } catch (err) {
     console.error('[HEM] enrollment failed:', err);
-    formErr.textContent = err instanceof HemError && err.code === 'http_401'
-      ? 'Incorrect HSM passphrase.'
-      : err instanceof HemError
-      ? `HSM error: ${err.message}`
-      : `Error: ${err.message}`;
+    formErr.textContent = err.status ? err.message : hemErrMsg(err);
     btn.disabled = false;
     btn.textContent = 'Link HSM ->';
+  } finally {
+    try { hem.clearKeys(); } catch { /* SDK without clearKeys */ }
   }
 }
 

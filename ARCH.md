@@ -155,6 +155,7 @@ encedo-oidc/
 ├── index.js                      Status page logic (reads /health)
 ├── landing.html                  Product landing page (served at / when LANDING_PAGE=1)
 ├── landing.js                    Landing logic: rail from /health + signing demonstration
+├── hsm-common.js                 Shared browser helpers (key-type maps, DER→P1363, JWT decode, fetchJson)
 ├── signin.js                     Trusted App logic (served as /signin.js)
 ├── signin.html                   Trusted App shell (served at /authorize)
 ├── enrollment.js                 Enrollment flow logic

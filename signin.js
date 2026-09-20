@@ -1,42 +1,5 @@
-import { HEM, HemError } from '/hem-sdk.js';
-
-// --- Key type helpers -----------------------------------------
-
-/** Maps key_type to exdsaSign alg string for Encedo HSM API. */
-function exdsaAlg(keyType) {
-  if (keyType === 'P256') return 'SHA256WithECDSA';
-  if (keyType === 'P384') return 'SHA384WithECDSA';
-  if (keyType === 'P521') return 'SHA512WithECDSA';
-  return 'Ed25519'; // Ed25519 (default / legacy)
-}
-
-function derToP1363(derBytes, keyType) {
-  const n = { P256: 32, P384: 48, P521: 66 }[keyType];
-  let pos = 1;
-  pos += derBytes[pos] & 0x80 ? 1 + (derBytes[pos] & 0x7f) : 1;
-  function readInt() {
-    pos++;
-    const len = derBytes[pos++];
-    const val = derBytes.slice(pos, pos + len);
-    pos += len;
-    const trimmed = val[0] === 0 ? val.slice(1) : val;
-    const out = new Uint8Array(n);
-    out.set(trimmed, n - trimmed.length);
-    return out;
-  }
-  const r = readInt(), s = readInt();
-  const out = new Uint8Array(n * 2);
-  out.set(r, 0); out.set(s, n);
-  return out;
-}
-
-/** Human-readable algorithm label for UI. */
-function keyTypeDisplay(keyType) {
-  if (keyType === 'P256') return 'ES256 / P-256';
-  if (keyType === 'P384') return 'ES384 / P-384';
-  if (keyType === 'P521') return 'ES512 / P-521';
-  return 'EdDSA / Ed25519';
-}
+import { HEM } from '/hem-sdk.js';
+import { exdsaAlg, derToP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg } from '/hsm-common.js';
 
 // --- OIDC params --------------------------------------
 const params = new URLSearchParams(window.location.search);
@@ -51,6 +14,10 @@ const OIDC = {
   code_challenge_method: params.get('code_challenge_method') || '',
 };
 
+// The device pages its search at 15 entries by default; ask for more so a
+// second account or a re-enrolled key on the same HSM is never silently cut off.
+const KEY_LIST_LIMIT = 100;
+
 // --- Session (in-memory only) -------------------------
 function freshSession() {
   return {
@@ -61,7 +28,8 @@ function freshSession() {
     listToken:       null,   // keymgmt:search token
     selectedKey:     null,   // { kid, label, sub }
     openSearch:      false,  // HSM allows unauthenticated search
-    hasMobileApp:    false,  // HSM has mobile-app keys (^RVhUQUlE)
+    hasMobileApp:    false,  // HSM has mobile-app keys (description 'EXTAID…')
+    keys:            [],     // last key list from searchKeys -- to re-pick by kid
     pendingAfterPin: null,   // 'search' | 'use'
     pendingSign:     null,   // { useToken, kid, label, loginData } -- set before s-token-confirm
   };
@@ -74,6 +42,12 @@ let mobileAbortCtrl = null;
 let fasttrackActive = false;
 
 // --- localStorage helpers -----------------------------
+// The stored value is rendered as a DOM node, never as markup.
+function setDatalist(dl, value) {
+  const o = document.createElement('option');
+  o.value = value;
+  dl.replaceChildren(o);
+}
 const LS_HSM_URL  = 'encedo_oidc_hsm_url';
 
 function lsSaveHints(hsmUrl) {
@@ -81,7 +55,7 @@ function lsSaveHints(hsmUrl) {
     if (hsmUrl) localStorage.setItem(LS_HSM_URL, hsmUrl);
     const dl    = document.getElementById('hsm-url-list');
     const saved = localStorage.getItem(LS_HSM_URL);
-    if (saved && dl) dl.innerHTML = `<option value="${saved}">`;
+    if (saved && dl) setDatalist(dl, saved);
   } catch {}
 }
 
@@ -91,7 +65,7 @@ function lsRestoreHints() {
     if (h) {
       document.getElementById('hsm-url-input').value = h;
       const dl = document.getElementById('hsm-url-list');
-      if (dl) dl.innerHTML = `<option value="${h}">`;
+      if (dl) setDatalist(dl, h);
     }
   } catch {}
 }
@@ -141,7 +115,6 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch {
     const label = OIDC.client_id || 'Unknown client';
     document.getElementById('rp-label-login').textContent = label;
-    document.getElementById('rp-label-pin').textContent   = label;
   }
 
   lsRestoreHints();
@@ -159,17 +132,20 @@ document.addEventListener('DOMContentLoaded', () => {
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('visible'));
   document.getElementById(id).classList.add('visible');
+  // Leaving the passphrase screen ("Back") must not leave the passphrase in the input.
+  if (id !== 's-pin') document.getElementById('pin-input').value = '';
 }
 
 // --- Step 1: Login -> HSM checkin -> detect capabilities -> search keys -----
 async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  if (btn.disabled) return;   // Enter while a login is in flight -- one run at a time
   const hsmUrl = document.getElementById('hsm-url-input').value.trim();
   if (!hsmUrl) {
     document.getElementById('login-err').textContent = 'Please enter the HSM URL.';
     return;
   }
 
-  const btn = document.getElementById('login-btn');
   btn.disabled = true;
   btn.textContent = 'Connecting...';
   document.getElementById('login-err').textContent = '';
@@ -187,7 +163,7 @@ async function doLogin() {
     // Step A: detect mobile-app support (keys described 'EXTAID…'; the SDK anchors and base64-encodes the pattern)
     btn.textContent = 'Detecting HSM capabilities...';
     try {
-      const mobileKeys = await hem.searchKeys(null, 'EXTAID');
+      const mobileKeys = await hem.searchKeys(null, 'EXTAID', 0, 1);
       session.openSearch   = true;
       session.hasMobileApp = mobileKeys.length > 0;
     } catch (e) {
@@ -211,7 +187,7 @@ async function doLogin() {
     // Step B: search OIDC keys (or delegate to passphrase screen)
     if (session.openSearch) {
       btn.textContent = 'Searching keys...';
-      const keys = await hem.searchKeys(null, 'ETSOIDC');
+      const keys = await hem.searchKeys(null, 'ETSOIDC', 0, KEY_LIST_LIMIT);
       if (keys.length === 0) {
         document.getElementById('login-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';
@@ -245,13 +221,16 @@ async function tryFasttrack(kid, label, sub, btn) {
   try {
     btn.textContent = 'Fast track\u2026';
     fasttrackActive = true;
-    const loginRes = await fetch('/authorize/login', {
+    const loginData = await fetchJson('/authorize/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ sub, ...OIDC }),
     });
-    const loginData = await loginRes.json();
-    if (!loginRes.ok) throw new Error(loginData.error_description || loginData.error || 'Login failed');
+    // The server pins the registered key in the JWT header. A cached kid from
+    // before a re-enrollment would sign with the wrong key and fail at
+    // /authorize/confirm every time; detect it here and fall back to the list.
+    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    if (expectedKid && expectedKid !== kid) throw new Error(`cached key ${kid} is no longer the registered key (${expectedKid})`);
 
     session.selectedKey = { kid, label, sub };
     session.pendingSign = { kid, label, loginData };
@@ -279,13 +258,14 @@ function showPinScreen() {
 
 // --- Step passphrase: user submitted passphrase -------
 async function doSubmitPin() {
+  const btn = document.getElementById('pin-btn');
+  if (btn.disabled) return;   // second Enter while authorizing
   const pin = document.getElementById('pin-input').value;
   if (!pin) {
     document.getElementById('pin-err').textContent = 'Please enter your passphrase.';
     return;
   }
 
-  const btn = document.getElementById('pin-btn');
   btn.disabled = true;
   btn.textContent = 'Authorizing...';
   document.getElementById('pin-err').textContent = '';
@@ -298,7 +278,7 @@ async function doSubmitPin() {
       const listToken = await session.hem.authorizePassword(pin, 'keymgmt:search');
       session.listToken = listToken;
       btn.textContent = 'Searching keys...';
-      const keys = await session.hem.searchKeys(listToken, 'ETSOIDC');
+      const keys = await session.hem.searchKeys(listToken, 'ETSOIDC', 0, KEY_LIST_LIMIT);
       if (keys.length === 0) {
         document.getElementById('pin-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';
@@ -344,6 +324,7 @@ function extractSub(description) {
 function renderKeyList(keys) {
   const sel = document.getElementById('key-select');
   sel.innerHTML = '';
+  session.keys = keys;
 
   if (keys.length === 0) {
     const opt = document.createElement('option');
@@ -368,10 +349,12 @@ function renderKeyList(keys) {
   const first = keys[0];
   session.selectedKey = { kid: first.kid, label: first.label, sub: extractSub(first.description) };
 
-  sel.addEventListener('change', () => {
+  // property, not addEventListener: the list is re-rendered on retry and
+  // listeners would stack up
+  sel.onchange = () => {
     const opt = sel.selectedOptions[0];
     session.selectedKey = { kid: opt.value, label: opt.dataset.label, sub: opt.dataset.sub || null };
-  });
+  };
 }
 
 // --- Step 2: Key selected -> POST login -> show claims confirmation -----
@@ -387,21 +370,36 @@ async function doSelectKey() {
   }
 
   const btn = document.getElementById('keys-next-btn');
+  if (btn.disabled) return;
   btn.disabled = true;
   btn.textContent = 'Loading\u2026';
   document.getElementById('keys-err').textContent = '';
 
-  const { kid, label } = session.selectedKey;
+  let { kid, label } = session.selectedKey;
 
   try {
     const sub = session.selectedKey?.sub || null;
-    const loginRes = await fetch('/authorize/login', {
+    const loginData = await fetchJson('/authorize/login', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ sub, ...OIDC }),
     });
-    const loginData = await loginRes.json();
-    if (!loginRes.ok) throw new Error(loginData.error_description || loginData.error || 'Login failed');
+
+    // The JWT header names the key registered for this account. Several keys
+    // can carry the same ETSOIDC<sub> description (each failed enrollment
+    // attempt leaves one behind); if the user picked a clone, switch to the
+    // registered one when it is on the device, otherwise say so instead of
+    // producing a signature the server will reject.
+    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    if (expectedKid && expectedKid !== kid) {
+      const registered = session.keys.find(k => k.kid === expectedKid);
+      if (!registered) {
+        throw new Error(`The selected key is not the one registered for this account (expected ${expectedKid.slice(0, 8)}…). Re-enroll or pick another account.`);
+      }
+      console.warn(`[signin] key ${kid} is a clone; using registered key ${expectedKid}`);
+      kid = registered.kid; label = registered.label || '';
+      session.selectedKey = { kid, label, sub };
+    }
 
     // Decode JWT payload and populate confirm screen
     const payload = decodeJwtPayload(loginData.signing_input);
@@ -441,8 +439,7 @@ async function doSelectKey() {
 // --- Cancel mobile auth -> switch to passphrase --------
 function doCancelMobile() {
   currentOpId = null; // invalidate pending mobile operation
-  mobileAbortCtrl?.abort(); mobileAbortCtrl = null; // stop broker polling
-  // TODO: call broker mobile authorization cancellation endpoint here (e.g. DELETE {broker}/notify/event/{eventid})
+  mobileAbortCtrl?.abort(); mobileAbortCtrl = null; // stop broker polling (the SDK withdraws the broker event on abort)
   document.getElementById('cancel-mobile-btn').style.display = 'none';
   if (session.password) {
     doApproveSign(); // retry with cached passphrase
@@ -452,14 +449,6 @@ function doCancelMobile() {
   }
 }
 
-// --- JWT helpers --------------------------------------
-function decodeJwtPayload(signingInput) {
-  try {
-    const b64 = signingInput.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(b64));
-  } catch { return null; }
-}
-
 function fmtTs(unixSec) {
   return new Date(unixSec * 1000).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
 }
@@ -467,6 +456,7 @@ function fmtTs(unixSec) {
 // --- Step 3: Approve -> authorize HSM key --------------
 async function doApproveSign() {
   const btn = document.getElementById('tc-approve-btn');
+  if (btn.disabled) return;
   btn.disabled = true;
   btn.textContent = 'Authorizing\u2026';
 
@@ -541,14 +531,20 @@ async function doCompleteSign(useToken, kid, label, loginData) {
     const sigBytes  = loginData.key_type !== 'Ed25519' ? derToP1363(rawSigBytes, loginData.key_type) : rawSigBytes;
     const signature = bytesToBase64url(sigBytes);
 
-    const confirmRes = await fetch('/authorize/confirm', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ session_id: loginData.session_id, signature }),
-    });
-    const confirmData = await confirmRes.json();
-    if (!confirmRes.ok) {
-      showError(confirmData.error_description || confirmData.error || 'Signature verification failed.');
+    let confirmData;
+    try {
+      confirmData = await fetchJson('/authorize/confirm', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ session_id: loginData.session_id, signature }),
+      });
+    } catch (e) {
+      // Whatever the reason, the cached fast-track key did not produce an
+      // acceptable signature -- forget it so the next attempt goes through the
+      // key list instead of failing the same way again.
+      ftClear();
+      document.getElementById('ft-row').style.display = 'none';
+      showError(e.status ? e.message : hemErrMsg(e));
       return;
     }
 
@@ -590,7 +586,12 @@ async function doCompleteSign(useToken, kid, label, loginData) {
 
   } catch (err) {
     console.error('[doCompleteSign]', err);
-    showError(err?.name + ': ' + (err?.message || 'unknown error'));
+    showError(hemErrMsg(err));
+  } finally {
+    // The signature is made (or not); nothing after this needs the passphrase
+    // or the X25519 keys the SDK derived from it. Drop both.
+    session.password = null;
+    try { session.hem?.clearKeys(); } catch { /* SDK without clearKeys */ }
   }
 }
 
@@ -618,24 +619,9 @@ function doTryAgain() {
 }
 
 
-// --- Helpers ------------------------------------------
-function hemErrMsg(err) {
-  if (err instanceof HemError) {
-    if (err.code === 'http_401') return 'Authentication failed. Is passphrase correct?';
-    return `HSM error (${err.code}): ${err.message}`;
-  }
-  return `Error: ${err.message || 'Unknown error'}`;
-}
-
 function showError(msg) {
   document.getElementById('error-msg').textContent = msg;
   showScreen('s-error');
-}
-
-function bytesToBase64url(bytes) {
-  let b = '';
-  for (const byte of bytes) b += String.fromCharCode(byte);
-  return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
 // Click dispatch -- buttons carry data-action, no inline handlers (CSP has no

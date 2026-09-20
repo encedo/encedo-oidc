@@ -1,4 +1,5 @@
-import { HEM, HemError } from '/hem-sdk.js';
+import { HEM } from '/hem-sdk.js';
+import { hsmKeyType, exdsaAlg, keyTypeLabel, derToP1363, bytesToBase64url, bytesToHex, base64ToBytes, fetchJson, hemErrMsg, authorizeScope } from '/hsm-common.js';
 
 // Fragment carries token and, for an emailed invite, the email nonce (#token=...&n=...).
 // Parse both properly -- a naive strip would fold "&n=..." into the token.
@@ -11,57 +12,12 @@ let clientRedirectOrigin = null;
 let forcedKeyType        = null;
 let lockedUsername       = null;
 
-// --- Key type helpers -----------------------------------------
-
-function hsmKeyType(keyType) {
-  if (keyType === 'P256') return 'SECP256R1';
-  if (keyType === 'P384') return 'SECP384R1';
-  if (keyType === 'P521') return 'SECP521R1';
-  return 'ED25519';
-}
-
-function exdsaAlg(keyType) {
-  if (keyType === 'P256') return 'SHA256WithECDSA';
-  if (keyType === 'P384') return 'SHA384WithECDSA';
-  if (keyType === 'P521') return 'SHA512WithECDSA';
-  return 'Ed25519';
-}
-
-function keyTypeLabel(keyType) {
-  if (keyType === 'P256') return 'P-256 (ECDSA)';
-  if (keyType === 'P384') return 'P-384 (ECDSA)';
-  if (keyType === 'P521') return 'P-521 (ECDSA)';
-  return 'Ed25519 (EdDSA)';
-}
-
-/**
- * Convert DER-encoded ECDSA signature to IEEE P1363 (r||s, fixed-width).
- * Handles both short-form (<= 127 bytes) and long-form (> 127 bytes, P-521) DER headers.
- */
-function derToP1363(derBytes, keyType) {
-  const n = { P256: 32, P384: 48, P521: 66 }[keyType];
-  let pos = 1; // skip 0x30 SEQUENCE tag
-  // Parse SEQUENCE length: long form if high bit set
-  if (derBytes[pos] & 0x80) {
-    pos += 1 + (derBytes[pos] & 0x7f);
-  } else {
-    pos += 1;
-  }
-  function readInt() {
-    pos++;                              // skip 0x02 INTEGER tag
-    const len = derBytes[pos++];
-    const val = derBytes.slice(pos, pos + len);
-    pos += len;
-    const trimmed = val[0] === 0 ? val.slice(1) : val; // strip sign byte
-    const out = new Uint8Array(n);
-    out.set(trimmed, n - trimmed.length);               // right-align
-    return out;
-  }
-  const r = readInt(), s = readInt();
-  const out = new Uint8Array(n * 2);
-  out.set(r, 0); out.set(s, n);
-  return out;
-}
+// What an earlier attempt already achieved. /signup/register consumes the
+// one-time invite and creates the account, so once it has succeeded a retry
+// must NOT call it again (the invite is gone: 404 invite_not_found); it picks
+// up at the HSM steps with the same sub/enrollment_token. Likewise a key pair
+// created on the device is reused rather than cloned on every retry.
+let progress = null;   // { sub, enrollment_token, username, key_type, kid? }
 
 // --- UI helpers -----------------------------------------------
 
@@ -84,10 +40,10 @@ if (!token) {
   show('s-invalid');
 } else {
   try {
-    const r = await fetch(`/signup/prefill?token=${encodeURIComponent(token)}`);
-    if (!r.ok) { show('s-invalid'); }
+    let d;
+    try { d = await fetchJson(`/signup/prefill?token=${encodeURIComponent(token)}`); } catch { d = null; }
+    if (!d) { show('s-invalid'); }
     else {
-      const d = await r.json();
       clientName    = d.client_name || 'this service';
       forcedKeyType = d.key_type || null;
 
@@ -143,6 +99,7 @@ if (!token) {
 // --- Submit ---------------------------------------------------
 async function doSubmit() {
   const btn = document.getElementById('su-submit-btn');
+  if (btn.disabled) return;
   const err = document.getElementById('su-err');
   err.textContent = '';
 
@@ -161,44 +118,46 @@ async function doSubmit() {
   show('s-enrolling');
 
   const hem = new HEM(hsm_url);
-
-  async function authorize(scope) {
-    return password
-      ? hem.authorizePassword(password, scope)
-      : hem.authorizeRemote(scope, { pollInterval: 2000, pollTimeout: 60000 });
-  }
+  const authorize = scope => authorizeScope(hem, password, scope);
 
   try {
     setStatus('Connecting to HSM…');
     await hem.hemCheckin();
 
-    setStatus('Authorizing key generation…');
-    const genToken = await authorize('keymgmt:gen');
+    let sub, enrollment_token, kid;
+    if (progress) {
+      // The account exists from a previous attempt -- resume at the HSM steps.
+      ({ sub, enrollment_token, kid } = progress);
+      setStatus('Account already created — resuming HSM setup…');
+    } else {
+      // Key generation is authorized BEFORE the invite is consumed, so a wrong
+      // passphrase or a declined push costs nothing on the server side.
+      setStatus('Authorizing key generation…');
+      await authorize('keymgmt:gen');
 
-    setStatus('Creating account…');
-    const regRes  = await fetch('/signup/register', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token, username, name, email, hsm_url, key_type, n: emailNonce }),
-    });
-    const regData = await regRes.json();
-    if (!regRes.ok) {
-      show('s-form');
-      err.textContent = regData.error_description || regData.error || `Error ${regRes.status}`;
-      btn.disabled = false;
-      return;
+      setStatus('Creating account…');
+      const regData = await fetchJson('/signup/register', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token, username, name, email, hsm_url, key_type, n: emailNonce }),
+      });
+      ({ sub, enrollment_token } = regData);
+      clientRedirectOrigin = regData.client_redirect_origin;
+      progress = { sub, enrollment_token, username, key_type };
     }
 
-    const { sub, enrollment_token } = regData;
-    clientRedirectOrigin = regData.client_redirect_origin;
-
-    setStatus(`Creating ${keyTypeLabel(key_type)} key pair…`);
-    const label    = `Encedo OIDC - ${username}`.slice(0, 32);
-    const descrB64 = btoa(`ETSOIDC${sub}`);
-    const hsmMode  = key_type !== 'Ed25519' ? 'ExDSA' : undefined;
-    const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), descrB64, hsmMode);
-    const kid      = created.kid;
-    if (!kid) throw new Error('No kid in createKeyPair response');
+    if (!kid) {
+      setStatus(`Creating ${keyTypeLabel(progress.key_type)} key pair…`);
+      const genToken = await authorize('keymgmt:gen');   // cached by the SDK when already granted
+      const label    = `Encedo OIDC - ${username}`.slice(0, 32);
+      const descrB64 = btoa(`ETSOIDC${sub}`);
+      const hsmMode  = progress.key_type !== 'Ed25519' ? 'ExDSA' : undefined;
+      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(progress.key_type), descrB64, hsmMode);
+      kid = created.kid;
+      if (!kid) throw new Error('No kid in createKeyPair response');
+      progress.kid = kid;
+    }
+    const kt = progress.key_type;
 
     setStatus('Authorizing key access…');
     const useToken = await authorize(`keymgmt:use:${kid}`);
@@ -206,17 +165,13 @@ async function doSubmit() {
     setStatus('Fetching public key…');
     const keyInfo = await hem.getPubKey(useToken, kid);
     if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
-    const pubkeyBytes = Uint8Array.from(atob(keyInfo.pubkey), c => c.charCodeAt(0));
-    const pubkey      = Array.from(pubkeyBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const pubkey = bytesToHex(base64ToBytes(keyInfo.pubkey));
 
     setStatus('Signing challenge…');
-    const chalRes  = await fetch(`/enrollment/validate?token=${encodeURIComponent(enrollment_token)}`);
-    const chalData = await chalRes.json();
-    if (!chalRes.ok) throw new Error(chalData.error || 'Failed to get challenge');
-    const rawSigBytes = await hem.exdsaSign(useToken, kid, chalData.challenge, exdsaAlg(key_type));
-    const sigBytes    = key_type !== 'Ed25519' ? derToP1363(rawSigBytes, key_type) : rawSigBytes;
-    const signature   = btoa(String.fromCharCode(...sigBytes))
-                          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const chalData = await fetchJson(`/enrollment/validate?token=${encodeURIComponent(enrollment_token)}`);
+    const rawSigBytes = await hem.exdsaSign(useToken, kid, chalData.challenge, exdsaAlg(kt));
+    const sigBytes    = kt !== 'Ed25519' ? derToP1363(rawSigBytes, kt) : rawSigBytes;
+    const signature   = bytesToBase64url(sigBytes);
 
     setStatus('Fetching attestation…');
     let genuine = null, crt = null;
@@ -227,13 +182,21 @@ async function doSubmit() {
     } catch (e) { console.warn('[HEM] attestation non-fatal:', e.message); }
 
     setStatus('Saving…');
-    const subRes  = await fetch('/enrollment/submit', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ token: enrollment_token, hsm_url, kid, pubkey, key_type, signature, genuine, crt }),
-    });
-    const subData = await subRes.json();
-    if (!subRes.ok) throw new Error(subData.error || 'Enrollment submission failed');
+    try {
+      await fetchJson('/enrollment/submit', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token: enrollment_token, hsm_url, kid, pubkey, key_type: kt, signature, genuine, crt }),
+      });
+    } catch (e) {
+      if (e.code === 'invalid_or_expired_token') {
+        // The one-time enrollment token is gone but the account exists: only
+        // the administrator can issue a new link. Say exactly that.
+        progress = null;
+        throw new Error(`Your account "${username}" was created, but the HSM link could not be saved and the enrollment link is now used up. Ask your administrator for a new enrollment link.`);
+      }
+      throw e;
+    }
 
     document.getElementById('s-username').textContent = username;
     document.getElementById('s-client').textContent   = clientName;
@@ -245,12 +208,11 @@ async function doSubmit() {
   } catch (e) {
     console.error('[Signup] failed:', e);
     show('s-form');
-    err.textContent = e instanceof HemError && e.code === 'http_401'
-      ? 'Incorrect HSM passphrase.'
-      : e instanceof HemError
-      ? `HSM error: ${e.message}`
-      : `Error: ${e.message}`;
+    err.textContent = (progress ? 'Account created — HSM setup did not finish: ' : '') + (e.status ? e.message : hemErrMsg(e))
+      + (progress ? ' Fix the problem and press the button again to resume.' : '');
     btn.disabled = false;
+  } finally {
+    try { hem.clearKeys(); } catch { /* SDK without clearKeys */ }
   }
 }
 

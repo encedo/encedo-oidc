@@ -48,14 +48,15 @@ Read only when you need to know the HSM API.
 - Backend validates via `POST api.encedo.com/attest`
 - `hsm_crt` stored in Redis for audit
 - ECC keys: `createKeyPair` called with `mode: 'ExDSA'`; DER→P1363 conversion immediately after `exdsaSign`
-- `derToP1363(derBytes, keyType)` handles both short-form and long-form DER length (P-521 uses 3-byte header)
+- `derToP1363(derBytes, keyType)` lives in `hsm-common.js` (one copy for all pages), validates the DER structure and handles short- and long-form lengths (P-521 uses a 3-byte header)
 - Success screen: "Go to service" button (redirects to `client_redirect_origin`; hidden if not available)
 
 ### signup.js — 100%
 - Single-step flow: prefill → HSM enrollment → account creation in one pass
 - Calls `/signup/register` (creates user) then `/enrollment/validate` + `/enrollment/submit`
 - Locked username and locked key type supported (same UI pattern as enrollment.html)
-- Same `derToP1363` + `mode: 'ExDSA'` as enrollment.js
+- Same `derToP1363` (from `hsm-common.js`) + `mode: 'ExDSA'` as enrollment.js
+- **Resumable**: once `/signup/register` succeeded the page keeps `{sub, enrollment_token, kid}` in `progress`; a failed HSM step lets the user press the button again without re-registering (the invite is consumed) or creating a second key. A used-up enrollment token after a failed submit is reported as “ask your administrator for a new link”.
 - "Go to service" redirects to `client_redirect_origin` from `/signup/register` response
 
 ---
@@ -96,6 +97,7 @@ encedo-oidc/
 ├── index.js                    ← Status page JS (fetches /health)
 ├── landing.html                ← Public landing page (served at / when LANDING_PAGE=1)
 ├── landing.js                  ← Landing JS: rail from /health + Ed25519 signing demo
+├── hsm-common.js               ← shared by signin/enrollment/signup: key-type maps, derToP1363, JWT decode, fetchJson, hemErrMsg, authorizeScope
 ├── signin.js                   ← Trusted App logic
 ├── signin.html                 ← Trusted App shell
 ├── enrollment.js               ← Enrollment flow logic
