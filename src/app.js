@@ -3,10 +3,16 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
 
 const GIT_COMMIT = (() => {
   try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore','pipe','ignore'] }).toString().trim(); }
   catch { return process.env.GIT_COMMIT || 'unknown'; }
+})();
+// Release version: package.json is bumped with every tag (README, Releasing).
+const APP_VERSION = (() => {
+  try { return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; }
+  catch { return 'unknown'; }
 })();
 
 import { requireAdminAuth, requireAdminNetwork } from './middleware/auth.js';
@@ -123,7 +129,7 @@ app.get('/health', async (_req, res) => {
   res.status(redisUp ? 200 : 503).json({
     status: redisUp ? 'ok' : 'degraded',
     redis: redisUp ? 'up' : 'down',
-    ts: new Date().toISOString(), commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null, mail_enabled: isMailEnabled(),
+    ts: new Date().toISOString(), version: APP_VERSION, commit: GIT_COMMIT, issuer: process.env.ISSUER ?? null, mail_enabled: isMailEnabled(),
   });
 });
 

@@ -639,8 +639,8 @@ Redis is untouched — data is safe. Other tenants keep running the previous ima
 When a new release is available:
 
 ```
-# 1. Pull latest source (incl. the hem-sdk-js submodule pin)
-cd /opt/encedo-oidc/src && git pull && git submodule update --init
+# 1. Check out the release tag (incl. the hem-sdk-js submodule pin)
+cd /opt/encedo-oidc/src && git fetch --tags origin && git checkout vX.Y.Z && git submodule update --init
 
 # 2. Build new image — once, shared by all tenants
 docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \
@@ -650,7 +650,32 @@ docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --sh
 for dir in /opt/encedo-oidc/tenants/*/; do
   [ -f "$dir/docker-compose.yml" ] && docker compose -f "$dir/docker-compose.yml" up -d --no-deps oidc
 done
+
+# 4. Confirm what is running: version comes from package.json, commit from the build
+curl -s https://oidc.example.com/health   # {"status":"ok","version":"1.1.0","commit":"3fd8ae3",...}
 ```
+
+`git pull` on `main` works too, but a tag is what the tests gated and what the GitHub Release describes.
+
+### Releasing
+
+Versions are [semver](https://semver.org/) tags `vX.Y.Z`; `package.json` carries the same number and `/health` reports it.
+Minor for new behaviour (a feature, a new setting), patch for fixes, major for anything a relying party or an operator must
+change for. To cut a release:
+
+```
+# 1. bump the version and commit it
+npm version 1.2.0 --no-git-tag-version
+git commit -am "release: v1.2.0"
+
+# 2. tag and push -- the tag triggers .github/workflows/release.yml
+git tag -a v1.2.0 -m "v1.2.0"
+git push origin main v1.2.0
+```
+
+The workflow runs the test suite (with redis-server), builds `encedo-oidc-v1.2.0.zip` and publishes a GitHub Release with
+generated notes from the commits since the previous tag. Every push to `main` also runs CI: lint, unit and integration
+tests, and the SSO browser E2E in a separate job. A tag whose tests fail gets no release.
 
 ### One-time migration: isolate each tenant's Redis (password + private network)
 

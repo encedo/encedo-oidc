@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true   # hem-sdk-js: /hem-sdk.js is served from it
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -27,5 +29,31 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Explicit file list, same as `npm test`: a bare `node --test` would also
+      # pick up test/e2e/*.mjs, which are browser scripts, not unit tests.
       - name: Run tests
-        run: node --test
+        run: npm test
+
+  # Browser end-to-end: the SSO flows in a headless Chromium against a fake
+  # HEM (test/e2e/sso.mjs). Separate job so a browser hiccup is visible on
+  # its own and does not mask a unit failure.
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install redis-server
+        run: sudo apt-get update && sudo apt-get install -y redis-server
+
+      - name: Install dependencies
+        run: npm ci --omit=dev
+
+      - name: SSO browser E2E
+        run: node test/e2e/sso.mjs
