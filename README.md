@@ -1024,7 +1024,7 @@ failure, so they are safe to drive from cron.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/.well-known/openid-configuration` | Discovery document |
-| `GET` | `/jwks.json` | Public keys of every enrolled user (`EdDSA`, `ES256`, `ES384`, `ES512`) |
+| `GET` | `/jwks.json` | Public keys of every enrolled user (`EdDSA`, `ES256`, `ES384`, `ES512`). `?kid=<kid>` returns that key alone — the set changes with every enrollment, so an RP that caches it must refetch on an unknown `kid` |
 | `GET` | `/authorize` | Start login flow — serves `signin.html` |
 | `POST` | `/authorize/login` | Initiate signing session |
 | `POST` | `/authorize/confirm` | Submit HSM signature, get auth code |

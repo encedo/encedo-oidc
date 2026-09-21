@@ -213,6 +213,24 @@ browser (OP origin localStorage)           OP server                      HEM
 ```
 The token never leaves the browser. `/logout` serves `logout.html` + `logout.js`: when the browser still holds a session for the signed-out user, the page asks whether to end that session too (OpenID Connect RP-Initiated Logout 1.0 §2) and removes the entries only on *Yes*; either answer then follows the permitted post-logout redirect. With nothing kept it redirects at once.
 
+---
+
+## HEM device API used by the pages
+
+The browser talks to the user's device through the HEM SDK (`hem-sdk-js/`, served as `/hem-sdk.js`). The pages use this subset; `test/e2e/fake-hem.mjs` implements exactly it.
+
+```
+POST {hsm_url}/api/system/checkin             hemCheckin()
+GET  {hsm_url}/api/system/version             getVersion()  -- SSO: "is the device reachable?" before a one-click sign-in
+POST {hsm_url}/api/keymgmt/search             searchKeys(token, pattern)  -- 'EXTAID' (mobile app present?), 'ETSOIDC<sub>' (OIDC keys)
+POST {hsm_url}/api/keymgmt/create             createKeyPair()  -- enrollment
+POST {hsm_url}/api/auth/token                 authorizePassword(pwd, scope) / authorizeRemote(scope)  -- key-use token, lifetime chosen on the device
+POST {hsm_url}/api/crypto/exdsa/sign          exdsaSign(token, kid, msg)  -- msg = base64 of the UTF-8 signing_input
+GET  {hsm_url}/api/system/config/attestation  getAttestation(token)
+```
+
+---
+
 ## Redis Schema
 
 ```
@@ -348,6 +366,8 @@ Additionally, nginx `limit_req` should be configured upstream (see README) to ra
 ## JWKS Cache
 
 `GET /jwks.json` builds the key list from all users in Redis. To avoid an O(n) Redis read on every OIDC discovery request, the result is cached in-process for 60 seconds. The cache is invalidated immediately when a user completes enrollment or is deleted (`invalidateJwksCache()` called from `enrollment.js` and `adminUsers.js`).
+
+**One key per user changes what a JWKS is.** A conventional OP rotates a handful of signing keys a few times a year; here the key set changes on every enrollment, re-enrollment and user deletion. A relying party that caches the whole JWKS for a fixed time will therefore fail a freshly enrolled user with *unknown kid* until its cache expires. Two mitigations exist on the provider side: `GET /jwks.json?kid=<kid>` returns just that key (non-standard, an extension of RFC 7517; the Carbonio connector uses it), and the `Cache-Control` on `/jwks.json` (`max-age=3600, stale-while-revalidate=86400`) should be read with that in mind. The robust fix is on the RP side: refetch the JWKS when a token names a `kid` the cache does not hold, as most JWT libraries do.
 
 ---
 

@@ -1,5 +1,18 @@
 # Encedo OIDC Provider — Claude Code Instructions
 
+> Start here. This file holds working notes: status, decisions, gotchas, procedures. It does **not** duplicate the
+> reference documents — read them for facts and keep them true:
+>
+> | Document | Owns |
+> |----------|------|
+> | `ARCH.md` | architecture: request flows, HEM device API, file tree, Redis schema, security-log events, rate limits, caches |
+> | `SECURITY.md` | threat model, trust boundaries (user-signed ID Token, SSO token in the browser), controls, headers, accepted risks |
+> | `README.md` | operator documentation: install, deploy, update, release, backup, endpoints, admin API |
+> | `PRODUCT.md` | product positioning (public, English) |
+> | `../SSO-PLAN.md`, `../REVIEW-2026-09-20.md` | design and review records in the bundle, outside this repo |
+>
+> A fact that lives in one of those files is linked from here, not copied.
+
 ## SDK Reference
 HEM SDK = the `hem-sdk-js/` submodule: `README.md`, `EXAMPLES.md`, `hem-sdk.browser.d.ts` (public API and types), `MIGRATION.md` (breaking changes per release). The device endpoints the SDK calls are listed under *HSM API* below. Read only when you need to know the HSM API.
 
@@ -74,55 +87,7 @@ No external crypto dependencies
 
 ## File Structure
 
-```
-encedo-oidc/
-├── src/
-│   ├── app.js                  ← Express app, CSP, routes; /health returns {status,redis,ts,version,commit,issuer,mail_enabled}
-│   ├── routes/
-│   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache + discovery + logout page (logoutPage() fills logout.html)
-│   │   ├── enrollment.js       ← HSM key enrollment
-│   │   ├── adminUsers.js       ← CRUD + custom claims + audit log
-│   │   ├── adminClients.js
-│   │   ├── invite.js           ← user invite flow + admin invites list
-│   │   ├── inviteClient.js     ← client invite flow
-│   │   └── emailVerify.js      ← standalone email verification link
-│   ├── middleware/
-│   │   ├── auth.js             ← requireAdminAuth + requireAdminNetwork
-│   │   ├── rateLimit.js
-│   │   ├── validate.js         ← all input validators
-│   │   └── errorHandler.js
-│   ├── services/
-│   │   ├── redis.js            ← reconnects forever after the first successful connect
-│   │   ├── securityLog.js      ← dual-write: stderr + Redis ZSET (+ Pub/Sub)
-│   │   ├── attestation.js      ← HSM attestation via api.encedo.com
-│   │   ├── jwt.js              ← verifySignature per key type, buildJwk, JWT_ALG
-│   │   ├── tokens.js           ← access-token bookkeeping, revokeUserTokens()
-│   │   ├── issuer.js           ← oidcIssuer()
-│   │   ├── mailer.js           ← nodemailer transport, isMailEnabled()
-│   │   ├── client.js           ← client credential + redirect-URI helpers
-│   │   ├── clientGrant.js      ← normaliseClientGrant()
-│   │   └── ed25519.js
-│   └── cli/                    ← backup.js / restore.js / common.js (npm run backup|restore)
-├── index.html / index.js       ← Status page (served at /status, and at / unless LANDING_PAGE=1)
-├── landing.html / landing.js   ← Public landing page (served at / when LANDING_PAGE=1)
-├── hsm-common.js               ← shared by signin/enrollment/signup: key-type maps, derToP1363, JWT decode, fetchJson, hemErrMsg, authorizeScope
-├── signin.html / signin.js     ← Trusted App (sign-in + SSO account chooser)
-├── logout.html / logout.js     ← Sign-out page (template + script; asks before clearing encedo_sso:*)
-├── enrollment.html / enrollment.js
-├── signup.html / signup.js     ← User signup (invite flow)
-├── signup-client.html / signup-client.js   ← Client signup (invite flow, no HSM)
-├── verify-email.html / verify-email.js     ← Email verification link
-├── admin-panel.html / admin-panel.js
-├── hem-sdk-js/                 ← Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js); hem-sdk.browser.js served at /hem-sdk.js
-├── update-csp-hashes.js        ← run after any <style> change (writes STYLE_HASHES in src/app.js)
-├── rp-server.mjs               ← test Relying Party (port 9876; RP_CLIENT_ID/RP_CLIENT_SECRET in .env)
-├── test/                       ← *.test.js (npm test) + e2e/sso.mjs, e2e/fake-hem.mjs
-├── .github/workflows/          ← ci.yml (lint, npm test, e2e job) · release.yml (tag v* → ZIP + GitHub Release)
-├── Dockerfile                  ← node:22-alpine, chmod -R a+rX /app, USER node, HEALTHCHECK on /health
-├── favicon.ico, logo.png
-├── nginx/docker-compose.yml    ← nginx container (shared, ports 80+443, oidc-net)
-└── tenants/docker-compose.yml  ← per-tenant template (TENANT env var; Redis on oidc-<tenant>-internal with requirepass)
-```
+Canonical tree: `ARCH.md` §File Structure. What matters when editing: a new UI file goes in **three** places plus the CSP hash list (Known Issues), `hem-sdk-js/` is a submodule (Known Issues), `src/cli/` ships in the image and the ZIP.
 
 ---
 
@@ -263,48 +228,12 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
 
 ## Redis Schema
 
-```
-user:{sub}        Hash { sub, username, name, email, email_verified, hsm_url, hsm_url_in_userinfo,
-                        kid, pubkey, key_type, hw_attested, hsm_crt,
-                        clients (JSON array), custom_claims (JSON object), sso,
-                        enrollment_token, enrolled_at, created_at, updated_at }
-                  sso: 'false' forbids single sign-on for the user (absent = allowed); hsm_url_in_userinfo: '0' hides hsm_url from userinfo
-                  email_verified: 'true'|'false' (default 'false') — 'true' only via emailed-link nonce
-                    or /verify-email/confirm; upgrade-only (re-enrollment never degrades it)
-                  pubkey: hex raw bytes — Ed25519: 32B (64 hex); EC: uncompressed X||Y — P256: 64B, P384: 96B, P521: 132B
-                  key_type: 'Ed25519' | 'P256' | 'P384' | 'P521'
+Canonical: `ARCH.md` §Redis Schema (every key, field and TTL). Semantics that are easy to get wrong:
 
-username_index    Hash { username → sub }
-
-email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; pre-existing records grandfathered (not backfilled)
-
-users             Set  { sub, ... }
-
-client:{id}       Hash { client_id, client_secret, name,
-                        redirect_uris, post_logout_redirect_uris, scopes, pkce, public, allow_any_user, sso,
-                        id_token_ttl, access_token_ttl, created_at }
-                  sso: 'true'|'false' (default true) — single sign-on allowed for this client
-                  allow_any_user: 'true'|'false' (default 'false') — open client: any ENROLLED user may
-                    authenticate (login gate ORs it with user.clients[]); never auto-creates the identity
-
-pending:{sid}     JSON TTL 120s
-code:{code}       JSON TTL 60s
-access:{token}    JSON TTL = access_token_ttl
-
-user_tokens:{sub} Set  { access:{token}, ... }
-enrollment:{tok}  JSON TTL 24h → 30min after validate
-                  { sub, username, forced_key_type, hsm_url, challenge?,
-                    client_redirect_origin?, email_nonce?, via_email? }
-                  client_redirect_origin set when created via invite flow;
-                  email_nonce/via_email carry the email_verified signal (see Email section)
-enroll_lock:{sub} String TTL 30s  (NX lock)
-invite:{token}    JSON TTL 24h  { client_id/clients, client_name(s), username, name, email, email_nonce? }
-                  email_nonce present when server emails the link (&n=); never returned to the admin
-client-invite:{token} JSON TTL 24h  { note }
-email_verify:{token}  JSON TTL 24h  { sub, email }  ← standalone verify link (Edit User)
-security:log      ZSet score=ms  value=JSON  (cap 20 000)
-security:events   Pub/Sub channel
-```
+- `user.email_verified` is upgrade-only: set by an emailed link's nonce or `/verify-email/confirm`, never lowered by re-enrollment; an admin email change resets it to `'false'`.
+- `client.allow_any_user` lets any **enrolled** user sign in to that client; it never creates identities. The login gate ORs it with `user.clients[]`.
+- `email_index` was introduced after the first users existed: records created before it are not backfilled and get indexed on their next email change.
+- `invite.email_nonce` is never returned to the admin; that is what makes `email_verified` mean “the mailbox received the link”.
 
 ---
 
@@ -351,16 +280,7 @@ finalizeSign(useToken, kid, label)
 
 ## HSM API (Encedo HEM)
 
-```
-POST {hsm_url}/api/system/checkin             ← hemCheckin()
-GET  {hsm_url}/api/system/version             ← getVersion()  (SSO: "is the device reachable?" before a one-click sign-in)
-POST {hsm_url}/api/keymgmt/search             ← searchKeys(token, pattern)
-POST {hsm_url}/api/keymgmt/create             ← createKeyPair() (enrollment)
-POST {hsm_url}/api/auth/token                 ← authorizePassword(pwd, scope) / authorizeRemote(scope) — issues the key-use token (exp chosen by the device/user)
-POST {hsm_url}/api/crypto/exdsa/sign          ← exdsaSign(token, kid, msg)
-GET  {hsm_url}/api/system/config/attestation  ← getAttestation(token)
-```
-(`test/e2e/fake-hem.mjs` implements exactly the subset the pages use; the full list is in `hem-sdk.browser.d.ts`.)
+Canonical: `ARCH.md` §HEM device API used by the pages. Full surface: `hem-sdk-js/hem-sdk.browser.d.ts`.
 
 ---
 
@@ -426,19 +346,18 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 
 ## Known Issues / Notes
 
-1. Nextcloud requires `allow_local_remote_servers = true` and `allow_insecure_http = 1` for dev
-2. Nextcloud `redirect_uri`: `http://localhost:8080/index.php/apps/user_oidc/code`
-3. JWKS cache in Nextcloud ignores `kid` — a patch used to be described in `nextcloud-jwks-kid-patch.md`, which is no longer in the repo or the bundle; re-document it if the problem resurfaces (prod Nextcloud logs in fine as of 2026-09-21)
-4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
-5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
-6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
-7. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s). Since 2026-09-20 the Redis client reconnects forever after the first successful connect (before: 10 tries ≈ 3.5 s, then the client closed for good while `/health` kept saying ok), `/health` PINGs Redis and answers 503 when it is down, and the image has a `HEALTHCHECK` on it.
-8. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
-9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
-10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
-11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>` (its `FILES` list is a fourth place; `logout.html` is a template read by `logoutPage()` in `src/routes/oidc.js` rather than a route, but it needs the other three all the same).
-12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, HTTPS in `.gitmodules`; push it over SSH via a local `pushurl`). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
-13. ⚠️ **File modes travel into the image.** `COPY` keeps the checkout's modes and the container runs as `node`. A `git pull` on the server done with umask 077 (2026-09-21) left 14 files at 0600 → `EACCES` on `src/app.js` → all three tenants in a restart loop (502) for 10 minutes. The Dockerfile now runs `chmod -R a+rX /app` before `USER node`, so this cannot recur from a rebuild — but a **restart never fixes a bad image**: diagnose with `docker logs`, then rebuild + recreate.
+Relying-party specifics (Nextcloud `user_oidc`, Carbonio) are **not** kept here — each integration has its own repository. This list is about the provider itself.
+
+1. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
+2. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
+3. Attestation debug logging is intentional — useful in production for tracing enrollment issues
+4. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s). Since 2026-09-20 the Redis client reconnects forever after the first successful connect (before: 10 tries ≈ 3.5 s, then the client closed for good while `/health` kept saying ok), `/health` PINGs Redis and answers 503 when it is down, and the image has a `HEALTHCHECK` on it.
+5. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
+6. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
+7. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
+8. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>` (its `FILES` list is a fourth place; `logout.html` is a template read by `logoutPage()` in `src/routes/oidc.js` rather than a route, but it needs the other three all the same).
+9. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, HTTPS in `.gitmodules`; push it over SSH via a local `pushurl`). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
+10. ⚠️ **File modes travel into the image.** `COPY` keeps the checkout's modes and the container runs as `node`. A `git pull` on the server done with umask 077 (2026-09-21) left 14 files at 0600 → `EACCES` on `src/app.js` → all three tenants in a restart loop (502) for 10 minutes. The Dockerfile now runs `chmod -R a+rX /app` before `USER node`, so this cannot recur from a rebuild — but a **restart never fixes a bad image**: diagnose with `docker logs`, then rebuild + recreate.
 
 ---
 

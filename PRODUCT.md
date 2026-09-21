@@ -53,9 +53,18 @@ This is not a configuration option. It is a structural guarantee enforced by phy
 
 Conventional SSO works because the provider keeps a session and vouches for the user to every application. That session is a server-held secret, and it is exactly what an attacker with server access takes over.
 
-Encedo OIDC keeps no such session. After one confirmation on the HEM, the browser holds the device's short-lived authorization, in that browser only, and presents it to the device for every further sign-in. The device signs; the provider verifies. The provider still cannot sign anything, so a compromised provider cannot turn one sign-in into access everywhere.
+Encedo OIDC keeps no such session. After one confirmation on the HEM, the browser holds the device's short-lived authorization, in that browser only, and presents it to the device for every further sign-in. The device signs; the provider verifies. The provider still cannot sign anything, so a compromised provider cannot turn one sign-in into access everywhere, and a copied authorization is worthless without network access to that device.
 
-Each application still learns what happened: the ID Token carries `auth_time` and `amr`, so a sensitive application can demand a fresh confirmation while the rest ride on the first one. The lifetime is chosen on the device (eight hours by default), the operator and every application can turn the feature off, and signing out of one application asks the user whether to end the browser's session too, never silently.
+**Single sign-on is a decision at every level, not a default to be tolerated:**
+
+- **The operator** switches it on or off for the whole provider and caps how old an authorization may be reused (eight hours by default).
+- **Each application** can be excluded: the payroll system asks for the device every time, the wiki does not.
+- **Each user** can be excluded, for shared workstations or privileged accounts.
+- **The user** decides at sign-in whether this browser should remember at all, and picks the lifetime on the phone.
+- **The application** keeps its standard OIDC levers: `prompt=login` and `max_age` force a fresh confirmation, and every ID Token states how the user was authenticated (`amr`) and when (`auth_time`), so a sensitive application can insist on freshness while the rest ride on the first confirmation.
+- **Signing out** of one application asks the user whether to end the browser's session too. Nothing happens silently, and *forget all sessions in this browser* is one click away.
+
+The result is the convenience of SSO with the guarantee intact: the device signs every token, the provider never holds the authorization, and each party involved can say no.
 
 ---
 
