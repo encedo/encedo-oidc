@@ -21,6 +21,11 @@ COPY hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map ./hem-sdk-j
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
 
+# COPY keeps the checkout's file modes. A checkout made with umask 077 (files
+# 0600) would give `node` an EACCES on src/app.js and a restart loop, so make
+# everything world-readable here instead of trusting the build host.
+RUN chmod -R a+rX /app
+
 # The app needs no privileges: it listens on an unprivileged port and only reads
 # its own files (root-owned, world-readable). Drop to the image's built-in user.
 USER node
