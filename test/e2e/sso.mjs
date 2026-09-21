@@ -28,12 +28,25 @@ const H = { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const jpost = (p, b, h = H) => fetch(BASE + p, { method: 'POST', headers: h, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
 const jwtPayload = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
+const portOpen = (port) => new Promise(res => { const s = net.connect(port, '127.0.0.1'); s.on('connect', () => { s.destroy(); res(true); }); s.on('error', () => res(false)); });
 async function waitPort(port, tries = 100) {
   for (let i = 0; i < tries; i++) {
-    if (await new Promise(res => { const s = net.connect(port, '127.0.0.1'); s.on('connect', () => { s.destroy(); res(true); }); s.on('error', () => res(false)); })) return;
+    if (await portOpen(port)) return;
     await sleep(100);
   }
   throw new Error(`port ${port} never came up`);
+}
+// The browser is closed through CDP, not with a signal: a snap-packaged
+// chromium is a launcher whose real chrome our process may not be allowed to
+// kill (AppArmor), and a survivor keeps its profile -- and the cached session.
+async function closeBrowser() {
+  try {
+    const v = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json/version`)).json();
+    const ws = new WebSocket(v.webSocketDebuggerUrl);
+    await new Promise(r => ws.onopen = r);
+    ws.send(JSON.stringify({ id: 1, method: 'Browser.close' }));
+    await sleep(500); ws.close();
+  } catch { /* already gone */ }
 }
 
 // ---- infrastructure ------------------------------------------------------------
@@ -57,6 +70,7 @@ procs.push(spawn('node', ['src/app.js'], { cwd: ROOT, stdio: 'ignore', env: { ..
 await waitPort(APP_PORT);
 
 const chrome = process.env.CHROME || 'chromium';
+if (await portOpen(CDP_PORT)) throw new Error(`port ${CDP_PORT} is already in use -- a chromium from an earlier run? (its profile would carry a stale session)`);
 const profile = mkdtempSync(join(tmpdir(), 'oidc-e2e-chrome-'));
 procs.push(spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' }));
 await waitPort(CDP_PORT);
@@ -167,14 +181,35 @@ try {
   assert.match(await page.evalJs("document.getElementById('tc-note').textContent"), /more recent sign-in/);
   assert.ok(await page.evalJs("Object.keys(localStorage).some(k => k.startsWith('encedo_sso:'))"), 'a policy refusal keeps the session');
 
-  // ---- Flow C: logout clears the session -----------------------------------
-  console.log('C: RP-initiated logout clears the browser session');
-  await page.goto(`${BASE}/logout?` + new URLSearchParams({ id_token_hint: tokB.body.id_token, post_logout_redirect_uri: hem.rpBye, client_id: B.client_id, state: 'z' }));
-  await page.until("location.href.includes('/bye')", 'post-logout redirect');
+  // ---- Flow C: logout asks; "No" keeps the session, "Yes" clears it ---------
+  console.log('C: RP-initiated logout asks whether to end the Encedo session too');
+  const logoutUrl = `${BASE}/logout?` + new URLSearchParams({ id_token_hint: tokB.body.id_token, post_logout_redirect_uri: hem.rpBye, client_id: B.client_id, state: 'z' });
+  await page.goto(logoutUrl);
+  await page.until("!document.getElementById('lo-ask')?.hidden", 'the question');
+  assert.equal(await page.evalJs("document.getElementById('lo-ask-title').textContent"), 'You have been signed out of App B.');
+  assert.equal(await page.evalJs("document.getElementById('lo-who').textContent"), 'krutecki');
+  assert.equal(await page.evalJs("document.getElementById('lo-done').hidden"), true);
+  await page.click('#lo-no');
+  await page.until("location.href.includes('/bye')", 'post-logout redirect after "No"');
+  assert.match(await page.evalJs('location.href'), /\/bye\?state=z$/);
+  await page.goto(authz(A));   // back on the OP origin, where the session lives
+  assert.equal(await page.evalJs("Object.keys(localStorage).filter(k => k.startsWith('encedo_sso:')).length"), 1, '"No" keeps the session');
+  assert.equal(await page.screen(), 's-accounts', 'session still usable after "No"');
+  console.log('   ok: "No" kept the session');
+  await page.goto(logoutUrl);
+  await page.until("!document.getElementById('lo-ask')?.hidden", 'the question again');
+  await page.click('#lo-yes');
+  await page.until("location.href.includes('/bye')", 'post-logout redirect after "Yes"');
   assert.match(await page.evalJs('location.href'), /\/bye\?state=z$/);
   await page.goto(authz(A));
-  assert.equal(await page.screen(), 's-login', 'no session after logout');
+  assert.equal(await page.screen(), 's-login', 'no session after "Yes"');
   assert.equal(await page.evalJs("Object.keys(localStorage).filter(k => k.startsWith('encedo_sso:')).length"), 0);
+  console.log('   ok: "Yes" cleared it');
+  // nothing kept in this browser: no question, straight to the RP
+  await page.goto(logoutUrl);
+  await page.until("location.href.includes('/bye')", 'immediate redirect with nothing to ask about');
+  await page.goto(authz(A));   // back on the OP origin for the steps below
+  assert.equal(await page.screen(), 's-login');
 
   // ---- Fallback: device refuses the cached token ---------------------------
   console.log('Fallback: device no longer accepts the token -> fresh sign-in, session dropped');
@@ -212,6 +247,7 @@ try {
   failed = true;
   console.error('\nFAIL:', e.message);
 } finally {
+  await closeBrowser();
   for (const p of procs) { try { p.kill(); } catch { /* gone */ } }
   try { execSync(`rm -rf ${profile} ${dir}`); } catch { /* best effort */ }
 }

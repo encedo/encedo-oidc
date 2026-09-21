@@ -1,6 +1,7 @@
 import { Router }                                from 'express';
 import { randomBytes, createHash } from 'crypto';
 import { fileURLToPath }                         from 'url';
+import { readFileSync }                          from 'fs';
 import { dirname, resolve }                      from 'path';
 import redis                                     from '../services/redis.js';
 import { logSecurity, SEC }                      from '../services/securityLog.js';
@@ -33,6 +34,7 @@ const escHtml = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'
 // --- Paths ----------------------------------------------------
 const __dirname   = dirname(fileURLToPath(import.meta.url));
 const TRUSTED_APP = resolve(__dirname, '../../signin.html');
+const LOGOUT_PAGE = readFileSync(resolve(__dirname, '../../logout.html'), 'utf8');
 
 // --- JWKS in-memory cache (60s TTL) ---------------------------
 let jwksCache = null; // { keys: [...], expiresAt: ms }
@@ -693,7 +695,7 @@ async function allowedPostLogoutUris(clientId) {
         .filter(Boolean);
     } catch { legacyOrigins = []; }
   }
-  return { exact, legacyOrigins, clientId };
+  return { exact, legacyOrigins, clientId, name: clientRaw.name || '' };
 }
 
 function postLogoutAllowed(url, allowed) {
@@ -709,17 +711,24 @@ function postLogoutAllowed(url, allowed) {
   return false;
 }
 
-// The browser-facing logout answer. It must run JavaScript on the OP origin:
-// the SSO session (the HEM token) lives in this browser's localStorage and
-// only a script here can drop it. logout.js clears the entries for `sub`
-// (all of them when the hint did not name a user) and then follows
-// `redirect`, if a permitted one was given. Without JavaScript the link
-// still gets the user back to the RP; the SSO entry then simply ages out.
-function logoutPage(sub, redirect) {
-  const to = redirect ? `<p><a href="${escHtml(redirect)}">Continue</a></p><noscript><meta http-equiv="refresh" content="0;url=${escHtml(redirect)}"></noscript>` : '<p>You can close this window.</p>';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Signed out</title></head><body>`
-       + `<div id="logout" data-sub="${escHtml(sub ?? '')}" data-redirect="${escHtml(redirect ?? '')}"><h1>You have been signed out.</h1>${to}</div>`
-       + `<script src="/logout.js"></script></body></html>`;
+// The browser-facing logout answer (logout.html + logout.js). It must run
+// JavaScript on the OP origin: the SSO session (the HEM token) lives in this
+// browser's localStorage and only a script here can drop it. Per RP-Initiated
+// Logout 1.0 s.2 the page ASKS whether to sign out of the OP as well when the
+// browser still holds a session for `sub` (any session when the hint did not
+// name a user); "Yes" clears it, either answer then follows `redirect`, if a
+// permitted one was given. With no session kept it redirects at once. Without
+// JavaScript the link still gets the user back to the RP; the SSO entry then
+// simply ages out. `rp` is the client's display name for the message.
+function logoutPage(sub, redirect, rp) {
+  const tail = redirect
+    ? `<a class="btn btn-ghost btn-full" href="${escHtml(redirect)}">Continue</a><noscript><meta http-equiv="refresh" content="0;url=${escHtml(redirect)}"></noscript>`
+    : '<div class="card-sub">You can close this window.</div>';
+  return LOGOUT_PAGE
+    .replace('{{SUB}}', escHtml(sub ?? ''))
+    .replace('{{REDIRECT}}', escHtml(redirect ?? ''))
+    .replace('{{RP}}', escHtml(rp ?? ''))
+    .replace('{{TAIL}}', tail);
 }
 
 async function logoutHandler(params, req, res, next) {
@@ -738,14 +747,14 @@ async function logoutHandler(params, req, res, next) {
       if (postLogoutAllowed(url, allowed)) {
         if (state) url.searchParams.set('state', state);
         // A browser gets the page that clears its SSO session first, then goes on.
-        if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, url.toString()));
+        if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, url.toString(), allowed?.name));
         return res.redirect(url.toString());
       }
       // Not registered for an identified client -- do not open-redirect.
     }
     // No (permitted) redirect: tell the user agent. Browsers get a page, API
     // callers JSON. No inline style/script -- the CSP has none.
-    if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, null));
+    if (wantsHtml) return res.type('html').send(logoutPage(verifiedSub, null, allowed?.name));
     res.json({ logged_out: true });
   }
 

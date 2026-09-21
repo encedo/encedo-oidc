@@ -58,7 +58,7 @@ After an authorization the sign-in page may keep the HEM-issued token for the us
 - Lifetime is decided by the device/user (the page suggests `SSO_SUGGEST_SECONDS`, default 8 h; the user may change it on the phone). The server refuses a session older than `SSO_MAX_SECONDS` (8 h) regardless.
 - Policy is a conjunction: `SSO_ENABLED`, `client.sso`, `user.sso`, the browser tick, and the RP's `prompt`/`max_age`. Any refusal turns the attempt into a normal interactive sign-in; the reason is reported to the page.
 - `auth_time` in the ID Token is the original HEM authorization; `amr` distinguishes `["hwk"]` from `["hwk","sso"]`, so an RP can require freshness on its own.
-- Ending a session: token expiry, `/logout` on the provider (its page runs `logout.js`, which clears the entries for the signed-out user), “Forget all sessions in this browser”, or the device refusing the token (unplugged/rebooted — the HEM issues no long-lived state to the phone app).
+- Ending a session: token expiry, `/logout` on the provider (its page, `logout.html` + `logout.js`, asks whether to sign out of Encedo as well when the browser still holds a session for the signed-out user — RP-Initiated Logout 1.0 §2 — and clears the entries only on “Yes”; with no session kept it redirects at once), “Forget all sessions in this browser”, or the device refusing the token (unplugged/rebooted — the HEM issues no long-lived state to the phone app).
 - Exposure: an XSS on the provider origin could read the token — the same threat as a session cookie without HttpOnly; the CSP (no inline script, no inline handlers) is the control. A stolen token is usable only while the HEM stays reachable to the thief.
 
 ### Timing-safe comparisons

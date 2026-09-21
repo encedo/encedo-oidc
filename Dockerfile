@@ -7,7 +7,7 @@ RUN npm ci --omit=dev
 COPY src/           ./src/
 COPY index.html     index.js     \
      landing.html   landing.js   \
-     signin.html    signin.js    hsm-common.js logout.js \
+     signin.html    signin.js    hsm-common.js logout.html logout.js \
      enrollment.html enrollment.js \
      admin-panel.html admin-panel.js \
      signup.html     signup.js    \

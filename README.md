@@ -724,9 +724,11 @@ Every layer has to allow it: `SSO_ENABLED`, the client's *Allow single sign-on* 
 *Allow single sign-on* checkbox (admin panel, Edit user), the “remember” tick in the browser, and the relying party
 itself (`prompt=login` or a `max_age` shorter than the session age force a fresh authorization). The ID Token tells
 the RP what happened: `auth_time` is the time of the HEM authorization, `amr` is `["hwk"]` for a fresh one and
-`["hwk","sso"]` for a reused one. A session ends when the token expires, on RP-initiated logout at the provider (the
-`/logout` page clears it), with *Forget all sessions in this browser*, or when the device refuses the token
-(unplugged, rebooted) — the page then falls back to a normal sign-in.
+`["hwk","sso"]` for a reused one. A session ends when the token expires, when the user answers *Yes* on the
+provider's `/logout` page (RP-initiated logout: the page asks whether to sign out of Encedo as well, as OpenID Connect
+RP-Initiated Logout 1.0 §2 recommends; *No* keeps the session and returns to the application), with *Forget all
+sessions in this browser*, or when the device refuses the token (unplugged, rebooted) — the page then falls back to
+a normal sign-in.
 
 ## First Steps After Startup
 
@@ -963,7 +965,7 @@ failure, so they are safe to drive from cron.
 | `POST` | `/authorize/confirm` | Submit HSM signature, get auth code |
 | `POST` | `/token` | Exchange code for tokens (PKCE) |
 | `GET/POST` | `/userinfo` | Return claims for access token |
-| `GET`/`POST` | `/logout` | RP-initiated logout. `post_logout_redirect_uri` must exactly match one of the client's registered `post_logout_redirect_uris` (identified by `id_token_hint` and/or `client_id`); a client with none registered still gets the origin of its `redirect_uris` accepted (legacy, logged) |
+| `GET`/`POST` | `/logout` | RP-initiated logout. `post_logout_redirect_uri` must exactly match one of the client's registered `post_logout_redirect_uris` (identified by `id_token_hint` and/or `client_id`); a client with none registered still gets the origin of its `redirect_uris` accepted (legacy, logged). A browser gets a page that asks whether to end the Encedo (SSO) session in that browser too, then follows the redirect; API callers get the bare 302 / JSON |
 | `GET` | `/health` | Liveness check: 200 `{status:'ok', redis:'up'}` only when Redis answers a PING; 503 `degraded` otherwise (the Docker image's `HEALTHCHECK` polls it) |
 
 ## Web Pages

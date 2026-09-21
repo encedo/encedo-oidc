@@ -16,7 +16,7 @@ Read only when you need to know the HSM API.
 - `GET/POST /userinfo` — Bearer token
 - `GET /jwks.json` — with 60s in-process cache, invalidated on enrollment
 - `GET /.well-known/openid-configuration`
-- `GET`/`POST /logout` — RP-initiated logout: `id_token_hint` verified (signature + issuer), `client_id` accepted, `post_logout_redirect_uri` exact-matched against the client's `post_logout_redirect_uris` (legacy origin fallback when the list is empty, logged once)
+- `GET`/`POST /logout` — RP-initiated logout: `id_token_hint` verified (signature + issuer), `client_id` accepted, `post_logout_redirect_uri` exact-matched against the client's `post_logout_redirect_uris` (legacy origin fallback when the list is empty, logged once). Browsers get `logout.html` (template, placeholders `{{SUB}}`/`{{REDIRECT}}`/`{{RP}}`/`{{TAIL}}` filled by `logoutPage()`) + `logout.js`: asks “also sign out of Encedo?” when the browser holds an SSO session for that `sub` (§2 of RP-Initiated Logout 1.0), clears on Yes only, redirects at once when nothing is kept
 - Admin API: full CRUD users + clients
 - Enrollment: challenge-response + hardware attestation via api.encedo.com
 - Security log: Redis ZSET + stderr dual-write
@@ -24,7 +24,7 @@ Read only when you need to know the HSM API.
 - Invite flow (user): `POST /admin/invite` → one-time token → `POST /signup/prefill` + `POST /signup/register` (token always in the JSON body, never `?token=`)
 - Invite flow (client): `POST /admin/invite-client` → one-time token → `POST /signup-client/prefill` + `POST /signup-client/register`
 - Invites admin API: `GET /admin/invites`, `DELETE /admin/invites/:token`, `DELETE /admin/client-invites/:token`
-- **SSO** (2026-09-20): `/authorize/login` takes `sso_iat` (+ `prompt`, `max_age`), answers `sso: {enabled, used, rejected, suggest_seconds, max_seconds}`; ID Token `auth_time`/`amr`; `client.sso`, `user.sso` (default true); env `SSO_ENABLED`/`SSO_MAX_SECONDS`/`SSO_SUGGEST_SECONDS`; `/logout` page + `logout.js` clears `encedo_sso:*`. Design: `../SSO-PLAN.md`.
+- **SSO** (2026-09-20): `/authorize/login` takes `sso_iat` (+ `prompt`, `max_age`), answers `sso: {enabled, used, rejected, suggest_seconds, max_seconds}`; ID Token `auth_time`/`amr`; `client.sso`, `user.sso` (default true); env `SSO_ENABLED`/`SSO_MAX_SECONDS`/`SSO_SUGGEST_SECONDS`; `/logout` page (`logout.html` + `logout.js`) asks before clearing `encedo_sso:*` (Yes/No; no question when nothing is kept). Design: `../SSO-PLAN.md`.
 
 ### Trusted App (`signin.js`) — 100%
 - Login screen — HSM URL only (no username/password fields)
@@ -422,7 +422,7 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 8. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
 9. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
 10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
-11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>`.
+11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>` (its `FILES` list is a fourth place; `logout.html` is a template read by `logoutPage()` in `src/routes/oidc.js` rather than a route, but it needs the other three all the same).
 12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, HTTPS in `.gitmodules`; push it over SSH via a local `pushurl`). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
 
 ---

@@ -66,6 +66,7 @@ const STYLE_HASHES = [
   "'sha256-aeiTjKwpQyLweFX9vVB9iij4EBs40oHYv9vg69BhU7w='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
   "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
+  "'sha256-aO/5eCFVjZmaJTh8HHmJld86rx45wTTYYOkF685TFCk='", // logout.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",

@@ -582,6 +582,7 @@ test('logout: a browser gets the page that clears the SSO session, then the redi
   assert.equal(r.status, 200); assert.match(r.headers.get('content-type'), /text\/html/);
   const html = await r.text();
   assert.match(html, new RegExp(`data-sub="${sub}"`)); assert.match(html, /data-redirect="https:\/\/los\/bye\?state=s"/); assert.match(html, /src="\/logout\.js"/);
+  assert.match(html, /data-rp="LoS"/, 'the page names the RP'); assert.match(html, /id="lo-yes"/); assert.match(html, /id="lo-no"/);
   assert.equal((await fetch(BASE + '/logout.js')).status, 200);
   // API caller: still the bare 302 (a second logout with the same hint is fine: tokens already revoked)
   const r2 = await rget('/logout?' + q);

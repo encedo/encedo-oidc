@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
+<title>Encedo -- Signed out</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html,body,div,span,h1,h2,h3,h4,p,a,form,label,legend,fieldset,input,button,select,
+  article,aside,footer,header,nav,section {
+    margin:0; padding:0; border:0; font-size:100%; vertical-align:top; outline:0;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --border:  #ccc;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --green:   #2ecc71;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  .screen { width: 100%; max-width: 480px; }
+
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 36px 40px 40px;
+  }
+
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px;
+    letter-spacing: .2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-top: 10px;
+  }
+
+  .card-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .card-title strong { color: var(--purple); font-weight: 700; }
+  .card-sub {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--muted);
+    margin-bottom: 22px;
+    text-align: center;
+  }
+  .card-sub strong { color: var(--purple); font-weight: 600; }
+
+  .btn {
+    display: inline-block;
+    padding: 14px 28px;
+    border: none;
+    border-radius: 22px;
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    cursor: pointer;
+    transition: background .3s, box-shadow .3s, transform .15s;
+    text-align: center;
+    line-height: 1;
+    text-decoration: none;
+  }
+  .btn-full { display: block; width: 100%; margin-top: 10px; }
+  @keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%;
+    animation: gradient-shift 3s ease infinite;
+    color: var(--white);
+    box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-ghost:hover { border-color: var(--purple); color: var(--purple); }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 480px) {
+    .card { padding: 28px 22px 30px; border-radius: 22px; }
+    .btn { font-size: 14px; padding: 13px 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Sign out</div>
+  </div>
+  <div class="card">
+    <div id="logout" data-sub="{{SUB}}" data-redirect="{{REDIRECT}}" data-rp="{{RP}}">
+      <!-- Shown by logout.js when this browser still holds an Encedo session
+           (OpenID Connect RP-Initiated Logout 1.0 s.2: the OP asks whether to
+           log out of the OP as well). Nothing is cleared until the user answers. -->
+      <div id="lo-ask" hidden>
+        <div class="card-title" id="lo-ask-title">You have been signed out.</div>
+        <div class="card-sub">Also sign out of Encedo? That ends the sign-in session this browser keeps for
+          <strong id="lo-who">this account</strong>. Other applications will ask for your HEM again.</div>
+        <button type="button" class="btn btn-primary btn-full" id="lo-yes">Yes, sign out of Encedo too</button>
+        <button type="button" class="btn btn-ghost btn-full" id="lo-no">No, keep my Encedo session</button>
+      </div>
+      <!-- Default view: no Encedo session in this browser, or JavaScript is off. -->
+      <div id="lo-done">
+        <div class="card-title">You have been signed out.</div>
+        {{TAIL}}
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/logout.js"></script>
+</body>
+</html>
