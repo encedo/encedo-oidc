@@ -58,7 +58,7 @@ if (process.env.TRUST_PROXY) {
 // IPv6 not supported for HSM connections (see security.md M3).
 const connectExtra = process.env.CSP_CONNECT_EXTRA ? ` ${process.env.CSP_CONNECT_EXTRA}` : '';
 const STYLE_HASHES = [
-  "'sha256-lfbBnkRabSTADAeZQIBzeulPvuaL0KRmHPVgVniGzXA='", // signin.html
+  "'sha256-9uNX+72e1UgDS/7qEfgEY0sg188gJIZDByvsHCm319I='", // signin.html
   "'sha256-WPNRCWjevpCuzbaeXeJXbBvLGm9JxCIVJqLNS7qCHnk='", // enrollment.html
   "'sha256-EA0irg8jKANLVH35Bh+2RzqKe3W+GIZXlbxrH4lShmg='", // admin-panel.html
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html

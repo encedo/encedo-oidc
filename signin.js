@@ -224,21 +224,37 @@ function renderAccounts(list) {
   const ordered = hint
     ? [...list].sort((a, b) => Number((b.username || '').toLowerCase() === hint) - Number((a.username || '').toLowerCase() === hint))
     : list;
+  const now = Math.floor(Date.now() / 1000);
   for (const e of ordered) {
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'acct';
-    btn.dataset.action = 'sso-pick'; btn.dataset.key = e.key;
+    // The whole tile is the target; the button inside is the visible call to action.
+    const tile = document.createElement('div');
+    tile.className = 'acct';
+    tile.dataset.action = 'sso-pick'; tile.dataset.key = e.key;
+    const head = document.createElement('div'); head.className = 'acct-head';
     const dot = document.createElement('span'); dot.className = 'acct-dot';
     const txt = document.createElement('span');
     const name = document.createElement('div'); name.className = 'acct-name'; name.textContent = e.username || e.sub;
     const meta = document.createElement('div'); meta.className = 'acct-meta';
     let host = e.hsm_url; try { host = new URL(e.hsm_url).host; } catch { /* keep */ }
-    const until = new Date(e.exp * 1000);
-    meta.textContent = `HEM ${host} · ${e.label || e.kid.slice(0, 8)} · session until ${until.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    meta.textContent = `HEM ${host} · ${e.label || e.kid.slice(0, 8)} · session until ${fmtUntil(e.exp, now)}`;
     txt.append(name, meta);
-    btn.append(dot, txt);
-    box.appendChild(btn);
+    head.append(dot, txt);
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn btn-primary btn-full';
+    btn.dataset.action = 'sso-pick'; btn.dataset.key = e.key;
+    btn.innerHTML = 'Sign in &rarr;';
+    tile.append(head, btn);
+    box.appendChild(tile);
   }
+}
+
+// Session end for the account tile: a bare time is ambiguous once the
+// session outlives the day, so beyond 8 hours show the date as well.
+function fmtUntil(expSec, nowSec) {
+  const d = new Date(expSec * 1000);
+  const time = { hour: '2-digit', minute: '2-digit' };
+  if (expSec - nowSec <= 8 * 3600) return d.toLocaleTimeString([], time);
+  return d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', ...time });
 }
 
 // One click: prove the device is there, ask the server to reuse the
@@ -248,10 +264,12 @@ async function doSsoPick(key) {
   const entry = ssoList().find(e => e.key === key);
   if (!entry) { maybeShowAccounts() || showScreen('s-login'); return; }
   const errEl = document.getElementById('acct-err');
-  const btns  = [...document.querySelectorAll('#acct-list .acct')];
+  const tiles = [...document.querySelectorAll('#acct-list .acct')];
+  const btns  = [...document.querySelectorAll('#acct-list .acct .btn')];
   if (btns.some(b => b.disabled)) return;
   errEl.textContent = '';
   btns.forEach(b => { b.disabled = true; });
+  tiles.forEach(t => t.classList.add('busy'));
 
   try {
     session = freshSession();
@@ -292,6 +310,7 @@ async function doSsoPick(key) {
   } catch (e) {
     errEl.textContent = e.code === 'hem_unreachable' ? e.message : (e.status ? e.message : hemErrMsg(e));
     btns.forEach(b => { b.disabled = false; });
+    tiles.forEach(t => t.classList.remove('busy'));
   }
 }
 

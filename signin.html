@@ -122,15 +122,23 @@
 
   /* -- SSO accounts -- */
   .acct {
-    display: flex; align-items: center; gap: 12px;
     width: 100%; text-align: left;
-    padding: 12px 14px; margin-bottom: 10px;
+    padding: 14px 14px 12px; margin-bottom: 10px;
     border: 1px solid var(--border); border-radius: 14px;
     background: var(--white); cursor: pointer; font-family: inherit;
     transition: border-color .15s;
   }
-  .acct:hover:not(:disabled) { border-color: var(--purple); }
-  .acct:disabled { opacity: .55; cursor: default; }
+  .acct:hover:not(.busy) { border-color: var(--purple); }
+  .acct.busy { opacity: .55; cursor: default; }
+  .acct-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .acct .btn-full { margin-top: 0; }
+  .or-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 16px 0 12px;
+    font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .or-divider::before, .or-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
   .acct-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
   .acct-name { font-weight: 600; color: var(--text); font-size: 15px; }
   .acct-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -350,6 +358,7 @@
     </div>
     <div id="acct-list"></div>
     <div class="err-msg" id="acct-err"></div>
+    <div class="or-divider">or</div>
     <button class="btn btn-ghost btn-full" data-action="show-screen" data-screen="s-login">Use another account or key</button>
     <div class="hint-row"><a href="#" data-action="sso-forget-all">Forget all sessions in this browser</a></div>
   </div>
