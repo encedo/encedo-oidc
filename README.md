@@ -3,7 +3,7 @@
 HSM-anchored OpenID Connect Identity Provider. Private keys **never leave the HSM**. Every token signing requires physical confirmation on a mobile device or a passphrase.
 
 - **Protocol:** OpenID Connect Core 1.0 + PKCE (RFC 7636)
-- **Signing:** Ed25519 via Encedo HEM hardware
+- **Signing:** Ed25519 (EdDSA) or P-256/P-384/P-521 (ECDSA) on Encedo HEM hardware, chosen per user
 - **Storage:** Redis only — no SQL database
 - **Runtime:** Node.js v22 ESM, Express 4
 
@@ -49,6 +49,29 @@ npm start
 | `SSO_ENABLED` | `1` | `0` switches single sign-on off for every client and user (see *Single sign-on*) |
 | `SSO_MAX_SECONDS` | `28800` | Oldest HEM authorization a browser may reuse as SSO (8 h) |
 | `SSO_SUGGEST_SECONDS` | `28800` | Token lifetime the sign-in page asks the HEM for when the user ticks “remember” |
+| `SMTP_HOST` | — | Mail relay for enrollment / verification emails. Email features stay off unless both `SMTP_HOST` and `MAIL_FROM` are set (see *Email delivery*) |
+| `SMTP_MODE` | `starttls` | `starttls` (STARTTLS upgrade, TLS required) or `ssl` (implicit TLS) |
+| `SMTP_PORT` | `587` / `465` | Defaults follow `SMTP_MODE` |
+| `SMTP_USER`, `SMTP_PASS` | — | Relay credentials; leave empty if the relay authorises by IP |
+| `MAIL_FROM` | — | Sender, e.g. `"Encedo <do-not-reply@example.com>"` |
+| `GIT_COMMIT` | build arg | Shown by `/health` and the status page. The Docker build passes it (`--build-arg`); a ZIP install has no `.git`, so set it in `.env` if you want it reported |
+| `RP_CLIENT_ID`, `RP_CLIENT_SECRET` | — | Development only: credentials for the test Relying Party `rp-server.mjs` |
+
+### Development and tests
+
+```
+npm run dev                  # nodemon
+npm test                     # node --test test/*.test.js: validators, browser helpers, OIDC flows
+                             # against a spawned app + redis-server with a software key (no HEM)
+node test/e2e/sso.mjs        # browser E2E of the sign-in and sign-out pages: headless Chromium (CDP)
+                             # against a fake HEM; needs chromium (or CHROME=/path) and redis-server
+npm run lint                 # eslint src/
+node rp-server.mjs           # test Relying Party on http://localhost:9876 (RP_CLIENT_ID/SECRET in .env)
+```
+
+CI (`.github/workflows/ci.yml`) runs lint, `npm test` and the browser E2E as a separate job on every push to
+`main` and every pull request. The SDK submodule must be checked out for the E2E, otherwise the sign-in page has
+nothing to sign with.
 
 ---
 
@@ -74,7 +97,7 @@ sudo useradd -r -s /usr/sbin/nologin -d /opt/encedo-oidc encedo
 sudo mkdir -p /opt/encedo-oidc
 sudo chown encedo:encedo /opt/encedo-oidc
 
-VERSION=v0.1.0
+VERSION=v1.1.0
 curl -fsSL https://github.com/encedo/encedo-oidc/releases/download/${VERSION}/encedo-oidc-${VERSION}.zip \
   -o /tmp/encedo-oidc.zip
 sudo unzip /tmp/encedo-oidc.zip -d /opt/encedo-oidc
@@ -343,7 +366,8 @@ docker network create oidc-net
 
 ```
 git clone --recurse-submodules https://github.com/encedo/encedo-oidc.git /opt/encedo-oidc/src
-docker build -t encedo-oidc:latest /opt/encedo-oidc/src
+docker build --build-arg GIT_COMMIT=$(git -C /opt/encedo-oidc/src rev-parse --short HEAD) \
+  -t encedo-oidc:latest /opt/encedo-oidc/src
 ```
 
 The image is built once and shared by all tenants. See [Updating](#updating) for how to deploy new releases.
@@ -652,7 +676,7 @@ for dir in /opt/encedo-oidc/tenants/*/; do
 done
 
 # 4. Confirm what is running: version comes from package.json, commit from the build
-curl -s https://oidc.example.com/health   # {"status":"ok","version":"1.1.0","commit":"3fd8ae3",...}
+curl -s https://oidc.example.com/health   # {"status":"ok","version":"1.1.0","commit":"4739a51",...}
 ```
 
 `git pull` on `main` works too, but a tag is what the tests gated and what the GitHub Release describes.
@@ -755,6 +779,22 @@ RP-Initiated Logout 1.0 §2 recommends; *No* keeps the session and returns to th
 sessions in this browser*, or when the device refuses the token (unplugged, rebooted) — the page then falls back to
 a normal sign-in.
 
+## Email delivery (optional)
+
+With `SMTP_HOST` and `MAIL_FROM` set, the admin panel can **email an enrollment or invite link** instead of the
+admin pasting it by hand (*Email link* in the invite dialog, *Send verification email* in *Edit user*), and
+`/health` reports `mail_enabled: true`. Transport is TLS only: `SMTP_MODE=starttls` (587, STARTTLS required) or
+`ssl` (465, implicit TLS). DKIM, SPF and DMARC are the mail server's job; the provider signs nothing.
+
+A link that was emailed carries a nonce in the URL fragment. When the enrollment completes from such a link, the
+account gets `email_verified: true` in the ID Token and at `/userinfo`. The nonce is never shown to the admin, so a
+hand-copied link cannot produce the claim, and re-enrollment never downgrades it. A standalone verification link
+(`/verify-email`) exists for accounts created before the feature or with a changed address.
+
+The Carbonio connector can require `email_verified` before it maps the `email` claim to a mailbox.
+
+---
+
 ## First Steps After Startup
 
 The server starts empty — no users, no OIDC clients. Follow these steps to get your first login working.
@@ -841,7 +881,7 @@ Send the returned `enrollment_url` to the user. The link is valid for 24 hours.
 The user opens the enrollment link in a browser **with their Encedo HSM connected**. The page will:
 
 1. Connect to the HSM
-2. Generate an Ed25519 key pair on the device
+2. Generate the key pair on the device (Ed25519 by default; the admin can require P-256/P-384/P-521 per user)
 3. Sign a server-issued challenge (proof of key possession)
 4. Fetch hardware attestation from the HSM
 5. Submit the public key to the server
@@ -984,24 +1024,27 @@ failure, so they are safe to drive from cron.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/.well-known/openid-configuration` | Discovery document |
-| `GET` | `/jwks.json` | Public keys (Ed25519) |
+| `GET` | `/jwks.json` | Public keys of every enrolled user (`EdDSA`, `ES256`, `ES384`, `ES512`) |
 | `GET` | `/authorize` | Start login flow — serves `signin.html` |
 | `POST` | `/authorize/login` | Initiate signing session |
 | `POST` | `/authorize/confirm` | Submit HSM signature, get auth code |
 | `POST` | `/token` | Exchange code for tokens (PKCE) |
 | `GET/POST` | `/userinfo` | Return claims for access token |
 | `GET`/`POST` | `/logout` | RP-initiated logout. `post_logout_redirect_uri` must exactly match one of the client's registered `post_logout_redirect_uris` (identified by `id_token_hint` and/or `client_id`); a client with none registered still gets the origin of its `redirect_uris` accepted (legacy, logged). A browser gets a page that asks whether to end the Encedo (SSO) session in that browser too, then follows the redirect; API callers get the bare 302 / JSON |
-| `GET` | `/health` | Liveness check: 200 `{status:'ok', redis:'up'}` only when Redis answers a PING; 503 `degraded` otherwise (the Docker image's `HEALTHCHECK` polls it) |
+| `GET` | `/health` | Liveness check: 200 `{status:'ok', redis:'up', version, commit, issuer, mail_enabled}` only when Redis answers a PING; 503 `degraded` otherwise (the Docker image's `HEALTHCHECK` polls it) |
 
 ## Web Pages
 
 | Path | Page |
 |------|------|
 | `/` | Landing page when `LANDING_PAGE=1`, otherwise the status page |
-| `/status` | Status page — running indicator, issuer, discovery link, build (always available) |
+| `/status` | Status page — running indicator, issuer, discovery link, version + build (always available) |
+| `/authorize` | Sign-in page (the Trusted App); opens on the account chooser when the browser holds an SSO session |
+| `/logout` | Sign-out page — asks whether to end the browser's SSO session, then returns to the application |
 | `/admin` | Admin panel (API calls behind `ADMIN_ALLOWED_IPS` + `ADMIN_SECRET`) |
 | `/signup`, `/signup-client` | Invite flows |
 | `/enrollment` | HSM key enrollment |
+| `/verify-email` | Standalone email verification link |
 
 The landing page (`landing.html` + `landing.js`) is the public product page: it describes the
 hardware-anchored model and demonstrates the signing flow. It is dark-themed by design — the
@@ -1023,6 +1066,13 @@ All `/admin/*` endpoints require `Authorization: Bearer <ADMIN_SECRET>` and are 
 | `GET/POST` | `/admin/users` | List / create users |
 | `GET/PATCH/DELETE` | `/admin/users/:sub` | Read / update / delete user |
 | `POST` | `/admin/users/:sub/enrollment` | Generate new enrollment link |
+| `GET/PUT` | `/admin/users/:sub/claims` | Read / replace the user's custom claims (and `hsm_url_in_userinfo`) |
+| `POST` | `/admin/users/:sub/send-verification-email` | Email a standalone verification link (needs SMTP) |
+| `POST` | `/admin/invite` | Create a one-time user invite (link to `/signup`) |
+| `POST` | `/admin/invite-client` | Create a one-time client invite (link to `/signup-client`) |
+| `GET` | `/admin/invites` | List open user and client invites |
+| `POST` | `/admin/invites/:token/send-email` | Email an invite link (needs SMTP; sets the `email_verified` nonce) |
+| `DELETE` | `/admin/invites/:token`, `/admin/client-invites/:token` | Revoke an invite |
 | `GET/POST` | `/admin/clients` | List / create OIDC clients |
 | `GET/PATCH/DELETE` | `/admin/clients/:id` | Read / update / delete client |
 | `POST` | `/admin/clients/:id/rotate-secret` | Rotate client secret |
@@ -1032,7 +1082,7 @@ All `/admin/*` endpoints require `Authorization: Bearer <ADMIN_SECRET>` and are 
 
 New users receive a one-time enrollment link (24 h TTL). Opening it in a browser with an Encedo HSM connected:
 
-1. Connects to HSM, generates Ed25519 key pair on the device
+1. Connects to HSM, generates the key pair on the device (Ed25519, or the curve the admin set for the user)
 2. Signs a server-issued challenge (proof of key possession)
 3. Fetches hardware attestation from HSM
 4. Submits public key + attestation to `/enrollment/submit`

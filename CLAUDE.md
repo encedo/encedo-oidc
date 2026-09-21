@@ -1,8 +1,7 @@
 # Encedo OIDC Provider — Claude Code Instructions
 
 ## SDK Reference
-HEM SDK documentation: `~/develop/sdk-php/HEM.php`
-Read only when you need to know the HSM API.
+HEM SDK = the `hem-sdk-js/` submodule: `README.md`, `EXAMPLES.md`, `hem-sdk.browser.d.ts` (public API and types), `MIGRATION.md` (breaking changes per release). The device endpoints the SDK calls are listed under *HSM API* below. Read only when you need to know the HSM API.
 
 ---
 
@@ -78,42 +77,51 @@ No external crypto dependencies
 ```
 encedo-oidc/
 ├── src/
-│   ├── app.js                  ← Express app, CSP, routes; /health returns {status,ts,commit,issuer}
+│   ├── app.js                  ← Express app, CSP, routes; /health returns {status,redis,ts,version,commit,issuer,mail_enabled}
 │   ├── routes/
-│   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache
+│   │   ├── oidc.js             ← all OIDC endpoints + JWKS cache + discovery + logout page (logoutPage() fills logout.html)
 │   │   ├── enrollment.js       ← HSM key enrollment
-│   │   ├── adminUsers.js       ← CRUD + audit log
+│   │   ├── adminUsers.js       ← CRUD + custom claims + audit log
 │   │   ├── adminClients.js
 │   │   ├── invite.js           ← user invite flow + admin invites list
-│   │   └── inviteClient.js     ← client invite flow
+│   │   ├── inviteClient.js     ← client invite flow
+│   │   └── emailVerify.js      ← standalone email verification link
 │   ├── middleware/
 │   │   ├── auth.js             ← requireAdminAuth + requireAdminNetwork
 │   │   ├── rateLimit.js
 │   │   ├── validate.js         ← all input validators
 │   │   └── errorHandler.js
-│   └── services/
-│       ├── redis.js
-│       ├── securityLog.js      ← dual-write: stderr + Redis ZSET
-│       └── attestation.js      ← HSM attestation via api.encedo.com
-├── index.html                  ← Status page: status, issuer, discovery link, version (served at /status)
-├── index.js                    ← Status page JS (fetches /health)
-├── landing.html                ← Public landing page (served at / when LANDING_PAGE=1)
-├── landing.js                  ← Landing JS: rail from /health + Ed25519 signing demo
+│   ├── services/
+│   │   ├── redis.js            ← reconnects forever after the first successful connect
+│   │   ├── securityLog.js      ← dual-write: stderr + Redis ZSET (+ Pub/Sub)
+│   │   ├── attestation.js      ← HSM attestation via api.encedo.com
+│   │   ├── jwt.js              ← verifySignature per key type, buildJwk, JWT_ALG
+│   │   ├── tokens.js           ← access-token bookkeeping, revokeUserTokens()
+│   │   ├── issuer.js           ← oidcIssuer()
+│   │   ├── mailer.js           ← nodemailer transport, isMailEnabled()
+│   │   ├── client.js           ← client credential + redirect-URI helpers
+│   │   ├── clientGrant.js      ← normaliseClientGrant()
+│   │   └── ed25519.js
+│   └── cli/                    ← backup.js / restore.js / common.js (npm run backup|restore)
+├── index.html / index.js       ← Status page (served at /status, and at / unless LANDING_PAGE=1)
+├── landing.html / landing.js   ← Public landing page (served at / when LANDING_PAGE=1)
 ├── hsm-common.js               ← shared by signin/enrollment/signup: key-type maps, derToP1363, JWT decode, fetchJson, hemErrMsg, authorizeScope
-├── signin.js                   ← Trusted App logic
-├── signin.html                 ← Trusted App shell
-├── enrollment.js               ← Enrollment flow logic
-├── enrollment.html
-├── signup.html                 ← User signup (invite flow)
-├── signup.js                   ← User signup JS
-├── signup-client.html          ← Client signup (invite flow, no HSM)
-├── signup-client.js            ← Client signup JS
-├── admin-panel.js
-├── admin-panel.html
+├── signin.html / signin.js     ← Trusted App (sign-in + SSO account chooser)
+├── logout.html / logout.js     ← Sign-out page (template + script; asks before clearing encedo_sso:*)
+├── enrollment.html / enrollment.js
+├── signup.html / signup.js     ← User signup (invite flow)
+├── signup-client.html / signup-client.js   ← Client signup (invite flow, no HSM)
+├── verify-email.html / verify-email.js     ← Email verification link
+├── admin-panel.html / admin-panel.js
 ├── hem-sdk-js/                 ← Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js); hem-sdk.browser.js served at /hem-sdk.js
-├── favicon.ico
+├── update-csp-hashes.js        ← run after any <style> change (writes STYLE_HASHES in src/app.js)
+├── rp-server.mjs               ← test Relying Party (port 9876; RP_CLIENT_ID/RP_CLIENT_SECRET in .env)
+├── test/                       ← *.test.js (npm test) + e2e/sso.mjs, e2e/fake-hem.mjs
+├── .github/workflows/          ← ci.yml (lint, npm test, e2e job) · release.yml (tag v* → ZIP + GitHub Release)
+├── Dockerfile                  ← node:22-alpine, chmod -R a+rX /app, USER node, HEALTHCHECK on /health
+├── favicon.ico, logo.png
 ├── nginx/docker-compose.yml    ← nginx container (shared, ports 80+443, oidc-net)
-└── tenants/docker-compose.yml  ← per-tenant template (TENANT env var)
+└── tenants/docker-compose.yml  ← per-tenant template (TENANT env var; Redis on oidc-<tenant>-internal with requirepass)
 ```
 
 ---
@@ -256,10 +264,11 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
 ## Redis Schema
 
 ```
-user:{sub}        Hash { sub, username, name, email, email_verified, hsm_url,
+user:{sub}        Hash { sub, username, name, email, email_verified, hsm_url, hsm_url_in_userinfo,
                         kid, pubkey, key_type, hw_attested, hsm_crt,
-                        clients (JSON array), enrollment_token,
-                        enrolled_at, created_at, updated_at }
+                        clients (JSON array), custom_claims (JSON object), sso,
+                        enrollment_token, enrolled_at, created_at, updated_at }
+                  sso: 'false' forbids single sign-on for the user (absent = allowed); hsm_url_in_userinfo: '0' hides hsm_url from userinfo
                   email_verified: 'true'|'false' (default 'false') — 'true' only via emailed-link nonce
                     or /verify-email/confirm; upgrade-only (re-enrollment never degrades it)
                   pubkey: hex raw bytes — Ed25519: 32B (64 hex); EC: uncompressed X||Y — P256: 64B, P384: 96B, P521: 132B
@@ -272,8 +281,9 @@ email_index       Hash { email(lowercased) → sub }   # uniqueness per tenant; 
 users             Set  { sub, ... }
 
 client:{id}       Hash { client_id, client_secret, name,
-                        redirect_uris, post_logout_redirect_uris, scopes, pkce, public, allow_any_user,
+                        redirect_uris, post_logout_redirect_uris, scopes, pkce, public, allow_any_user, sso,
                         id_token_ttl, access_token_ttl, created_at }
+                  sso: 'true'|'false' (default true) — single sign-on allowed for this client
                   allow_any_user: 'true'|'false' (default 'false') — open client: any ENROLLED user may
                     authenticate (login gate ORs it with user.clients[]); never auto-creates the identity
 
@@ -342,12 +352,15 @@ finalizeSign(useToken, kid, label)
 ## HSM API (Encedo HEM)
 
 ```
-POST {hsm_url}/api/checkin                ← hemCheckin()
-POST {hsm_url}/api/keymgmt/search         ← searchKeys(token, pattern)
-POST {hsm_url}/api/authorize-key-op       ← authorizePassword(pwd, scope) / authorizeRemote(scope)
-POST {hsm_url}/api/sign                   ← exdsaSign(token, kid, msg)
-GET  {hsm_url}/api/system/config/attestation ← getAttestation(token)
+POST {hsm_url}/api/system/checkin             ← hemCheckin()
+GET  {hsm_url}/api/system/version             ← getVersion()  (SSO: "is the device reachable?" before a one-click sign-in)
+POST {hsm_url}/api/keymgmt/search             ← searchKeys(token, pattern)
+POST {hsm_url}/api/keymgmt/create             ← createKeyPair() (enrollment)
+POST {hsm_url}/api/auth/token                 ← authorizePassword(pwd, scope) / authorizeRemote(scope) — issues the key-use token (exp chosen by the device/user)
+POST {hsm_url}/api/crypto/exdsa/sign          ← exdsaSign(token, kid, msg)
+GET  {hsm_url}/api/system/config/attestation  ← getAttestation(token)
 ```
+(`test/e2e/fake-hem.mjs` implements exactly the subset the pages use; the full list is in `hem-sdk.browser.d.ts`.)
 
 ---
 
@@ -362,7 +375,7 @@ Open (accepted or delegated):
 - Redis TLS → ops configuration (`rediss://`)
 - **ID Token signed by the user's key** (design): RPs trust it only as the `/token` response — documented in SECURITY.md / README; never "fix" this in code
 - No RS256 (HSM has no RSA) — documented, not fixable
-- Open from the 2026-09-20 review (deployment changes, user's call): per-tenant Redis network + `requirepass` (M13); enrollment/invite token in POST bodies instead of `?token=` (M16). Full list: `../REVIEW-2026-09-20.md`
+- 2026-09-20 review: all packages deployed, including per-tenant Redis network + `requirepass` (M13) and enrollment/invite tokens in POST bodies (M16). Report: `../REVIEW-2026-09-20.md`
 
 ---
 
@@ -389,8 +402,9 @@ per-tenant/      (tenants/docker-compose.yml template)
   oidc-${TENANT}    encedo-oidc:latest, env_file: .env, on oidc-net + oidc-${TENANT}-internal;
                     REDIS_URL set by compose from REDIS_PASSWORD (overrides .env)
 ```
-Tenants created before 2026-09-20 still have Redis on `oidc-net` without a password until the one-time
-migration in README §*Isolate each tenant's Redis* is run (user does it, one tenant at a time).
+Tenants created before 2026-09-20 had Redis on `oidc-net` without a password; the one-time migration in README
+§*Isolate each tenant's Redis* was run on test, demo and prod on 2026-09-20 (backups in `/var/backups/oidc/pre-isolate-*`).
+Hand-run `redis-cli` on the server needs `-a "$REDIS_PASSWORD"` from the tenant `.env`.
 
 - Build: `docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) -t encedo-oidc:latest .`
 - SSL: `--standalone` for initial cert, `--webroot` for renewal
@@ -399,7 +413,7 @@ migration in README §*Isolate each tenant's Redis* is run (user does it, one te
 
 ## CSP Hashes
 
-Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 8 files: signin.html, enrollment.html, admin-panel.html, index.html, landing.html, signup.html, signup-client.html, verify-email.html.
+Inline `<style>` hashes in `src/app.js` (`STYLE_HASHES`) — 9 files: signin.html, enrollment.html, admin-panel.html, index.html, landing.html, signup.html, signup-client.html, verify-email.html, logout.html.
 Run `node update-csp-hashes.js` after any `<style>` block change.
 JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` blocks and no `on*=` attributes (there is no `script-src-attr`, so the browser blocks them). Wire clicks through `data-action` + the page's `ACTIONS` map.
 
@@ -408,13 +422,13 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 ## Testing
 
 - `npm test` = `test/*.test.js` (node --test): validators, hsm-common, OIDC flows against a spawned app + Redis with a software key. No browser, no HEM.
-- `node test/e2e/sso.mjs` = browser E2E of the sign-in page (headless Chromium over CDP) with **`test/e2e/fake-hem.mjs`** — a fake device + broker + RP callback that verifies the SDK's eJWT, issues tokens with the requested lifetime and signs with a software Ed25519 key. Covers SSO flows A/B/C, fallback on device 401, `prompt=login`/`max_age`, `user.sso=false`. Needs `chromium` (or `CHROME=`) and `redis-server`; not in CI. Extend it before touching `signin.js` — it is the only automated test of that file.
+- `node test/e2e/sso.mjs` = browser E2E of the sign-in page (headless Chromium over CDP) with **`test/e2e/fake-hem.mjs`** — a fake device + broker + RP callback that verifies the SDK's eJWT, issues tokens with the requested lifetime and signs with a software Ed25519 key. Covers SSO flows A/B/C, fallback on device 401, `prompt=login`/`max_age`, `user.sso=false`. Needs `chromium` (or `CHROME=`) and `redis-server`. Runs in CI as the separate `e2e` job (`ci.yml`; the checkout needs the SDK submodule or the page has no SDK and the flow times out on the first screen). The browser is closed through CDP, not a signal: a snap chromium survives `kill` and its profile would carry the cached session into the next run, so the harness also refuses to start when the CDP port is busy. Extend it before touching `signin.js` or `logout.js` — it is the only automated test of those files.
 
 ## Known Issues / Notes
 
 1. Nextcloud requires `allow_local_remote_servers = true` and `allow_insecure_http = 1` for dev
 2. Nextcloud `redirect_uri`: `http://localhost:8080/index.php/apps/user_oidc/code`
-3. JWKS cache in Nextcloud ignores `kid` — patch described in `nextcloud-jwks-kid-patch.md`
+3. JWKS cache in Nextcloud ignores `kid` — a patch used to be described in `nextcloud-jwks-kid-patch.md`, which is no longer in the repo or the bundle; re-document it if the problem resurfaces (prod Nextcloud logs in fine as of 2026-09-21)
 4. Ed25519 Web Crypto: Chrome 105+ / Firefox 113+ required (enrollment.html uses Web Crypto)
 5. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 6. Attestation debug logging is intentional — useful in production for tracing enrollment issues
@@ -424,32 +438,18 @@ JS must be in external files (CSP `script-src 'self'`) — no inline `<script>` 
 10. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
 11. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>` (its `FILES` list is a fourth place; `logout.html` is a template read by `logoutPage()` in `src/routes/oidc.js` rather than a route, but it needs the other three all the same).
 12. **`hem-sdk-js/` is a git submodule** (`encedo/hem-sdk-js`, HTTPS in `.gitmodules`; push it over SSH via a local `pushurl`). `git clone --recurse-submodules` (or `git submodule update --init`) before `npm start` / `docker build` — an empty submodule makes `/hem-sdk.js` 404 and the Dockerfile `COPY` fail. The SDK is edited **only** in that repo (its own `CLAUDE.md`: rebuild the bundle with rollup, commit source + bundle + `.d.ts` together); here we only bump the pinned commit. Upstream `MIGRATION.md` lists the breaking changes per SDK release.
+13. ⚠️ **File modes travel into the image.** `COPY` keeps the checkout's modes and the container runs as `node`. A `git pull` on the server done with umask 077 (2026-09-21) left 14 files at 0600 → `EACCES` on `src/app.js` → all three tenants in a restart loop (502) for 10 minutes. The Dockerfile now runs `chmod -R a+rX /app` before `USER node`, so this cannot recur from a rebuild — but a **restart never fixes a bad image**: diagnose with `docker logs`, then rebuild + recreate.
 
 ---
 
 ## Release Process
 
-Automated via GitHub Actions (`.github/workflows/release.yml`).
-
-**To release a new version:**
+Canonical procedure: README §*Releasing*. Versions are semver tags `vX.Y.Z`; `package.json` carries the same number and `/health` reports it as `version` next to `commit`. Current: **v1.1.0** (2026-09-21).
 
 ```bash
-git tag v1.0.0
-git push --tags
+npm version 1.2.0 --no-git-tag-version && git commit -am "release: v1.2.0"
+git tag -a v1.2.0 -m "v1.2.0"
+git push origin main v1.2.0      # a bare `git push` does NOT send the tag -- and without the tag release.yml never runs
 ```
 
-**What happens:**
-1. GitHub Actions detects tag `v*`
-2. Builds ZIP with `npm ci --omit=dev` + `node_modules` + `src/` + all HTML/JS/config files
-3. Creates **Release** on GitHub with `encedo-oidc-v1.0.0.zip` attached
-4. Auto-generates release notes from commits
-
-**Installation:**
-```bash
-VERSION=v1.0.0
-curl -fsSL https://github.com/encedo/encedo-oidc/releases/download/${VERSION}/encedo-oidc-${VERSION}.zip \
-  -o /tmp/encedo-oidc.zip
-sudo unzip /tmp/encedo-oidc.zip -d /opt/encedo-oidc
-```
-
-**Versioning:** Use semantic versioning (v0.1.0, v1.0.0, v1.1.0, etc.).
+`release.yml` (tag `v*`): tests with redis-server → ZIP → GitHub Release with generated notes. `ci.yml` (push to main / PR): lint + `npm test` + the `e2e` job. Verify with `git ls-remote --tags origin` and `gh run list`, never with the local tag list. Deploy from the tag (README §*Updating*) and confirm with `/health`.

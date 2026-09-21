@@ -4,7 +4,7 @@
 
 The system protects against:
 - Credential theft (no passwords stored — HSM holds private keys)
-- Token forgery (Ed25519 signing requires physical HSM access)
+- Token forgery (signing requires physical HSM access — Ed25519 or ECDSA, the key never leaves the device)
 - Replay attacks (one-time codes, challenge-response, session TTLs)
 - Admin API abuse (network isolation + strong secret + rate limiting)
 - Fake HSM detection — hardware attestation (via api.encedo.com) is **recorded** as `hw_attested`
@@ -18,13 +18,13 @@ Primary threat actor: attacker with network access but **without** physical acce
 ## Core Security Properties
 
 ### Private key never leaves HSM
-The Ed25519 private key is generated inside Encedo hardware and is never exported. JWT signing requires physical confirmation (mobile push or passphrase). The backend only sees and stores the 32-byte **public key**.
+The private key (Ed25519, or ECDSA on P-256/P-384/P-521 — chosen per user at enrollment) is generated inside Encedo hardware and is never exported. JWT signing requires physical confirmation (mobile push or passphrase), or a still-valid single sign-on token in the same browser (see *Single sign-on session*). The backend only sees and stores the **public key**.
 
 ### Backend controls all JWT claims
 The backend builds `signing_input = base64url(header).base64url(payload)`. The browser submits this to the HSM for signing. The browser cannot alter the payload — the backend assembles the final JWT.
 
 ### Public key always from Redis
-Ed25519 signature verification uses the public key from `user:{sub}.pubkey` in Redis — never from the request. The frontend cannot substitute a different key.
+Signature verification uses the public key (and key type) from `user:{sub}` in Redis — never from the request. The frontend cannot substitute a different key.
 
 ### The ID Token is signed by the *user's* key — what that means for a Relying Party
 There is no provider signing key. `jwks.json` publishes the enrolled users' public keys, and every ID Token carries the signature the user's HSM produced over the payload the server built. That is the point of the design (the server cannot forge a login), but it moves one trust boundary that OIDC Core takes for granted: a JWT that verifies against `jwks_uri` is proof that **the user's key signed it**, not that **the provider issued it**. A user can sign any payload they like offline — their own `sub`, but someone else's `email`, `email_verified: true`, any `aud`, an `exp` years away — and it will verify against the published key.
@@ -142,15 +142,21 @@ Set on all responses via `src/app.js`:
 
 | Header | Value |
 |--------|-------|
-| `Content-Security-Policy` | `default-src 'self'`; `connect-src 'self' https://*.ence.do https://api.encedo.com`; `script-src 'self'`; `frame-ancestors 'none'` |
+| `Content-Security-Policy` | `default-src 'self'`; `connect-src 'self' https://*.ence.do https://api.encedo.com` (+ `CSP_CONNECT_EXTRA`); `script-src 'self'`; `style-src 'self' <sha256 hashes> https://fonts.googleapis.com`; `style-src-attr 'unsafe-inline'`; `font-src 'self' https://fonts.gstatic.com`; `img-src 'self' data:`; `frame-ancestors 'none'`; `base-uri 'self'`; `form-action 'self'` |
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `no-referrer` |
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains` (production only) |
 
-JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`, `signup.js`, `signup-client.js`, `verify-email.js`, `index.js`, `landing.js`) — no inline `<script>` blocks and no inline `on*=` handlers: `script-src 'self'` is enforced without `'unsafe-inline'` and without a permissive `script-src-attr`, so markup injected into the page can never execute. Clicks are dispatched through `data-action` attributes and a delegated listener. CSP style hashes cover exact `<style>` block content in HTML files (8 files: signin, enrollment, admin-panel, index, landing, signup, signup-client, verify-email).
+JS is extracted to external files (`signin.js`, `enrollment.js`, `admin-panel.js`, `signup.js`, `signup-client.js`, `verify-email.js`, `logout.js`, `index.js`, `landing.js`, shared `hsm-common.js`) — no inline `<script>` blocks and no inline `on*=` handlers: `script-src 'self'` is enforced without `'unsafe-inline'` and without a permissive `script-src-attr`, so markup injected into the page can never execute. Clicks are dispatched through `data-action` attributes and a delegated listener. CSP style hashes cover exact `<style>` block content in HTML files (9 files: signin, enrollment, admin-panel, index, landing, signup, signup-client, verify-email, logout); `node update-csp-hashes.js` regenerates them.
 
 The admin secret is kept in `sessionStorage` (per tab, gone when the tab closes) and can be dropped with the “Forget secret” button; the API base URL alone is remembered in `localStorage`.
+
+---
+
+## Container
+
+The Docker image (`node:22-alpine`) runs the app as the unprivileged `node` user. The copied tree is made world-readable at build time (`chmod -R a+rX /app`), so the build host's umask cannot produce an image whose files `node` cannot open — a checkout pulled with umask 077 did exactly that once and left every container in a restart loop. The image carries no secrets: everything sensitive comes from the tenant's `.env` (mode 600) at run time. A `HEALTHCHECK` polls `/health`, which answers 503 when Redis is unreachable, so `docker ps` shows a dead datastore as an unhealthy container. Each tenant's Redis lives on a private Docker network with `requirepass`; only that tenant's OIDC container can reach it.
 
 ---
 

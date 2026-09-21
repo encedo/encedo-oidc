@@ -20,7 +20,7 @@ Encedo OIDC Provider flips the model.
 
 **The cryptographic authority lives in the user's hardware — not on the server.**
 
-Each user owns an [Encedo HEM](https://encedo.com) hardware security module. Their Ed25519 private key is generated inside that hardware and never, under any circumstances, leaves it. When a user authenticates, their HSM physically signs the identity token. The provider server verifies the signature — but it cannot produce one.
+Each user owns an [Encedo HEM](https://encedo.com) hardware security module. Their private key (Ed25519, or ECDSA on a NIST P-curve) is generated inside that hardware and never, under any circumstances, leaves it. When a user authenticates, their HSM physically signs the identity token. The provider server verifies the signature — but it cannot produce one.
 
 ```
 Traditional IdP:                      Encedo OIDC Provider:
@@ -49,6 +49,16 @@ This is not a configuration option. It is a structural guarantee enforced by phy
 
 ---
 
+## Single sign-on without a server-side session
+
+Conventional SSO works because the provider keeps a session and vouches for the user to every application. That session is a server-held secret, and it is exactly what an attacker with server access takes over.
+
+Encedo OIDC keeps no such session. After one confirmation on the HEM, the browser holds the device's short-lived authorization, in that browser only, and presents it to the device for every further sign-in. The device signs; the provider verifies. The provider still cannot sign anything, so a compromised provider cannot turn one sign-in into access everywhere.
+
+Each application still learns what happened: the ID Token carries `auth_time` and `amr`, so a sensitive application can demand a fresh confirmation while the rest ride on the first one. The lifetime is chosen on the device (eight hours by default), the operator and every application can turn the feature off, and signing out of one application asks the user whether to end the browser's session too, never silently.
+
+---
+
 ## A minimal, privacy-respecting database
 
 Because the server never holds credentials, the database footprint is dramatically smaller than any traditional IdP.
@@ -61,7 +71,7 @@ Because the server never holds credentials, the database footprint is dramatical
 | `username` | Display name for lookup |
 | `email` | For claims only |
 | `hsm_url` | URL of user's HSM device |
-| `pubkey` | 32-byte Ed25519 public key (not secret) |
+| `pubkey` | Ed25519 or ECDSA public key (not secret) |
 | `hw_attested` | Whether key is hardware-backed |
 | `hsm_crt` | Device X.509 certificate (public) |
 
@@ -130,6 +140,7 @@ Modern SCADA and ICS platforms increasingly support OpenID Connect for operator 
 
 **Tested integrations:**
 - Nextcloud (user_oidc app)
+- Zextras Carbonio (via the Encedo OIDC connector, preauth into the user's mailbox)
 - Any OIDC-compliant application via standard discovery (`/.well-known/openid-configuration`)
 
 **What OT operators gain:**
