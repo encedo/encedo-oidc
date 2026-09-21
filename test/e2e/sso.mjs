@@ -187,7 +187,9 @@ try {
   await page.goto(logoutUrl);
   await page.until("!document.getElementById('lo-ask')?.hidden", 'the question');
   assert.equal(await page.evalJs("document.getElementById('lo-ask-title').textContent"), 'You have been signed out of App B.');
-  assert.equal(await page.evalJs("document.getElementById('lo-who').textContent"), 'krutecki');
+  assert.equal(await page.evalJs("document.getElementById('lo-yes').textContent"), 'Yes, sign out \u201Ckrutecki\u201D too');
+  assert.equal(await page.evalJs("document.getElementById('lo-no').textContent"), 'No, keep \u201Ckrutecki\u201D signed in');
+  assert.match(await page.evalJs("document.getElementById('lo-ask-text').textContent"), /^\u201Ckrutecki\u201D is still signed in on this browser\./);
   assert.equal(await page.evalJs("document.getElementById('lo-done').hidden"), true);
   await page.click('#lo-no');
   await page.until("location.href.includes('/bye')", 'post-logout redirect after "No"');

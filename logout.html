@@ -133,10 +133,10 @@
            log out of the OP as well). Nothing is cleared until the user answers. -->
       <div id="lo-ask" hidden>
         <div class="card-title" id="lo-ask-title">You have been signed out.</div>
-        <div class="card-sub">Also sign out of Encedo? That ends the sign-in session this browser keeps for
-          <strong id="lo-who">this account</strong>. Other applications will ask for your HEM again.</div>
-        <button type="button" class="btn btn-primary btn-full" id="lo-yes">Yes, sign out of Encedo too</button>
-        <button type="button" class="btn btn-ghost btn-full" id="lo-no">No, keep my Encedo session</button>
+        <div class="card-sub" id="lo-ask-text">This browser still has a sign-in session. Sign out of it too?
+          Other applications will then ask for your HEM again.</div>
+        <button type="button" class="btn btn-primary btn-full" id="lo-yes">Yes, sign out of that session too</button>
+        <button type="button" class="btn btn-ghost btn-full" id="lo-no">No, keep it signed in</button>
       </div>
       <!-- Default view: no Encedo session in this browser, or JavaScript is off. -->
       <div id="lo-done">
