@@ -10,7 +10,9 @@
     const r = await fetch('/health');
     const h = await r.json();
     if (h.issuer) document.getElementById('rail-issuer').textContent = h.issuer;
-    if (h.commit) document.getElementById('rail-ver').textContent = 'v ' + h.commit;
+    const ver = h.version && h.version !== 'unknown' ? 'v' + h.version : '';
+    const build = h.commit && h.commit !== 'unknown' ? h.commit : '';
+    if (ver || build) document.getElementById('rail-ver').textContent = [ver, build].filter(Boolean).join(' · ');
   } catch { /* offline or opened from disk — keep the static values */ }
 })();
 
@@ -39,13 +41,15 @@
   const b64urlStr = (s) => b64url(new TextEncoder().encode(s));
 
   // The shape the backend really builds: base64url(header) + '.' + base64url(payload).
-  const HEADER = { alg: 'EdDSA', kid: 'a4f1c0e2', typ: 'JWT' };
+  // kid is SHA-1 of the public key, truncated to 16 bytes -- 32 hex chars, as the provider derives it.
+  const HEADER = { alg: 'EdDSA', kid: 'a4f1c0e27b3d9e51c8f2a06d4b19e37c', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
   const PAYLOAD = {
     iss: 'https://oidc.encedo.com',
     sub: '9f2c1d84-7b3e-4a16-9c05-2e8ab6d4f107',
     aud: 'carbonio',
     exp: now + 3600, iat: now,
+    auth_time: now, amr: ['hwk'],
     preferred_username: 'operator', email_verified: true,
   };
   const SIGNING_INPUT = b64urlStr(JSON.stringify(HEADER)) + '.' + b64urlStr(JSON.stringify(PAYLOAD));
