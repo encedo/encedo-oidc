@@ -2,6 +2,7 @@
   "name": "encedo-oidc-provider",
   "version": "1.1.0",
   "description": "HSM-anchored OpenID Connect Identity Provider",
+  "license": "MIT",
   "type": "module",
   "main": "src/app.js",
   "scripts": {
