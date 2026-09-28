@@ -191,8 +191,11 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('hsm-url-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
-  document.getElementById('pin-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter') doSubmitPin();
+  // Enter and the Continue button both arrive as a submit: a real form
+  // submission is what tells a password manager to offer saving the passphrase.
+  document.getElementById('pin-form').addEventListener('submit', e => {
+    e.preventDefault();
+    doSubmitPin();
   });
 });
 
@@ -471,6 +474,7 @@ async function tryFasttrack(kid, label, sub, btn) {
 function showPinScreen() {
   document.getElementById('pin-err').textContent = '';
   document.getElementById('pin-input').value = '';
+  document.getElementById('pin-hsm-url').value = session.hsm_url || '';
   showScreen('s-pin');
   setTimeout(() => document.getElementById('pin-input').focus(), 100);
 }
@@ -863,7 +867,6 @@ function showError(msg) {
 const ACTIONS = {
   'do-login':           () => doLogin(),
   'do-select-key':      () => doSelectKey(),
-  'do-submit-pin':      () => doSubmitPin(),
   'do-cancel-mobile':   () => doCancelMobile(),
   'do-cancel':          () => doCancel(),
   'do-try-again':       () => doTryAgain(),

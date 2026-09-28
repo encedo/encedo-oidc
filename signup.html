@@ -173,6 +173,17 @@
 
   @media (max-width: 520px) { .card { padding: 28px 22px 30px; border-radius: 22px; } }
   @media (max-width: 360px) { body { font-size: 14px; padding: 16px 10px; } .card { padding: 22px 16px 24px; } }
+
+  /* -- Passphrase eye: password-field.js wraps every password input -- */
+  .pw-wrap { position: relative; display: block; }
+  .pw-wrap input { padding-right: 46px; }
+  .pw-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: var(--muted);
+    padding: 6px; cursor: pointer; display: grid; place-items: center;
+  }
+  .pw-eye:hover { color: var(--text); }
+  @media (pointer: coarse) { .pw-eye { padding: 10px; right: 4px; } }
 </style>
 </head>
 <body>
@@ -194,7 +205,10 @@
     <img src="/logo.png" alt="Encedo">
     <div class="logo-sub">Sign Up</div>
   </div>
-  <div class="card">
+  <!-- A real <form> so password managers offer to save the HSM passphrase.
+       Its "username" is the HSM URL, not the account username: the passphrase
+       belongs to the HSM, and signin.html asks for it under the URL. -->
+  <form class="card" id="su-form" data-enter-next>
     <div class="rp-badge">
       <div class="rp-dot"></div>
       <div class="rp-label">Invitation for&nbsp;<strong id="rp-client-name">Loading&hellip;</strong></div>
@@ -209,7 +223,7 @@
     <!-- Username: editable or locked by admin -->
     <div class="field" id="su-username-row">
       <label class="field-label" for="su-username">Username</label>
-      <input class="field-input" id="su-username" type="text" autocomplete="username" placeholder="your.username">
+      <input class="field-input" id="su-username" type="text" autocomplete="off" placeholder="your.username">
     </div>
     <div class="field" id="su-username-locked-row" style="display:none;">
       <label class="field-label">Username</label>
@@ -261,7 +275,7 @@
 
     <div class="field">
       <label class="field-label" for="su-hsm-url">Encedo HSM URL</label>
-      <input class="field-input" id="su-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="url">
+      <input class="field-input" id="su-hsm-url" type="url" placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="username">
     </div>
     <div class="field">
       <label class="field-label" for="su-password">
@@ -270,10 +284,10 @@
       <input class="field-input" id="su-password" type="password" placeholder="Leave empty if not set" autocomplete="current-password">
     </div>
 
-    <button class="btn btn-primary btn-full" id="su-submit-btn" data-action="do-submit">Create account &amp; link HSM &rarr;</button>
+    <button type="submit" class="btn btn-primary btn-full" id="su-submit-btn">Create account &amp; link HSM &rarr;</button>
     <div class="err-msg" id="su-err"></div>
     <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
-  </div>
+  </form>
 </div>
 
 <!-- ENROLLING (spinner) -->
@@ -336,6 +350,7 @@
   </div>
 </div>
 
+<script src="/password-field.js"></script>
 <script type="module" src="/signup.js"></script>
 </body>
 </html>

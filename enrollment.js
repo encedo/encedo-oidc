@@ -200,9 +200,15 @@ function doClose() {
   }, 200);
 }
 
+// The Link button and Enter arrive as a submit: a real form submission is what
+// tells a password manager to offer saving the passphrase.
+document.getElementById('enroll-form').addEventListener('submit', e => {
+  e.preventDefault();
+  doSubmit();
+});
+
 // Click dispatch -- data-action instead of inline handlers (CSP).
 const ACTIONS = {
-  'do-submit':        () => doSubmit(),
   'do-go-to-service': () => doGoToService(),
   'do-close':         () => doClose(),
 };

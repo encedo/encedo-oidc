@@ -173,6 +173,17 @@
     body { font-size: 14px; padding: 16px 10px; }
     .card { padding: 22px 16px 24px; }
   }
+
+  /* -- Passphrase eye: password-field.js wraps every password input -- */
+  .pw-wrap { position: relative; display: block; }
+  .pw-wrap input { padding-right: 46px; }
+  .pw-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: var(--muted);
+    padding: 6px; cursor: pointer; display: grid; place-items: center;
+  }
+  .pw-eye:hover { color: var(--text); }
+  @media (pointer: coarse) { .pw-eye { padding: 10px; right: 4px; } }
 </style>
 </head>
 <body>
@@ -194,7 +205,9 @@
     <img src="/logo.png" alt="Encedo">
     <div class="logo-sub">HSM Enrollment</div>
   </div>
-  <div class="card">
+  <!-- A real <form> so password managers offer to save the HSM passphrase,
+       under the HSM URL as the "username" (signin.html fills it back the same way). -->
+  <form class="card" id="enroll-form" data-enter-next>
     <div class="step-label">Step 1 of 2 &mdash; Link your hardware key</div>
 
     <div class="identity-box">
@@ -211,7 +224,7 @@
     <div class="field">
       <label class="field-label" for="f-hsm-url">Encedo HSM URL</label>
       <input class="field-input" id="f-hsm-url" type="url"
-        placeholder="https://my.ence.do" value="https://my.ence.do">
+        placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="username">
     </div>
 
     <div class="field" id="key-type-field">
@@ -241,13 +254,13 @@
         HSM passphrase <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span>
       </label>
       <input class="field-input" id="f-password" type="password"
-        placeholder="Leave empty if not set">
+        placeholder="Leave empty if not set" autocomplete="current-password">
     </div>
 
-    <button class="btn btn-primary btn-full" id="submit-btn" data-action="do-submit">Link HSM &rarr;</button>
+    <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Link HSM &rarr;</button>
     <div class="err-msg" id="form-err"></div>
     <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
-  </div>
+  </form>
 </div>
 
 <!-- --- SUCCESS ---------------------------------------- -->
@@ -303,6 +316,7 @@
   </div>
 </div>
 
+<script src="/password-field.js"></script>
 <script type="module" src="/enrollment.js"></script>
 </body>
 </html>

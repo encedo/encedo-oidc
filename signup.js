@@ -220,9 +220,15 @@ function doGoToService() {
   if (clientRedirectOrigin) window.location.href = clientRedirectOrigin;
 }
 
+// The Create button and Enter arrive as a submit: a real form submission is
+// what tells a password manager to offer saving the passphrase.
+document.getElementById('su-form').addEventListener('submit', e => {
+  e.preventDefault();
+  doSubmit();
+});
+
 // Click dispatch -- data-action instead of inline handlers (CSP).
 const ACTIONS = {
-  'do-submit':        () => doSubmit(),
   'do-go-to-service': () => doGoToService(),
 };
 document.addEventListener('click', e => {

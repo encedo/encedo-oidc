@@ -307,6 +307,17 @@
     .card { padding: 22px 16px 24px; }
     .btn { font-size: 14px; padding: 13px 20px; }
   }
+
+  /* -- Passphrase eye: password-field.js wraps every password input -- */
+  .pw-wrap { position: relative; display: block; }
+  .pw-wrap input { padding-right: 46px; }
+  .pw-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: var(--muted);
+    padding: 6px; cursor: pointer; display: grid; place-items: center;
+  }
+  .pw-eye:hover { color: var(--text); }
+  @media (pointer: coarse) { .pw-eye { padding: 10px; right: 4px; } }
 </style>
 </head>
 <body>
@@ -444,10 +455,15 @@
     <img src="/logo.png" alt="Encedo">
     <div class="logo-sub">Authentication</div>
   </div>
-  <div class="card">
+  <!-- A real <form> so password managers offer to save / fill the passphrase.
+       Its "username" is the HSM URL (the passphrase belongs to the HSM, and
+       enrollment/signup save it under the same URL); the URL was typed on the
+       previous screen, so it rides along in a hidden field filled by signin.js. -->
+  <form class="card" id="pin-form">
     <p style="font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.6;">
       Enter your passphrase to authenticate with the HSM.
     </p>
+    <input id="pin-hsm-url" type="text" autocomplete="username" hidden>
     <div class="field">
       <label class="field-label" for="pin-input">Passphrase</label>
       <input class="field-input" id="pin-input" type="password"
@@ -455,10 +471,10 @@
     </div>
     <div class="err-msg" id="pin-err"></div>
     <div class="btn-row">
-      <button class="btn btn-ghost" data-action="show-screen" data-screen="s-login">Back</button>
-      <button class="btn btn-primary" id="pin-btn" data-action="do-submit-pin">Continue &rarr;</button>
+      <button type="button" class="btn btn-ghost" data-action="show-screen" data-screen="s-login">Back</button>
+      <button type="submit" class="btn btn-primary" id="pin-btn">Continue &rarr;</button>
     </div>
-  </div>
+  </form>
 </div>
 
 <!-- --- REJECTED ------------------------------------- -->
@@ -502,6 +518,7 @@
   </div>
 </div>
 
+<script src="/password-field.js"></script>
 <script type="module" src="/signin.js"></script>
 </body>
 </html>

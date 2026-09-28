@@ -226,6 +226,12 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
 
 ---
 
+### Passphrase fields (eye + password managers)
+- `password-field.js` (classic script, loaded before the page script on signin, enrollment, signup, admin) wraps every `input[type=password]` with a show/hide eye; re-masked on blur and on submit. Styles `.pw-wrap`/`.pw-eye` live in each page's `<style>` (CSP: the script cannot inject them).
+- Password managers save what a real `<form>` submits: `#pin-form`, `#enroll-form`, `#su-form`, `#config-form`. The form's `submit` listener is the ONLY path to the handler — submit buttons are `type="submit"` **without** `data-action` (the click dispatcher calls `preventDefault()`, which would cancel the submission).
+- The manager's "username" is the **HSM URL** (`autocomplete="username"`; signin carries it in a hidden `#pin-hsm-url`): the passphrase belongs to the HSM, so what enrollment/signup save is what signin fills. In signup the account username is `autocomplete="off"` for that reason. Admin: API base + secret.
+- `form[data-enter-next]`: Enter in a text field moves to the next field instead of submitting — the passphrase is optional and an early submit would go straight to mobile approval.
+
 ## Redis Schema
 
 Canonical: `ARCH.md` §Redis Schema (every key, field and TTL). Semantics that are easy to get wrong:

@@ -64,12 +64,12 @@ if (process.env.TRUST_PROXY) {
 // IPv6 not supported for HSM connections (see security.md M3).
 const connectExtra = process.env.CSP_CONNECT_EXTRA ? ` ${process.env.CSP_CONNECT_EXTRA}` : '';
 const STYLE_HASHES = [
-  "'sha256-9uNX+72e1UgDS/7qEfgEY0sg188gJIZDByvsHCm319I='", // signin.html
-  "'sha256-WPNRCWjevpCuzbaeXeJXbBvLGm9JxCIVJqLNS7qCHnk='", // enrollment.html
-  "'sha256-EA0irg8jKANLVH35Bh+2RzqKe3W+GIZXlbxrH4lShmg='", // admin-panel.html
+  "'sha256-cLiyE4SXBdRhJ/AQf71diEUuu4f3Ev5Pa24uDhMEFfY='", // signin.html
+  "'sha256-luqTklYubAFNiRs4wxVb3szwH4aC9Osm85huzBbE2Jw='", // enrollment.html
+  "'sha256-K/XyUPCtU21dMdrdyD4Y4dZW7nF7BLzHjQJ4k7U2UEw='", // admin-panel.html
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
   "'sha256-q2s+4y3bBK8Vzu0T6vVuPMLdMT1mEDBLLMw62gfykM8='", // landing.html
-  "'sha256-aeiTjKwpQyLweFX9vVB9iij4EBs40oHYv9vg69BhU7w='", // signup.html
+  "'sha256-x3o+mvQuTBAmPTRFwTkHr7UyWyB78CPDE6Sm7RrHFO0='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
   "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
   "'sha256-aO/5eCFVjZmaJTh8HHmJld86rx45wTTYYOkF685TFCk='", // logout.html
@@ -152,6 +152,7 @@ app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js'
 // The URL stays /hem-sdk.js so the UI modules keep their import path.
 app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js')));
 app.get('/hem-sdk.browser.js.map', (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js.map')));
+app.get('/password-field.js', (_req, res) => res.sendFile(resolve(ROOT, 'password-field.js'))); // passphrase eye + form helpers
 app.get('/hsm-common.js',   (_req, res) => res.sendFile(resolve(ROOT, 'hsm-common.js')));   // shared by signin/enrollment/signup
 app.get('/logout.js',       (_req, res) => res.sendFile(resolve(ROOT, 'logout.js')));       // clears the SSO session on the /logout page
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));

@@ -208,6 +208,12 @@ html.light .client-check-name{color:var(--text)}
 .pop-item small{display:block;color:var(--muted);font-size:9px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pop-more{font-family:var(--mono);font-size:10px;color:var(--muted);padding-top:4px;border-top:1px solid var(--rim);margin-top:5px}
 .pop-warn{font-family:var(--mono);font-size:10px;color:var(--amber);line-height:1.5}
+/* Passphrase eye: password-field.js wraps every password input */
+.pw-wrap{position:relative;display:block}
+.pw-wrap input{padding-right:28px}
+.pw-eye{position:absolute;right:3px;top:50%;transform:translateY(-50%);border:none;background:none;color:var(--muted);padding:4px;cursor:pointer;display:grid;place-items:center}
+.pw-eye:hover{color:var(--text)}
+.pw-eye svg{width:13px;height:13px}
 </style>
 </head>
 <body>
@@ -249,10 +255,14 @@ html.light .client-check-name{color:var(--text)}
       Audit log
     </button>
     <div class="sidebar-footer">
-      <div class="config-label">API BASE</div>
-      <input class="config-input" id="api-base" placeholder="http://localhost:3000" value="">
-      <div class="config-label">ADMIN SECRET</div>
-      <input class="config-input" id="api-secret" type="password" value="">
+      <!-- A real <form> so password managers offer to save the admin secret,
+           under the API base as the "username". Enter in the secret submits. -->
+      <form id="config-form" data-enter-next>
+        <div class="config-label">API BASE</div>
+        <input class="config-input" id="api-base" placeholder="http://localhost:3000" value="" autocomplete="username">
+        <div class="config-label">ADMIN SECRET</div>
+        <input class="config-input" id="api-secret" type="password" value="" autocomplete="current-password">
+      </form>
       <div class="status-line">
         <div class="status-dot" id="status-dot"></div>
         <span id="status-text">connecting...</span>
@@ -910,6 +920,7 @@ html.light .client-check-name{color:var(--text)}
 <div id="toasts"></div>
 <div id="pop" class="pop"></div>
 
+<script src="/password-field.js"></script>
 <script src="/admin-panel.js"></script>
 </body>
 </html>

@@ -136,7 +136,7 @@ try {
   await page.click('[data-action=do-approve-sign]');
   await page.until("document.querySelector('.screen.visible')?.id === 's-pin'", 'passphrase screen (no mobile app on this device)');
   await page.type('#pin-input', 'correct horse');
-  await page.click('[data-action=do-submit-pin]');
+  await page.click('#pin-btn');
   const entryKey = await page.until("Object.keys(localStorage).find(k => k.startsWith('encedo_sso:'))", 'SSO entry saved (during the countdown)');
   const entry = JSON.parse(await page.evalJs(`localStorage.getItem(${JSON.stringify(entryKey)})`));
   assert.equal(entry.kid, kid); assert.equal(entry.username, 'krutecki'); assert.equal(entry.sub, user.sub);
@@ -236,7 +236,7 @@ try {
   await page.click('[data-action=do-approve-sign]');
   await page.until("document.querySelector('.screen.visible')?.id === 's-pin'", 'passphrase screen');
   await page.type('#pin-input', 'correct horse');
-  await page.click('[data-action=do-submit-pin]');
+  await page.click('#pin-btn');
   await page.until("location.href.includes('/cb?')", 'redirect to RP A');
   await page.goto(authz(B));
   assert.equal(await page.screen(), 's-login', 'no accounts screen for a user without SSO');

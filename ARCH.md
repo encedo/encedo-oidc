@@ -184,6 +184,7 @@ encedo-oidc/
 ├── verify-email.html / verify-email.js     Email verification link
 ├── admin-panel.html / admin-panel.js       Admin panel
 ├── hsm-common.js                 Shared browser helpers (key-type maps, DER→P1363, JWT decode, fetchJson)
+├── password-field.js             Passphrase eye (show/hide) + password-manager form helpers (signin, enrollment, signup, admin)
 ├── hem-sdk-js/                   Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js);
 │                                 hem-sdk.browser.js is served at /hem-sdk.js
 ├── update-csp-hashes.js          Recomputes the CSP hashes of every inline <style> into src/app.js

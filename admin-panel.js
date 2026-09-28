@@ -889,11 +889,16 @@ document.addEventListener('click', e => {
 // the secret is only sent when you press Enter -- probing on every keystroke
 // would stream partial secrets into the audit log as admin.auth.fail.
 $('api-base').addEventListener('input', checkHealthDebounced);
-$('api-base').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); $('api-secret').focus(); }
-});
+// Enter in the base URL moves to the secret (form[data-enter-next], see
+// password-field.js); Enter in the secret submits the form -- a real submission
+// is what tells a password manager to offer saving the secret. requestSubmit():
+// the form has two fields and no submit button, so Enter alone would not submit.
 $('api-secret').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); connectAndSave(); }
+  if (e.key === 'Enter') { e.preventDefault(); $('config-form').requestSubmit(); }
+});
+$('config-form').addEventListener('submit', e => {
+  e.preventDefault();
+  connectAndSave();
 });
 $('audit-filter').addEventListener('change', applyAuditFilter);
 $('audit-limit').addEventListener('change', auditChangeLimit);
