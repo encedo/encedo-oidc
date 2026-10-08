@@ -223,6 +223,15 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
 - The hero demonstration is **real**: the page generates a throwaway Ed25519 pair via WebCrypto, signs the `signing_input` it prints, and verifies it. Without WebCrypto Ed25519 (Chrome <105 / Firefox <113) the row still fills from random bytes but drops the word `valid` — it must not claim a verification that did not happen.
 - The rail reads `issuer` + `commit` from `/health` (same source as `index.js`); on failure the static markup values stay.
 - Layout is adapted from `~/develop/chat/encedo-chat/impl/web/landing.html` (onchato); content is backed by `PRODUCT.md`.
+- **Aligned with rkv.pl and the other RKV sites (2026-10-08)** — house style `~/develop/www/STYLE.md`, company page `~/develop/www_rkv.pl`:
+  system fonts only (no Google Fonts: the footer promises "nothing from third parties"); family `<head>` boilerplate
+  (`canonical`, `theme-color`, `og:*`, `og.png` rendered from `og.html` with the command in that file); a **"What this
+  costs you"** section whose five items come from `SECURITY.md` (every user needs a module, ID Token is the user's
+  signature, no RS256, one key per user in the JWKS, attestation advisory); footer = **RKV sp. z o.o.** → `https://rkv.pl`
+  (the company page everywhere; "Encedo HEM" is only the product's name) + the legal line used on wg/openpgp + MIT.
+  Compatible services are **named, not linked** ("Tested with Nextcloud, Carbonio CE and GitLab") — OIDC is universal.
+  Width harness: `~/develop/www/_kit/mobile-check.html` (copy `landing.html` to `page.html` there; 355/407/1275 px,
+  no sideways scroll). rkv.pl's OIDC card is changed only after this page changes and only if it has to.
 
 ---
 

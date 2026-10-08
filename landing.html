@@ -4,12 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Encedo OIDC — identity the provider cannot forge</title>
-<meta name="description" content="HSM-anchored OpenID Connect provider. The private key never leaves the user's hardware, so the server verifies tokens it is structurally incapable of signing. Single sign-on without a server-side session. Self-hosted, Redis-only, runs air-gapped.">
+<meta name="description" content="HSM-anchored OpenID Connect provider by RKV sp. z o.o. The private key never leaves the user's Encedo HEM, so the server verifies tokens it is structurally incapable of signing. Single sign-on without a server-side session. Self-hosted, Redis-only, runs air-gapped. MIT licence.">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14103a">
+<!-- The canonical and OG URLs name the public instance. LANDING_PAGE is meant
+     for that instance only (src/app.js); an operator who sets it elsewhere
+     should change these two lines. -->
+<link rel="canonical" href="https://oidc.encedo.com/">
 <link rel="icon" href="favicon.ico">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://oidc.encedo.com/">
+<meta property="og:site_name" content="Encedo OIDC">
+<meta property="og:title" content="Encedo OIDC — identity the provider cannot forge">
+<meta property="og:description" content="An OpenID Connect provider that holds nothing it could use to impersonate anyone: the server assembles the token, the user's Encedo HEM signs it, and what is kept per account is a public key. Self-hosted, MIT.">
+<meta property="og:image" content="https://oidc.encedo.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   /* ---- tokens -------------------------------------------------------------
      This page is dark on purpose and in every browser — it is the product
@@ -31,7 +42,9 @@
     --amber:      #f5b041;
     --lift:       0 18px 60px rgba(0,0,0,.35);
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
-    --sans: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* System fonts only, like every other RKV page: this page loads nothing
+       from third parties, and the footer says so. */
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -201,6 +214,20 @@
   .levers li::before { content: ''; position: absolute; left: 0; top: .6em; width: 7px; height: 7px; border-radius: 50%; background: var(--purple); }
   .levers b { color: var(--ink); font-weight: 600; }
 
+  /* ---- what this costs you ----
+     A page that only lists advantages reads as advertising. These are the
+     consequences of the design, taken from SECURITY.md, in the order a relying
+     party meets them. Same ledger as the claims, no accent: nothing here is
+     being sold. */
+  .costs { border: 1px solid var(--hair); border-radius: 18px; overflow: hidden; background: var(--paper); }
+  .costs > div { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 22px 28px; border-top: 1px solid var(--hair); }
+  .costs > div:first-child { border-top: 0; }
+  .costs > div > * { min-width: 0; }
+  @media (min-width: 760px) { .costs > div { grid-template-columns: 260px 1fr; gap: 24px; } }
+  .costs dt { font-size: 16px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
+  .costs dd { font-size: 15px; color: var(--muted); max-width: 64ch; }
+  .costs dd a { color: var(--purple); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
   /* ---- self-host: the one warm block on the page ---- */
   .host { border: 1px solid var(--hair); border-radius: 18px; overflow: hidden; background: var(--paper); }
   .host-top { padding: 32px 28px; border-bottom: 1px solid var(--hair); }
@@ -208,7 +235,8 @@
   .host-top p { color: var(--muted); max-width: 60ch; }
   .host-top .accent { color: var(--amber); }
   pre {
-    padding: 24px 28px; overflow-x: auto; background: var(--panel);
+    padding: 24px 28px; background: var(--panel);
+    white-space: pre-wrap; overflow-wrap: anywhere;   /* a tail behind a scrollbar is a tail nobody reads */
     font-family: var(--mono); font-size: 13.5px; line-height: 1.9; color: var(--ink);
   }
   pre .c { color: var(--muted); }
@@ -226,6 +254,8 @@
   footer a { font-family: var(--mono); font-size: 12.5px; color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--purple); }
   footer .spacer { flex: 1; }
+  footer .legal { flex-basis: 100%; max-width: 76ch; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+  footer .legal a { font-family: inherit; font-size: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -238,6 +268,7 @@
     <nav class="nav">
       <a href="#how" class="hide-sm">how it works</a>
       <a href="#sso" class="hide-sm">single sign-on</a>
+      <a href="#costs" class="hide-sm">costs</a>
       <a href="#run">self-host</a>
       <a href="/status">status</a>
       <a href="https://github.com/encedo/encedo-oidc">source</a>
@@ -252,7 +283,7 @@
         <dt>Signature</dt>
         <dd>EdDSA · ES256/384/512<br>in hardware</dd>
         <dt>Keys in JWKS</dt>
-        <dd>one per user<br>(kid = user's HEM)</dd>
+        <dd>one per user<br>(kid = the user's module)</dd>
         <dt>Secrets at rest</dt>
         <dd>—</dd>
         <dt>Sessions on the server</dt>
@@ -284,7 +315,7 @@
             <div class="wire-val b64" id="w-input"></div>
           </div>
           <div class="wire-row">
-            <div class="wire-label">What your HEM returns</div>
+            <div class="wire-label">What your module returns</div>
             <div class="wire-val sig" id="w-sig"></div>
           </div>
           <div class="wire-row">
@@ -306,7 +337,7 @@
             <h2>The server cannot sign for you</h2>
             <p>
               The backend builds <code>signing_input</code> — header and claims, exactly as OIDC requires —
-              and hands it to the browser. The HEM signs it. The backend verifies the signature and
+              and hands it to the browser. The module signs it. The backend verifies the signature and
               assembles the token. There is no code path in which it produces one, and no configuration
               that adds one.
             </p>
@@ -326,7 +357,7 @@
           <article class="claim">
             <h2>No login without the physical device</h2>
             <p>
-              Every authentication ends at a hardware module that has to answer — approved on your phone
+              Every authentication ends at the module, which has to answer — approved on your phone
               or unlocked with a passphrase. A compromised server can refuse a login. It cannot grant one.
             </p>
             <p class="metric">Pending session 120 s · auth code 60 s · PKCE S256</p>
@@ -337,15 +368,15 @@
               Discovery, JWKS, UserInfo, RP-initiated logout, PKCE — a relying party integrates the way it
               integrates anything else, and reads <code>auth_time</code> and <code>amr</code> to learn how
               the user was authenticated. Nothing phones home: the only outbound call in normal operation is
-              to your own HEM, on your own network.
+              to your own module, on your own network.
             </p>
             <p class="metric">Runs air-gapped · Node.js 22 + Redis · tagged releases</p>
           </article>
         </div>
         <p class="limits">
-          In daily internal use at Encedo — Nextcloud (<code>user_oidc</code>), Carbonio CE through the Encedo
-          connector, and GitLab all authenticate against it — and it works the same way with any application
-          that reads discovery.
+          OIDC is a standard, so nothing here is written for one application: whatever reads discovery
+          integrates the same way. Tested with Nextcloud, Carbonio CE and GitLab, which authenticate against
+          it in daily use at RKV.
           <a href="https://github.com/encedo/encedo-oidc/blob/main/SECURITY.md">Read the security model →</a>
         </p>
       </section>
@@ -356,7 +387,7 @@
           <div class="sso-text">
             <h2>The device on every login?<br><span class="soft">Only on the first one.</span></h2>
             <p>
-              After one confirmation on the HEM, your browser keeps the device's short-lived authorization —
+              After one confirmation on the module, your browser keeps the device's short-lived authorization —
               in that browser, and nowhere else. The next application is one click: the device still signs,
               the server still verifies, and the server still holds nothing it could reuse. Single sign-on
               without a session on the server to steal.
@@ -383,6 +414,42 @@
         </div>
       </section>
 
+      <section id="costs">
+        <p class="sec-label">What this costs you</p>
+        <dl class="costs">
+          <div>
+            <dt>Every user needs an Encedo HEM</dt>
+            <dd>There is no password to fall back on and no recovery without the device. A lost or replaced
+              module means a new enrollment, which only an administrator can start.</dd>
+          </div>
+          <div>
+            <dt>The ID Token is the user's signature, not the provider's</dt>
+            <dd>There is no provider key. A token that verifies against <code>jwks_uri</code> proves that the
+              user's module signed it, and the user could sign any payload offline. Trust an ID Token only as
+              the response of <code>POST /token</code>; never accept one from another channel as a bearer
+              credential.</dd>
+          </div>
+          <div>
+            <dt>No RS256</dt>
+            <dd>The module signs with <code>EdDSA</code> and <code>ES256/384/512</code>. OIDC Core lists
+              <code>RS256</code> as mandatory for a provider; a relying party wired to it has to be
+              configured for one of these instead.</dd>
+          </div>
+          <div>
+            <dt>One key per user in the JWKS</dt>
+            <dd>A relying party that caches the JWKS and matches <code>kid</code> strictly will not know a
+              newly enrolled user until its cache expires, typically an hour.</dd>
+          </div>
+          <div>
+            <dt>Attestation is recorded, not enforced</dt>
+            <dd>At enrollment the device certificate is checked against Encedo's attestation service and the
+              outcome is stored as <code>hw_attested</code>. A failed check is logged, not refused; a system
+              that needs a genuine module has to read the flag.
+              <a href="https://github.com/encedo/encedo-oidc/blob/main/SECURITY.md">Every item above, in full →</a></dd>
+          </div>
+        </dl>
+      </section>
+
       <section id="run">
         <p class="sec-label">Your own infrastructure</p>
         <div class="host">
@@ -404,6 +471,7 @@
             <span><b>Docker</b> multi-tenant template included</span>
             <span><b>backup / restore</b> in one command each</span>
             <span><b>tagged</b> releases, tests gate every one</span>
+            <span><b>MIT</b> licence</span>
           </div>
         </div>
       </section>
@@ -413,8 +481,16 @@
         <a href="/.well-known/openid-configuration">Discovery</a>
         <a href="https://github.com/encedo/encedo-oidc">Source</a>
         <a href="https://github.com/encedo/encedo-oidc/blob/main/SECURITY.md">Security model</a>
+        <a href="https://github.com/encedo/encedo-oidc/blob/main/LICENSE">MIT licence</a>
         <span class="spacer"></span>
-        <a href="https://encedo.com">RKV</a>
+        <a href="https://rkv.pl">RKV sp. z o.o.</a>
+        <p class="legal">
+          Encedo OIDC is built and run by <a href="https://rkv.pl">RKV sp. z o.o.</a>, Wrocław
+          (KRS 0001173474), the company behind the Encedo product line. The Encedo HEM is a hardware
+          encryption module; it comes in two versions, the EPA and the PPA, which expose one and the same
+          API, and nothing on this page depends on which of them you hold. This page sets no cookies, runs
+          no analytics and loads nothing from third parties. View the source to check.
+        </p>
       </footer>
     </main>
   </div>

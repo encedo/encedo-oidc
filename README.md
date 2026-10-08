@@ -1049,7 +1049,9 @@ failure, so they are safe to drive from cron.
 The landing page (`landing.html` + `landing.js`) is the public product page: it describes the
 hardware-anchored model and demonstrates the signing flow. It is dark-themed by design — the
 operator screens stay light — and it reads `issuer` and `commit` from `/health`, so a deployed
-instance shows its own values. Turn it on for the public instance only:
+instance shows its own values. `og.png` (the social card, source `og.html`) is served at `/og.png`;
+the canonical and `og:url` in `landing.html` name the public instance. Turn it on for the public
+instance only:
 
 ```ini
 LANDING_PAGE=1

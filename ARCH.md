@@ -176,6 +176,7 @@ encedo-oidc/
 │       └── common.js
 ├── index.html / index.js         Status page (served at /status, and at / unless LANDING_PAGE=1)
 ├── landing.html / landing.js     Product landing page (served at / when LANDING_PAGE=1)
+├── og.html / og.png              Social card for the landing: og.png is served at /og.png, og.html is its source (not served)
 ├── signin.html / signin.js       Trusted App: sign-in page + SSO account chooser (served at /authorize)
 ├── logout.html / logout.js       Sign-out page: asks before ending the browser's SSO session
 ├── enrollment.html / enrollment.js   Enrollment flow

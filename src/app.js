@@ -68,7 +68,7 @@ const STYLE_HASHES = [
   "'sha256-luqTklYubAFNiRs4wxVb3szwH4aC9Osm85huzBbE2Jw='", // enrollment.html
   "'sha256-K/XyUPCtU21dMdrdyD4Y4dZW7nF7BLzHjQJ4k7U2UEw='", // admin-panel.html
   "'sha256-H7RTronIQdIsg1/OPK/veLJvD4xeJ3OUhtOwDU2wBNc='", // index.html
-  "'sha256-q2s+4y3bBK8Vzu0T6vVuPMLdMT1mEDBLLMw62gfykM8='", // landing.html
+  "'sha256-w1JD8lj38BNpiClyyVvX0DY7GvBAYpxMfuoTGwPYRP8='", // landing.html
   "'sha256-x3o+mvQuTBAmPTRFwTkHr7UyWyB78CPDE6Sm7RrHFO0='", // signup.html
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
   "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
@@ -147,6 +147,7 @@ app.get('/signup.js',            (_req, res) => res.sendFile(resolve(ROOT, 'sign
 app.get('/signup-client.js',     (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.js')));
 app.get('/logo.png',        (_req, res) => res.sendFile(resolve(ROOT, 'logo.png')));
 app.get('/favicon.ico',    (_req, res) => res.sendFile(resolve(ROOT, 'favicon.ico')));
+app.get('/og.png',          (_req, res) => res.sendFile(resolve(ROOT, 'og.png')));   // social card for the landing
 app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js')));
 // HEM SDK comes from the hem-sdk-js git submodule (pre-built browser bundle).
 // The URL stays /hem-sdk.js so the UI modules keep their import path.
