@@ -1,7 +1,8 @@
 // Browser end-to-end test of single sign-on on the sign-in page, with a fake
 // HEM (test/e2e/fake-hem.mjs) standing in for the device and the broker.
-// Needs: redis-server, chromium on PATH (or CHROME=/path). Not part of
-// `npm test` (CI has no browser):   node test/e2e/sso.mjs
+// Needs: redis-server and a browser: CHROME=/path, or the first of chromium,
+// chromium-browser, google-chrome that comes up. Not part of `npm test`; CI
+// runs it as its own job (ci.yml):   node test/e2e/sso.mjs
 //
 // Flow A: full sign-in to client A (password path) with "remember" -> the
 //         page caches the HEM token the device issued for 8 h.
@@ -51,6 +52,10 @@ async function closeBrowser() {
 
 // ---- infrastructure ------------------------------------------------------------
 const procs = [];
+// Anything that dies before the try/finally below (no redis, no browser) must
+// still take the app and redis with it, or the next run finds a stale app on
+// the port with the previous run's CSP and fails on the first screen.
+process.on('exit', () => { for (const p of procs) { try { p.kill(); } catch { /* gone */ } } });
 const dir = mkdtempSync(join(tmpdir(), 'oidc-e2e-'));
 procs.push(spawn('redis-server', ['--port', String(REDIS_PORT), '--dir', dir, '--save', '', '--appendonly', 'no'], { stdio: 'ignore' }));
 await waitPort(REDIS_PORT);
@@ -69,11 +74,26 @@ procs.push(spawn('node', ['src/app.js'], { cwd: ROOT, stdio: 'ignore', env: { ..
   ADMIN_ALLOWED_IPS: '127.0.0.1,::1', CSP_CONNECT_EXTRA: hem.deviceUrl, SSO_SUGGEST_SECONDS: '28800' } }));
 await waitPort(APP_PORT);
 
-const chrome = process.env.CHROME || 'chromium';
 if (await portOpen(CDP_PORT)) throw new Error(`port ${CDP_PORT} is already in use -- a chromium from an earlier run? (its profile would carry a stale session)`);
+// Which binary is "the browser" differs per machine (snap chromium here, a
+// chromium or google-chrome on a CI image), and a browser that exits at start
+// used to leave nothing but "port never came up". Try each candidate in turn
+// and keep its stderr, so a failure names the binary and quotes its reason.
+const candidates = process.env.CHROME ? [process.env.CHROME] : ['chromium', 'chromium-browser', 'google-chrome'];
 const profile = mkdtempSync(join(tmpdir(), 'oidc-e2e-chrome-'));
-procs.push(spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' }));
-await waitPort(CDP_PORT);
+const attempts = [];
+for (const chrome of candidates) {
+  let stderr = '', exit = null;
+  const p = spawn(chrome, ['--headless=new', '--no-sandbox', '--disable-gpu', `--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  p.stderr.on('data', d => { stderr += d; });
+  p.on('error', e => { exit = e.code ?? String(e); });
+  p.on('exit', (code, sig) => { exit = code ?? sig; });
+  for (let i = 0; i < 100 && exit === null; i++) { if (await portOpen(CDP_PORT)) break; await sleep(100); }
+  if (await portOpen(CDP_PORT)) { procs.push(p); console.log(`browser: ${chrome}`); break; }
+  attempts.push(`${chrome}: exit ${exit ?? 'none (still running, no CDP port)'}\n${stderr.trim().split('\n').slice(-8).join('\n')}`);
+  try { p.kill(); } catch { /* gone */ }
+}
+if (!(await portOpen(CDP_PORT))) throw new Error(`no browser came up on port ${CDP_PORT}:\n` + attempts.join('\n---\n'));
 
 // ---- minimal CDP driver --------------------------------------------------------
 async function openPage() {
