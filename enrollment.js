@@ -1,5 +1,5 @@
 import { HEM } from '/hem-sdk.js';
-import { hsmKeyType, exdsaAlg, keyTypeLabel, derToP1363, bytesToBase64url, bytesToHex, base64ToBytes, fetchJson, hemErrMsg, authorizeScope } from '/hsm-common.js';
+import { hsmKeyType, exdsaAlg, keyTypeLabel, checkP1363, bytesToBase64url, bytesToHex, fetchJson, hemErrMsg, authorizeScope, attestKey, hemOptions } from '/hsm-common.js';
 
 // Read token from URL fragment (#token=...) -- fragment is never sent to the server,
 // so it won't appear in access logs or Referer headers.
@@ -90,7 +90,7 @@ async function doSubmit() {
   btn.disabled = true;
   formErr.textContent = '';
 
-  const hem = new HEM(hsm_url);
+  const hem = new HEM(hsm_url, hemOptions());
 
   // Helper: authorize for a given scope (passphrase or mobile)
   function authorize(scope, label) {
@@ -109,9 +109,9 @@ async function doSubmit() {
       const genToken = await authorize('keymgmt:gen', 'Authorizing key generation...');
       btn.textContent = `Creating ${keyTypeLabel(key_type)} key...`;
       const label    = `Encedo OIDC - ${username}`.slice(0, 32);
-      const descrB64 = btoa(`ETSOIDC${sub}`);
-      const hsmMode  = key_type !== 'Ed25519' ? 'ExDSA' : undefined;
-      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), descrB64, hsmMode);
+      const descr    = `ETSOIDC${sub}`;   // text; the SDK sends it as UTF-8 bytes
+      const mode     = key_type !== 'Ed25519' ? 'ExDSA' : null;
+      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(key_type), { descr, mode });
       kid = created.kid;
       if (!kid) throw new Error('No kid in createKeyPair response');
       createdKid = kid;
@@ -122,30 +122,23 @@ async function doSubmit() {
 
     // -- Step 4: fetch public key ----------------------------------
     btn.textContent = 'Fetching public key...';
-    const keyInfo = await hem.getPubKey(useToken, kid);
-    if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
-    // HSM returns pubkey as standard base64 -- convert to hex
-    const pubkey = bytesToHex(base64ToBytes(keyInfo.pubkey));
+    const keyInfo = await hem.getKeyPublicInfo(useToken, kid);
+    if (!keyInfo.pubkey) throw new Error('No pubkey in getKeyPublicInfo response');
+    // bytes: EC compressed point, Ed25519 raw -- the backend takes hex
+    const pubkey = bytesToHex(keyInfo.pubkey);
 
     // -- Step 5: sign the challenge -- key-possession proof ---------
     btn.textContent = 'Signing challenge...';
     const challenge  = userData.challenge;
     if (!challenge) throw new Error('No challenge received from server -- call validate first');
-    const rawSigBytes = await hem.exdsaSign(useToken, kid, challenge, exdsaAlg(key_type));
-    const sigBytes  = key_type !== 'Ed25519' ? derToP1363(rawSigBytes, key_type) : rawSigBytes;
+    const rawSigBytes = await hem.exdsaSign(useToken, kid, challenge, { alg: exdsaAlg(key_type) });
+    const sigBytes  = key_type !== 'Ed25519' ? checkP1363(rawSigBytes, key_type) : rawSigBytes;
     const signature = bytesToBase64url(sigBytes);
 
-    // -- Step 6: HSM attestation -- hardware origin proof -----------
-    btn.textContent = 'Fetching attestation...';
-    let genuine = null;
-    let crt     = null;
-    try {
-      const attData = await hem.getAttestation(useToken);
-      genuine = attData.genuine ?? null;
-      crt     = attData.crt     ?? null;
-    } catch (e) {
-      console.warn('[HEM] attestation failed (non-fatal):', e.message);
-    }
+    // -- Step 6: key attestation -- device origin + proof of possession --
+    btn.textContent = 'Attesting key...';
+    const { attestation, crt, error: attestErr } = await attestKey(hem, useToken, kid, userData.attest);
+    if (attestErr) console.warn('[HEM] attestation:', attestErr);
 
     // -- Step 7: submit to backend ---------------------------------
     btn.textContent = 'Saving...';
@@ -154,7 +147,7 @@ async function doSubmit() {
       data = await fetchJson('/enrollment/submit', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n: emailNonce }),
+        body:    JSON.stringify({ token: enrollToken, hsm_url, kid, pubkey, key_type, signature, attestation, crt, n: emailNonce }),
       });
     } catch (e) {
       if (!e.status) throw e;

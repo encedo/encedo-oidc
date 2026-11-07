@@ -1,17 +1,8 @@
 import { HEM, jwtParse } from '/hem-sdk.js';
-import { exdsaAlg, derToP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg } from '/hsm-common.js';
+import { exdsaAlg, checkP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg, hemOptions } from '/hsm-common.js';
 
-// --- Test hook: broker override, localhost only -------
-// The SDK talks to api.encedo.com for check-in and mobile push. The browser
-// E2E test (test/e2e/sso.mjs) runs a fake device AND a fake broker; it names
-// the broker with ?hem_broker=. Honoured only when the page itself is served
-// from localhost, so no RP can ever point a real deployment at a broker of
-// its choosing.
-const HEM_OPTS = (() => {
-  const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
-  const b = new URLSearchParams(location.search).get('hem_broker');
-  return isLocal && b ? { broker: b } : {};
-})();
+// Test hook (?hem_broker=, localhost only) -- see hemOptions() in hsm-common.js.
+const HEM_OPTS = hemOptions();
 
 // --- OIDC params --------------------------------------
 const params = new URLSearchParams(window.location.search);
@@ -40,9 +31,14 @@ function oidcBody(extra = {}) {
   return b;
 }
 
-// The device pages its search at 15 entries by default; ask for more so a
-// second account or a re-enrolled key on the same HSM is never silently cut off.
-const KEY_LIST_LIMIT = 100;
+// Key search walks every page (searchKeysAll): the device returns at most 15
+// a page, so a second account or a re-enrolled key is never silently cut off.
+// A loop, not Array.fromAsync: that needs Chrome 121 / Firefox 115.
+async function allOidcKeys(hem, token) {
+  const keys = [];
+  for await (const k of hem.searchKeysAll(token, 'ETSOIDC')) keys.push(k);
+  return keys;
+}
 
 // --- Session (in-memory only) -------------------------
 function freshSession() {
@@ -385,9 +381,9 @@ async function doLogin() {
     // Step A: detect mobile-app support (keys described 'EXTAID…'; the SDK anchors and base64-encodes the pattern)
     btn.textContent = 'Detecting HSM capabilities...';
     try {
-      const mobileKeys = await hem.searchKeys(null, 'EXTAID', 0, 1);
+      const mobileKeys = await hem.searchKeys(null, 'EXTAID', { limit: 1 });
       session.openSearch   = true;
-      session.hasMobileApp = mobileKeys.length > 0;
+      session.hasMobileApp = mobileKeys.list.length > 0;
     } catch (e) {
       if (!e.status || e.status < 400 || e.status >= 500) throw e;
       // 4xx -> HSM requires auth for search
@@ -409,7 +405,7 @@ async function doLogin() {
     // Step B: search OIDC keys (or delegate to passphrase screen)
     if (session.openSearch) {
       btn.textContent = 'Searching keys...';
-      const keys = await hem.searchKeys(null, 'ETSOIDC', 0, KEY_LIST_LIMIT);
+      const keys = await allOidcKeys(hem, null);
       if (keys.length === 0) {
         document.getElementById('login-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';
@@ -501,7 +497,7 @@ async function doSubmitPin() {
       const listToken = await session.hem.authorizePassword(pin, 'keymgmt:search');
       session.listToken = listToken;
       btn.textContent = 'Searching keys...';
-      const keys = await session.hem.searchKeys(listToken, 'ETSOIDC', 0, KEY_LIST_LIMIT);
+      const keys = await allOidcKeys(session.hem, listToken);
       if (keys.length === 0) {
         document.getElementById('pin-err').textContent =
           'No OIDC keys found on this HSM. Please complete enrollment first.';
@@ -519,7 +515,7 @@ async function doSubmitPin() {
       // Passphrase for signing -- authorize + complete sign
       const { kid, label, loginData } = session.pendingSign;
       const scope = `keymgmt:use:${kid}`;
-      const useToken = await session.hem.authorizePassword(pin, scope, authorizeLifetime(loginData));
+      const useToken = await session.hem.authorizePassword(pin, scope, { expSeconds: authorizeLifetime(loginData) });
       btn.disabled = false;
       btn.textContent = 'Continue \u2192';
       await doCompleteSign(useToken, kid, label, loginData);
@@ -671,7 +667,7 @@ async function doApproveSign() {
     let useToken;
 
     if (session.password) {
-      useToken = await session.hem.authorizePassword(session.password, scope, expSeconds);
+      useToken = await session.hem.authorizePassword(session.password, scope, { expSeconds });
       if (currentOpId !== opId) return;
 
     } else if (session.hasMobileApp) {
@@ -685,8 +681,9 @@ async function doApproveSign() {
       showScreen('s-signing');
 
       mobileAbortCtrl = new AbortController();
+      // No lifetime to ask for: the phone's answer sets it (FW 1.3 ext/request
+      // takes no exp). doCompleteSign reads exp from the token itself.
       useToken = await session.hem.authorizeRemote(scope, {
-        expSeconds,
         pollInterval: 2_000, pollTimeout: 60_000,
         onPending: () => console.debug(`[HEM] ${scope}: waiting\u2026`),
         signal: mobileAbortCtrl.signal,
@@ -732,7 +729,7 @@ async function doCompleteSign(useToken, kid, label, loginData) {
   try {
     let rawSigBytes;
     try {
-      rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, exdsaAlg(loginData.key_type));
+      rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, { alg: exdsaAlg(loginData.key_type) });
     } catch (e) {
       // A cached SSO token the device no longer accepts (expired, device
       // rebooted or unplugged, token revoked): drop it and start a fresh,
@@ -750,7 +747,7 @@ async function doCompleteSign(useToken, kid, label, loginData) {
       }
       throw e;
     }
-    const sigBytes  = loginData.key_type !== 'Ed25519' ? derToP1363(rawSigBytes, loginData.key_type) : rawSigBytes;
+    const sigBytes  = loginData.key_type !== 'Ed25519' ? checkP1363(rawSigBytes, loginData.key_type) : rawSigBytes;
     const signature = bytesToBase64url(sigBytes);
 
     let confirmData;

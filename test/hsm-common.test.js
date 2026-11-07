@@ -4,27 +4,26 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import { derToP1363, decodeJwtPayload, decodeJwtHeader, hemErrMsg, fetchJson, bytesToBase64url, bytesToHex, base64ToBytes } from '../hsm-common.js';
+import { checkP1363, decodeJwtPayload, decodeJwtHeader, hemErrMsg, fetchJson, bytesToBase64url, bytesToHex, base64ToBytes } from '../hsm-common.js';
 
-test('derToP1363 converts real ECDSA DER signatures that Node then verifies as ieee-p1363', () => {
+test('checkP1363 passes a raw r||s signature (HEM FW 1.3) that Node verifies as ieee-p1363', () => {
   for (const [keyType, curve, hash] of [['P256', 'prime256v1', 'sha256'], ['P384', 'secp384r1', 'sha384'], ['P521', 'secp521r1', 'sha512']]) {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: curve });
-    const n = { P256: 32, P384: 48, P521: 66 }[keyType];
-    for (let i = 0; i < 20; i++) {   // enough draws to hit high-bit r/s (sign padding) and short ones
-      const msg = Buffer.from(`m${i}`);
-      const der = new Uint8Array(crypto.sign(hash, msg, { key: privateKey, dsaEncoding: 'der' }));
-      const p1363 = derToP1363(der, keyType);
-      assert.equal(p1363.length, 2 * n, `${keyType}: fixed width`);
-      assert.ok(crypto.verify(hash, msg, { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(p1363)), `${keyType}: verifies`);
-    }
+    const msg = Buffer.from('signing_input');
+    const raw = new Uint8Array(crypto.sign(hash, msg, { key: privateKey, dsaEncoding: 'ieee-p1363' }));
+    const out = checkP1363(raw, keyType);
+    assert.equal(out, raw, `${keyType}: passed through unchanged`);
+    assert.ok(crypto.verify(hash, msg, { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(out)), `${keyType}: verifies`);
   }
 });
 
-test('derToP1363 refuses malformed input instead of returning garbage', () => {
-  assert.throws(() => derToP1363(new Uint8Array(64), 'P256'), /DER SEQUENCE/);            // raw r||s, not DER
-  assert.throws(() => derToP1363(new Uint8Array([0x30, 0x06, 0x03, 0x01, 0x00, 0x02, 0x01, 0x00]), 'P256'), /INTEGER/);
-  assert.throws(() => derToP1363(new Uint8Array([0x30, 0x08, 0x02, 0x40, ...new Array(6).fill(1)]), 'P256'), /length/);
-  assert.throws(() => derToP1363(new Uint8Array([0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x01]), 'X'), /unsupported/);
+test('checkP1363 refuses DER (pre-1.3 firmware) and wrong lengths', () => {
+  const { privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const der = new Uint8Array(crypto.sign('sha256', Buffer.from('m'), { key: privateKey, dsaEncoding: 'der' }));
+  assert.throws(() => checkP1363(der, 'P256'), /64-byte r\|\|s/);
+  assert.throws(() => checkP1363(new Uint8Array(96), 'P256'), /got 96 bytes/);
+  assert.throws(() => checkP1363(new Uint8Array(64), 'X'), /unsupported/);
+  assert.throws(() => checkP1363('AAAA', 'P256'), /expected/);
 });
 
 test('JWT parts decode as UTF-8 (no mojibake for non-ASCII names)', () => {

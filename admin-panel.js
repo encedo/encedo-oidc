@@ -321,6 +321,23 @@ async function submitAddUser() {
 }
 
 /* EDIT */
+// One line on the key's attestation (HEM firmware 1.3), from the user record.
+function attestSummary(u) {
+  if (!u.kid) return '--';
+  if (!u.attest_status) {
+    return u.hw_attested === 'true'
+      ? 'Enrolled before firmware 1.3: device check passed (legacy, no key attestation)'
+      : 'Enrolled before firmware 1.3: no key attestation';
+  }
+  const label = { verified: 'Verified', token_only: 'Token only (device origin not proven)', failed: 'Failed', absent: 'None sent' }[u.attest_status] || u.attest_status;
+  const bits = [label];
+  if (u.attest_assurance) bits.push(u.attest_assurance === 'hard' ? 'hard (PPA)' : u.attest_assurance === 'soft' ? 'soft (EPA)' : u.attest_assurance);
+  if (u.attest_online)    bits.push('online: ' + u.attest_online);
+  if (u.attest_reason)    bits.push('reason: ' + u.attest_reason);
+  if (u.attest_at)        bits.push(u.attest_at.slice(0, 10));
+  return bits.join(' · ');
+}
+
 async function openEditUser(idx) {
   const u = _usersCache[idx];
   const parts = (u.name || '').split(' ');
@@ -338,6 +355,8 @@ async function openEditUser(idx) {
   $('eu-hsm').value             = u.hsm_url || '';
   $('eu-kid').textContent       = u.kid || '--';
   $('eu-key-type').textContent  = u.key_type || 'EdDSA';
+  $('eu-attest').textContent    = attestSummary(u);
+  $('eu-attest-policy').value   = u.attest_policy || '';
   $('eu-pubkey-preview').textContent = u.pubkey
     ? btoa(u.pubkey.match(/../g).map(h=>String.fromCharCode(parseInt(h,16))).join(''))
     : '--';
@@ -414,6 +433,7 @@ async function submitEditUser() {
     hsm_url  : $('eu-hsm').value.trim(),
     clients  : [...document.querySelectorAll('#eu-clients-list input:checked')].map(el => el.dataset.cid),
     sso      : $('eu-sso').checked,
+    attest_policy: $('eu-attest-policy').value,
   };
   if (!updates.username) return toast('Username required', 'err');
   if (!updates.hsm_url)  return toast('HSM URL required', 'err');

@@ -5,6 +5,7 @@ import { resolveClientGrant } from '../services/clientGrant.js';
 import { sendVerificationEmailHandler } from './emailVerify.js';
 import { issuer } from '../services/issuer.js';
 import { revokeUserTokens } from '../services/tokens.js';
+import { ATTEST_POLICIES } from '../services/attestation.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -210,6 +211,16 @@ router.patch('/:sub', async (req, res, next) => {
         return res.status(400).json({ error: 'validation_error', error_description: 'sso must be a boolean' });
       }
       updates.sso = String(req.body.sso);
+    }
+
+    // Per-user attestation policy; '' or null = the server default (ATTEST_POLICY).
+    if (req.body.attest_policy !== undefined) {
+      const p = req.body.attest_policy ?? '';
+      if (p !== '' && !ATTEST_POLICIES.includes(p)) {
+        return res.status(400).json({ error: 'validation_error',
+          error_description: `attest_policy must be '' or one of: ${ATTEST_POLICIES.join(', ')}` });
+      }
+      updates.attest_policy = p;
     }
 
     if (Object.keys(updates).length === 0) {

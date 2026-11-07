@@ -589,6 +589,20 @@ html.light .client-check-name{color:var(--text)}
         <div class="id-badge" id="eu-pubkey-preview" style="word-break:break-all;white-space:normal">--</div>
         <div class="field-hint">Key type: <span style="color:var(--green)" id="eu-key-type">EdDSA</span></div>
       </div>
+      <div class="field">
+        <label class="field-label">Key attestation</label>
+        <div class="id-badge" id="eu-attest" style="word-break:break-all;white-space:normal">--</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Attestation policy</label>
+        <select class="field-input" id="eu-attest-policy" style="appearance:auto;cursor:pointer;">
+          <option value="">Server default (ATTEST_POLICY)</option>
+          <option value="advisory">Advisory: record the result, never refuse</option>
+          <option value="require">Require: a valid attestation (PPA or EPA)</option>
+          <option value="require_hard">Require hard: PPA chained to the Encedo root</option>
+        </select>
+        <div class="field-hint">Checked at this user's next enrollment; the current key is not affected</div>
+      </div>
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
       <div class="clients-list" id="eu-clients-list">

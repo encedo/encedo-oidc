@@ -4,6 +4,9 @@
 // chromium-browser, google-chrome that comes up. Not part of `npm test`; CI
 // runs it as its own job (ci.yml):   node test/e2e/sso.mjs
 //
+// Enrollment: the enrollment page creates the key on the device, attests it
+//         (HEM FW 1.3, signature PoP) and the OP verifies the attestation
+//         against the SDK's TEST PKI -> attest_status verified.
 // Flow A: full sign-in to client A (password path) with "remember" -> the
 //         page caches the HEM token the device issued for 8 h.
 // Flow B: sign-in to client B is the accounts screen + one click; the
@@ -18,8 +21,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
-import crypto from 'node:crypto';
-import { startFakeHem } from './fake-hem.mjs';
+import { startFakeHem, PKI } from './fake-hem.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const REDIS_PORT = 6398, APP_PORT = 3398, CDP_PORT = 9223;
@@ -60,18 +62,13 @@ const dir = mkdtempSync(join(tmpdir(), 'oidc-e2e-'));
 procs.push(spawn('redis-server', ['--port', String(REDIS_PORT), '--dir', dir, '--save', '', '--appendonly', 'no'], { stdio: 'ignore' }));
 await waitPort(REDIS_PORT);
 
-// software Ed25519 key that the fake device "holds" and the OP will enroll
-const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-const pubRaw = Buffer.from(publicKey.export({ format: 'jwk' }).x, 'base64url');
-const pubHex = pubRaw.toString('hex');
-const kid    = crypto.createHash('sha1').update(pubRaw).digest('hex').slice(0, 32);
-
-const hem = await startFakeHem({ keys: [] });   // descr filled in once the user's sub is known
+const hem = await startFakeHem({ keys: [] });   // the enrollment page creates the key
 procs.push({ kill: () => hem.close() });
 
 procs.push(spawn('node', ['src/app.js'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env,
   REDIS_URL: `redis://127.0.0.1:${REDIS_PORT}`, PORT: String(APP_PORT), ISSUER: BASE, ADMIN_SECRET: SECRET,
-  ADMIN_ALLOWED_IPS: '127.0.0.1,::1', CSP_CONNECT_EXTRA: hem.deviceUrl, SSO_SUGGEST_SECONDS: '28800' } }));
+  ADMIN_ALLOWED_IPS: '127.0.0.1,::1', CSP_CONNECT_EXTRA: hem.deviceUrl, SSO_SUGGEST_SECONDS: '28800',
+  ATTEST_URL: hem.attestUrl, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_POLICY: 'require_hard' } }));
 await waitPort(APP_PORT);
 
 if (await portOpen(CDP_PORT)) throw new Error(`port ${CDP_PORT} is already in use -- a chromium from an earlier run? (its profile would carry a stale session)`);
@@ -134,15 +131,29 @@ try {
   const A = await mkClient('App A'), B = await mkClient('App B');
   const user = (await jpost('/admin/users', { username: 'krutecki', name: 'Krzysztof', email: 'k@e2e.test', hsm_url: hem.deviceUrl, clients: [A.client_id, B.client_id] })).body;
   const enrollToken = user.enrollment_url.split('#token=')[1];
-  const chal = (await jpost('/enrollment/validate', { token: enrollToken })).body.challenge;
-  const enr = await jpost('/enrollment/submit', { token: enrollToken, hsm_url: hem.deviceUrl, kid, pubkey: pubHex, key_type: 'Ed25519', signature: crypto.sign(null, Buffer.from(chal), privateKey).toString('base64url') });
-  assert.equal(enr.status, 200, 'enrollment');
-  hem.state.keys.push({ kid, label: 'Encedo OIDC - krutecki', descr: 'ETSOIDC' + user.sub, privateKey });
+  const page = await openPage();
+
+  // ---- Enrollment in the browser, attested (policy require_hard) ----------
+  console.log('Enrollment: create key on the HEM, attest it, OP verifies the chain');
+  await page.goto(`${BASE}/enrollment?hem_broker=${encodeURIComponent(hem.brokerUrl)}#token=${enrollToken}`);
+  await page.until("document.querySelector('.screen.visible')?.id === 's-form'", 'enrollment form');
+  assert.equal(await page.evalJs("document.getElementById('f-hsm-url').value"), hem.deviceUrl);
+  await page.type('#f-password', 'correct horse');
+  await page.click('#submit-btn');
+  await page.until("document.querySelector('.screen.visible')?.id === 's-success'", 'enrollment success', 30000);
+  assert.equal(hem.state.keys.length, 1, 'one key created on the device');
+  const { kid } = hem.state.keys[0];
+  assert.equal(hem.state.keys[0].descr, 'ETSOIDC' + user.sub, 'description = ETSOIDC<sub>, as signin searches it');
+  const rec = (await fetch(`${BASE}/admin/users/${user.sub}`, { headers: H }).then(r => r.json()));
+  assert.equal(rec.kid, kid);
+  assert.equal(rec.attest_status, 'verified', `attestation: ${rec.attest_status} ${rec.attest_reason}`);
+  assert.equal(rec.attest_assurance, 'hard'); assert.equal(rec.hw_attested, 'true');
+  assert.equal(hem.state.attestValidations, 1, 'attest.encedo.com asked once');
+  assert.deepEqual(page.errors, [], 'no page errors during enrollment');
+  console.log('   ok: kid', kid, 'attest', rec.attest_status, rec.attest_assurance);
 
   const authz = (client, extra = {}) => `${BASE}/authorize?` + new URLSearchParams({ client_id: client.client_id, redirect_uri: hem.rpCallback, response_type: 'code', scope: 'openid email', state: 'st-' + client.name.slice(-1), nonce: 'n1', hem_broker: hem.brokerUrl, ...extra });
   const exchange = (client, code) => jpost('/token', { grant_type: 'authorization_code', code, redirect_uri: hem.rpCallback, client_id: client.client_id, client_secret: client.client_secret });
-  const page = await openPage();
-
   // ---- Flow A: full sign-in to A, remember ----------------------------------
   console.log('A: full sign-in (password path), remember in this browser');
   await page.goto(authz(A));

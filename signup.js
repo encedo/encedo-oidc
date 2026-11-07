@@ -1,5 +1,5 @@
 import { HEM } from '/hem-sdk.js';
-import { hsmKeyType, exdsaAlg, keyTypeLabel, derToP1363, bytesToBase64url, bytesToHex, base64ToBytes, fetchJson, hemErrMsg, authorizeScope } from '/hsm-common.js';
+import { hsmKeyType, exdsaAlg, keyTypeLabel, checkP1363, bytesToBase64url, bytesToHex, fetchJson, hemErrMsg, authorizeScope, attestKey, hemOptions } from '/hsm-common.js';
 
 // Fragment carries token and, for an emailed invite, the email nonce (#token=...&n=...).
 // Parse both properly -- a naive strip would fold "&n=..." into the token.
@@ -117,7 +117,7 @@ async function doSubmit() {
   btn.disabled = true;
   show('s-enrolling');
 
-  const hem = new HEM(hsm_url);
+  const hem = new HEM(hsm_url, hemOptions());
   const authorize = scope => authorizeScope(hem, password, scope);
 
   try {
@@ -150,9 +150,9 @@ async function doSubmit() {
       setStatus(`Creating ${keyTypeLabel(progress.key_type)} key pair…`);
       const genToken = await authorize('keymgmt:gen');   // cached by the SDK when already granted
       const label    = `Encedo OIDC - ${username}`.slice(0, 32);
-      const descrB64 = btoa(`ETSOIDC${sub}`);
-      const hsmMode  = progress.key_type !== 'Ed25519' ? 'ExDSA' : undefined;
-      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(progress.key_type), descrB64, hsmMode);
+      const descr    = `ETSOIDC${sub}`;   // text; the SDK sends it as UTF-8 bytes
+      const mode     = progress.key_type !== 'Ed25519' ? 'ExDSA' : null;
+      const created  = await hem.createKeyPair(genToken, label, hsmKeyType(progress.key_type), { descr, mode });
       kid = created.kid;
       if (!kid) throw new Error('No kid in createKeyPair response');
       progress.kid = kid;
@@ -163,30 +163,26 @@ async function doSubmit() {
     const useToken = await authorize(`keymgmt:use:${kid}`);
 
     setStatus('Fetching public key…');
-    const keyInfo = await hem.getPubKey(useToken, kid);
-    if (!keyInfo.pubkey) throw new Error('No pubkey in getKey response');
-    const pubkey = bytesToHex(base64ToBytes(keyInfo.pubkey));
+    const keyInfo = await hem.getKeyPublicInfo(useToken, kid);
+    if (!keyInfo.pubkey) throw new Error('No pubkey in getKeyPublicInfo response');
+    const pubkey = bytesToHex(keyInfo.pubkey);
 
     setStatus('Signing challenge…');
     const chalData = await fetchJson('/enrollment/validate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: enrollment_token }) });
-    const rawSigBytes = await hem.exdsaSign(useToken, kid, chalData.challenge, exdsaAlg(kt));
-    const sigBytes    = kt !== 'Ed25519' ? derToP1363(rawSigBytes, kt) : rawSigBytes;
+    const rawSigBytes = await hem.exdsaSign(useToken, kid, chalData.challenge, { alg: exdsaAlg(kt) });
+    const sigBytes    = kt !== 'Ed25519' ? checkP1363(rawSigBytes, kt) : rawSigBytes;
     const signature   = bytesToBase64url(sigBytes);
 
-    setStatus('Fetching attestation…');
-    let genuine = null, crt = null;
-    try {
-      const att = await hem.getAttestation(useToken);
-      genuine = att.genuine ?? null;
-      crt     = att.crt     ?? null;
-    } catch (e) { console.warn('[HEM] attestation non-fatal:', e.message); }
+    setStatus('Attesting key…');
+    const { attestation, crt, error: attestErr } = await attestKey(hem, useToken, kid, chalData.attest);
+    if (attestErr) console.warn('[HEM] attestation:', attestErr);
 
     setStatus('Saving…');
     try {
       await fetchJson('/enrollment/submit', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ token: enrollment_token, hsm_url, kid, pubkey, key_type: kt, signature, genuine, crt }),
+        body:    JSON.stringify({ token: enrollment_token, hsm_url, kid, pubkey, key_type: kt, signature, attestation, crt }),
       });
     } catch (e) {
       if (e.code === 'invalid_or_expired_token') {

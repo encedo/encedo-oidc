@@ -14,9 +14,10 @@ COPY index.html     index.js     \
      signup-client.html signup-client.js \
      verify-email.html verify-email.js \
      logo.png        favicon.ico og.png ./
-# HEM SDK: pre-built browser bundle from the hem-sdk-js git submodule
-# (clone with --recurse-submodules, or the COPY fails on an empty directory).
-COPY hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map ./hem-sdk-js/
+# HEM SDK from the hem-sdk-js git submodule (clone with --recurse-submodules,
+# or the COPY fails on an empty directory): the browser bundle the pages load,
+# and the module itself, which the server imports to verify key attestations.
+COPY hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map hem-sdk-js/hem-sdk.js ./hem-sdk-js/
 
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}

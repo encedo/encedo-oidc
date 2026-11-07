@@ -48,7 +48,9 @@ npm start
 | `LANDING_PAGE` | — | Set to `1` to serve the product landing page at `/` (public instance). The status page is always available at `/status` |
 | `SSO_ENABLED` | `1` | `0` switches single sign-on off for every client and user (see *Single sign-on*) |
 | `SSO_MAX_SECONDS` | `28800` | Oldest HEM authorization a browser may reuse as SSO (8 h) |
-| `SSO_SUGGEST_SECONDS` | `28800` | Token lifetime the sign-in page asks the HEM for when the user ticks “remember” |
+| `ATTEST_POLICY` | `advisory` | Key attestation at enrollment: `advisory` (record only), `require` (valid attestation, PPA or EPA), `require_hard` (PPA chained to the Encedo root). Per-user override in the admin panel |
+| `ATTEST_URL` | `https://attest.encedo.com` | Encedo attestation service (CA list, registry/revocation for PPA). Empty = offline only |
+| `SSO_SUGGEST_SECONDS` | `28800` | Token lifetime the sign-in page asks the HEM for when the user ticks “remember” (passphrase path; with the mobile app the phone's answer sets it) |
 | `SMTP_HOST` | — | Mail relay for enrollment / verification emails. Email features stay off unless both `SMTP_HOST` and `MAIL_FROM` are set (see *Email delivery*) |
 | `SMTP_MODE` | `starttls` | `starttls` (STARTTLS upgrade, TLS required) or `ssl` (implicit TLS) |
 | `SMTP_PORT` | `587` / `465` | Defaults follow `SMTP_MODE` |
@@ -883,8 +885,8 @@ The user opens the enrollment link in a browser **with their Encedo HSM connecte
 1. Connect to the HSM
 2. Generate the key pair on the device (Ed25519 by default; the admin can require P-256/P-384/P-521 per user)
 3. Sign a server-issued challenge (proof of key possession)
-4. Fetch hardware attestation from the HSM
-5. Submit the public key to the server
+4. Attest the key: the HEM (firmware 1.3) signs a token naming the device and the new key, with a proof of possession over a server nonce
+5. Submit the public key and the attestation to the server, which checks it against `ATTEST_POLICY`
 
 After enrollment the user can log in. Point their OIDC client at `https://auth.example.com/.well-known/openid-configuration`.
 
@@ -1086,8 +1088,8 @@ New users receive a one-time enrollment link (24 h TTL). Opening it in a browser
 
 1. Connects to HSM, generates the key pair on the device (Ed25519, or the curve the admin set for the user)
 2. Signs a server-issued challenge (proof of key possession)
-3. Fetches hardware attestation from HSM
-4. Submits public key + attestation to `/enrollment/submit`
+3. Attests the key on the HEM (firmware 1.3: `POST /api/system/config/attestation` with the server's nonce)
+4. Submits public key + attestation to `/enrollment/submit`; the server verifies it and applies `ATTEST_POLICY`
 
 ---
 

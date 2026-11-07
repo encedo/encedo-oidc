@@ -45,7 +45,7 @@ jobs:
             signup.html signup.js \
             signup-client.html signup-client.js \
             verify-email.html verify-email.js \
-            hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map \
+            hem-sdk-js/hem-sdk.browser.js hem-sdk-js/hem-sdk.browser.js.map hem-sdk-js/hem-sdk.js \
             favicon.ico logo.png og.png \
             package.json .env.example
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"

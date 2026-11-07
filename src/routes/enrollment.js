@@ -3,7 +3,7 @@ import { createHash, createPublicKey, verify,
          randomBytes }                             from 'crypto';
 import redis, { casSet, casDel } from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { validateAttestation } from '../services/attestation.js';
+import { verifyKeyAttestation, newAttestChallenge, attestPolicy, attestRefuses } from '../services/attestation.js';
 import { invalidateJwksCache } from './oidc.js';
 import { vUrl } from '../middleware/validate.js';
 import { rateLimit } from '../middleware/rateLimit.js';
@@ -122,6 +122,7 @@ router.post('/validate',
     // challenge, or the tab that signs the losing one is rejected at submit.
     if (!session.challenge) {
       session.challenge = randomBytes(32).toString('base64url');
+      session.attest    = newAttestChallenge();
       const won = await casSet(`enrollment:${token}`, raw, JSON.stringify(session), 1800);
       if (!won) {
         const again = await redis.get(`enrollment:${token}`);
@@ -136,6 +137,9 @@ router.post('/validate',
       username:              session.username,
       hsm_url:               userRaw?.hsm_url ?? '',
       challenge:             session.challenge,
+      // Key attestation (HEM firmware 1.3): the page passes these to hem.attest().
+      // Sessions issued before this field existed have none -- the page skips attestation.
+      attest:                session.attest ?? null,
       forced_key_type:       session.forced_key_type ?? null,
       client_redirect_origin: session.client_redirect_origin ?? null,
     });
@@ -143,7 +147,7 @@ router.post('/validate',
 });
 
 // --- POST /enrollment/submit -----------------------------------
-// Body: { token, hsm_url, kid, pubkey, key_type, signature, genuine?, crt? }
+// Body: { token, hsm_url, kid, pubkey, key_type, signature, attestation?, crt? }
 // signature = sign(challenge) with the new key, base64url-encoded.
 router.post('/submit',
   rateLimit({ prefix: 'enroll-submit-ip', max: 20, window: 60 }),   // IP backstop (see /validate)
@@ -151,7 +155,7 @@ router.post('/submit',
     keyFn: req => (typeof req.body?.token === 'string' && req.body.token) || req.ip }),
   async (req, res, next) => {
   try {
-    const { token, hsm_url, kid, pubkey, key_type, signature, genuine, crt, n } = req.body;
+    const { token, hsm_url, kid, pubkey, key_type, signature, attestation, crt, n } = req.body;
 
     if (!token)     return res.status(400).json({ error: 'missing_token' });
     if (!hsm_url)   return res.status(400).json({ error: 'missing_hsm_url' });
@@ -261,6 +265,23 @@ router.post('/submit',
         return res.status(404).json({ error: 'user_not_found' });
       }
 
+      // -- HEM key attestation, before the token is consumed: a refusal
+      // under a strict policy must leave the link usable for another device.
+      const attest = await verifyKeyAttestation({
+        attestation: attestation ?? null, crt: crt ?? null,
+        challenge: session.attest ?? null, kid: expectedKid, pubkeyHex: pubkeyNorm,
+      });
+      const policy = attestPolicy(await redis.hGet(`user:${sub}`, 'attest_policy'));
+      console.log(`[Attestation] sub=${sub} kid=${expectedKid} status=${attest.status} assurance=${attest.assurance ?? '-'} online=${attest.online ?? '-'} reason=${attest.reason ?? '-'} policy=${policy}`);
+      if (attestRefuses(policy, attest)) {
+        await logSecurity(SEC.ENROLL_FAIL, { reason: 'attestation_refused', sub, kid: expectedKid,
+          attest_status: attest.status, attest_reason: attest.reason, policy, ip: req.ip });
+        return res.status(400).json({ error: 'attestation_required',
+          error_description: policy === 'require_hard'
+            ? `This account requires a hardware-attested key from an Encedo HEM with a secure element (result: ${attest.status}${attest.reason ? ', ' + attest.reason : ''})`
+            : `This account requires an attested HEM key (result: ${attest.status}${attest.reason ? ', ' + attest.reason : ''})` });
+      }
+
       // Hygiene: one keypair per user (not a security boundary -- enrollment_token is the gate)
       const subs     = await redis.sMembers('users');
       const pipeline = redis.multi();
@@ -282,12 +303,8 @@ router.post('/submit',
           error_description: 'This enrollment link was used or replaced in the meantime' });
       }
 
-      // -- HSM attestation -----------------------------------------
-      const attestResult = await validateAttestation(genuine, crt);
-      const { hw_attested } = attestResult;
-      if (hw_attested !== 'true') {
-        console.warn(`[Enrollment] Attestation not verified: hw_attested=${hw_attested} reason=${attestResult.reason ?? '-'}`);
-      }
+      // hw_attested: the device is proven genuine Encedo hardware (hard, chained).
+      const hw_attested = attest.status === 'verified' ? 'true' : 'false';
 
       // email_verified: completing enrollment via the emailed link proves mailbox
       // access (see CLAUDE.md). Path B (invite -> signup) carries the proof forward as
@@ -309,7 +326,17 @@ router.post('/submit',
       // downgrade an already-verified email. The field is set to 'false' at user
       // creation, so absence here just preserves the current value.
       if (emailVerified) userFields.email_verified = 'true';
-      if (attestResult.crt) userFields.hsm_crt = attestResult.crt;
+      // The attestation result replaces the previous key's: a re-enrollment
+      // without attestation must not keep the old key's evidence.
+      Object.assign(userFields, {
+        attest_status:    attest.status,
+        attest_assurance: attest.assurance ?? '',
+        attest_reason:    attest.reason ?? '',
+        attest_online:    attest.online ?? '',
+        attest_jwt:       attest.jwt ?? '',   // the signed evidence, kept for audit
+        attest_at:        new Date().toISOString(),
+        hsm_crt:          attest.crt ?? '',
+      });
 
       await redis.hSet(`user:${sub}`, userFields);
       await redis.hDel(`user:${sub}`, 'enrollment_token');
@@ -317,11 +344,13 @@ router.post('/submit',
       // Revoke all active access tokens -- old key is no longer valid
       await revokeUserTokens(sub);
 
-      await logSecurity(SEC.ENROLL_OK, { sub, username, kid: expectedKid, key_type, hw_attested, ip: req.ip });
-      console.log(`[Enrollment] Enrolled kid=${expectedKid} key_type=${key_type} hw_attested=${hw_attested}`);
+      await logSecurity(SEC.ENROLL_OK, { sub, username, kid: expectedKid, key_type, hw_attested,
+        attest_status: attest.status, attest_assurance: attest.assurance, policy, ip: req.ip });
+      console.log(`[Enrollment] Enrolled kid=${expectedKid} key_type=${key_type} attest=${attest.status}/${attest.assurance ?? '-'} hw_attested=${hw_attested}`);
       invalidateJwksCache();
 
-      res.json({ ok: true, sub, username, kid: expectedKid, key_type, hw_attested });
+      res.json({ ok: true, sub, username, kid: expectedKid, key_type, hw_attested,
+        attest_status: attest.status, attest_assurance: attest.assurance });
     } finally {
       await redis.del(lockKey);
     }

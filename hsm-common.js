@@ -7,6 +7,23 @@
  * THREE places (src/app.js route, Dockerfile COPY, release.yml zip list).
  */
 
+// --- HEM constructor options ---------------------------------------------------
+
+/**
+ * Test hook: broker override, localhost only. The SDK talks to api.encedo.com
+ * for check-in and mobile push; the browser E2E test (test/e2e/sso.mjs) runs a
+ * fake device AND a fake broker and names the broker with ?hem_broker=.
+ * Honoured only when the page itself is served from localhost, so no RP or
+ * link can ever point a real deployment at a broker of its choosing.
+ */
+export function hemOptions() {
+  const loc = globalThis.location;
+  if (!loc) return {};
+  const isLocal = ['localhost', '127.0.0.1'].includes(loc.hostname);
+  const b = new URLSearchParams(loc.search).get('hem_broker');
+  return isLocal && b ? { broker: b } : {};
+}
+
 // --- Key type maps --------------------------------------------------------------
 
 /** key_type -> HSM createKeyPair type string. */
@@ -44,42 +61,20 @@ export function keyTypeDisplay(keyType) {
 // --- Signature encoding ---------------------------------------------------------
 
 /**
- * DER-encoded ECDSA signature -> IEEE P1363 (r || s, fixed width), which is what
- * JWS (RFC 7518 s.3.4) and the backend's `dsaEncoding: 'ieee-p1363'` expect.
- * Handles the short-form and long-form SEQUENCE length (P-521 signatures are
- * > 127 bytes). Malformed input throws instead of producing garbage that the
- * server would reject with a misleading "signature verification failed".
+ * ECDSA signature from the HEM, checked: firmware 1.3 (DEV-484) returns raw
+ * r || s (IEEE P1363), which is what JWS (RFC 7518 s.3.4) and the backend's
+ * `dsaEncoding: 'ieee-p1363'` expect -- 64 / 96 / 132 bytes for P-256 / P-384 /
+ * P-521. Older firmware returned DER; that is retired, so anything but the
+ * exact length throws here instead of failing later as a misleading
+ * "signature verification failed" on the server.
  */
-export function derToP1363(derBytes, keyType) {
+export function checkP1363(sig, keyType) {
   const n = { P256: 32, P384: 48, P521: 66 }[keyType];
-  if (!n) throw new Error(`derToP1363: unsupported key type ${keyType}`);
-  if (!(derBytes instanceof Uint8Array) || derBytes.length < 8 || derBytes[0] !== 0x30) {
-    throw new Error('derToP1363: not a DER SEQUENCE');
+  if (!n) throw new Error(`checkP1363: unsupported key type ${keyType}`);
+  if (!(sig instanceof Uint8Array) || sig.length !== 2 * n) {
+    throw new Error(`checkP1363: expected a ${2 * n}-byte r||s signature for ${keyType}, got ${sig?.length ?? typeof sig} bytes (HEM firmware older than 1.3?)`);
   }
-  let pos = 1;
-  if (derBytes[pos] & 0x80) {
-    const lenBytes = derBytes[pos] & 0x7f;
-    if (lenBytes < 1 || lenBytes > 2) throw new Error('derToP1363: bad SEQUENCE length');
-    pos += 1 + lenBytes;
-  } else {
-    pos += 1;
-  }
-  function readInt() {
-    if (derBytes[pos++] !== 0x02) throw new Error('derToP1363: expected INTEGER');
-    const len = derBytes[pos++];
-    if (len === undefined || len & 0x80 || pos + len > derBytes.length) throw new Error('derToP1363: bad INTEGER length');
-    let val = derBytes.subarray(pos, pos + len);
-    pos += len;
-    while (val.length > 1 && val[0] === 0) val = val.subarray(1);   // strip sign padding
-    if (val.length > n) throw new Error('derToP1363: INTEGER longer than the curve order');
-    const out = new Uint8Array(n);
-    out.set(val, n - val.length);                                    // right-align
-    return out;
-  }
-  const r = readInt(), s = readInt();
-  const out = new Uint8Array(n * 2);
-  out.set(r, 0); out.set(s, n);
-  return out;
+  return sig;
 }
 
 export function bytesToBase64url(bytes) {
@@ -168,4 +163,25 @@ export function authorizeScope(hem, password, scope, { signal = null, onPending 
   return password
     ? hem.authorizePassword(password, scope)
     : hem.authorizeRemote(scope, { pollInterval: 2_000, pollTimeout: 60_000, signal, onPending });
+}
+
+/**
+ * Attest a freshly created key (HEM firmware 1.3): an attestation JWT with a
+ * signature proof of possession over the server's { nonce, aud }, and the
+ * device certificate when the HEM has one (PPA; an EPA has none). Never
+ * throws: what the server accepts is its policy, so a failure here is
+ * reported as `error` and the enrollment goes on without attestation.
+ */
+export async function attestKey(hem, token, kid, attest) {
+  if (!attest?.nonce || !attest?.aud) return { attestation: null, crt: null, error: 'no_challenge' };
+  let attestation = null, crt = null, error = null;
+  try {
+    attestation = await hem.attest(token, { nonce: base64ToBytes(attest.nonce), aud: attest.aud, kid, popArgs: {} });
+  } catch (e) {
+    error = e?.code || e?.message || 'attest_failed';
+  }
+  try {
+    crt = (await hem.getAttestation(token))?.crt ?? null;
+  } catch { /* no certificate (EPA) or not readable: the server decides */ }
+  return { attestation, crt, error };
 }

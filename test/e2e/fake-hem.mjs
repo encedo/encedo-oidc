@@ -6,6 +6,13 @@
 // this device verifies against the OP's JWKS like one from real hardware.
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+// The SDK's TEST PKI: its device key signs attestation tokens here, its chain
+// is what the OP checks (ATTEST_ROOT_SHA256 = PKI.rootSha256 in the E2E env).
+export const PKI = JSON.parse(readFileSync(new URL('../../hem-sdk-js/test/attest-test-pki.json', import.meta.url), 'utf8'));
+const u16 = (b) => Buffer.concat([Buffer.from([b.length >> 8, b.length & 0xff]), Buffer.from(b)]);
+const rawPub = (privateKey) => Buffer.from(crypto.createPublicKey(privateKey).export({ format: 'jwk' }).x, 'base64url');
 
 const b64    = (bytes) => Buffer.from(bytes).toString('base64');
 const b64url = (bytes) => Buffer.from(bytes).toString('base64url');
@@ -51,7 +58,27 @@ export async function startFakeHem({ keys }) {
     const p = parseJwt(auth.slice(7));
     if (!p || state.revoked) return false;
     if (p.exp <= Math.floor(Date.now() / 1000)) return false;
-    return p.scope === scope;
+    return scope === null || p.scope === scope;   // null: any valid token
+  }
+
+  // POST /api/system/config/attestation, built as the firmware builds it
+  // (attestation_jwt_sign + hem_pop_sig): ES256 by the device key, PoP over
+  // prefix | aud | pubkey | nonce by the attested key itself.
+  async function attestationJwt(key, { nonce, aud }) {
+    const devPriv = await crypto.subtle.importKey('pkcs8', Buffer.from(PKI.devicePkcs8, 'base64'), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+    const jwk = await crypto.subtle.exportKey('jwk', devPriv);
+    const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+    const header = { alg: 'ES256', typ: 'encedo-attest+jwt', kid: crypto.createHash('sha1').update(point).digest('hex'), jwk: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y } };
+    const pub = rawPub(key.privateKey);
+    const canon = Buffer.concat([u16(Buffer.from('encedo-attest-pop:v1:sig')), u16(Buffer.from(aud)), u16(pub), u16(Buffer.from(nonce, 'base64'))]);
+    const iat = Math.floor(Date.now() / 1000);
+    const claims = { iss: 'https://attest.encedo.com', aud, iat, exp: iat + 300, nonce, jti: crypto.randomUUID(),
+      device: { hwv: 'PPA e2e', fwv: 'Encedo nGINE FW v1.3.0', blv: 'bl', assurance: 'hard', cc_mode: 0, policy: [] },
+      key: { kid: key.kid, type: 'ED25519', modes: ['ExDSA'], pubkey: { primary: b64(pub) }, properties: { privatekey: true, derived: false }, created: iat, updated: iat },
+      pop: { signature: b64(crypto.sign(null, canon, key.privateKey)) } };
+    const input = `${b64url(Buffer.from(JSON.stringify(header)))}.${b64url(Buffer.from(JSON.stringify(claims)))}`;
+    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, devPriv, Buffer.from(input));
+    return `${input}.${b64url(new Uint8Array(sig))}`;
   }
 
   async function handle(req, res) {
@@ -72,7 +99,11 @@ export async function startFakeHem({ keys }) {
       const list = state.keys.filter(k => k.descr.startsWith(pattern)).map(k => ({
         kid: k.kid, label: k.label, type: 'ATT,PKEY,ExDSA,ED25519', descr: b64(Buffer.from(k.descr)), created: 1, updated: 1,
       }));
-      return json(res, 200, { list, total: list.length, listed: list.length });
+      // FW 1.3: `offset` skips matches, at most 15 a page; the SDK walks pages
+      // until one comes back empty, so a mock ignoring offset would loop forever.
+      const offset = body?.offset ?? 0, limit = Math.min(body?.limit ?? 15, 15);
+      const page = list.slice(offset, offset + limit);
+      return json(res, 200, { list: page, offset, total: state.keys.length, listed: page.length, deleted: 0, invalid: 0 });
     }
     if (path === '/api/auth/token' && req.method === 'GET') return json(res, 200, { eid: state.eid, spk: state.spkB64, jti: 'jti-' + state.log.length });
     if (path === '/api/auth/token' && req.method === 'POST') {
@@ -82,6 +113,35 @@ export async function startFakeHem({ keys }) {
       state.issued.push(tok);
       return json(res, 200, { token: tokenJwt(tok) });
     }
+    if (path === '/api/keymgmt/create' && req.method === 'POST') {
+      if (!bearerOk(req, 'keymgmt:gen')) return json(res, 403, undefined);
+      if (body?.type !== 'ED25519' || body?.mode) return json(res, 400, undefined);   // the E2E enrolls Ed25519, no mode
+      const { privateKey } = crypto.generateKeyPairSync('ed25519');
+      const kid = crypto.createHash('sha1').update(rawPub(privateKey)).digest('hex').slice(0, 32);
+      state.keys.push({ kid, label: body.label, descr: Buffer.from(body.descr ?? '', 'base64').toString(), privateKey });
+      return json(res, 200, { kid });
+    }
+    if (path.startsWith('/api/keymgmt/get/') && req.method === 'GET') {
+      const key = state.keys.find(k => k.kid === path.slice('/api/keymgmt/get/'.length));
+      if (!key) return json(res, 404, undefined);
+      if (!bearerOk(req, `keymgmt:use:${key.kid}`)) return json(res, 403, undefined);
+      return json(res, 200, { type: 'ATT,PKEY,ExDSA,ED25519', label: key.label, created: 1, updated: 1, pubkey: b64(rawPub(key.privateKey)) });
+    }
+    if (path === '/api/system/config/attestation' && req.method === 'POST') {
+      const key = state.keys.find(k => k.kid === body?.kid);
+      if (!key) return json(res, 400, undefined);
+      if (!bearerOk(req, `keymgmt:use:${key.kid}`)) return json(res, 403, undefined);
+      if (!body.pop_args || Object.keys(body.pop_args).length) return json(res, 400, undefined);   // signature PoP: {}
+      return json(res, 200, { attestation: await attestationJwt(key, body) });
+    }
+    if (path === '/api/system/config/attestation' && req.method === 'GET') {
+      if (!bearerOk(req, null)) return json(res, 401, undefined);
+      return json(res, 200, { crt: PKI.device.replace(/-----[^-]+-----|\s/g, ''), genuine: 'e2e' });
+    }
+    // attest.encedo.com (the OP's ATTEST_URL points here)
+    if (path === '/att/v1/pki') return json(res, 200, { certificates: ['root', 'attestation', 'custody'].map(k => ({ pem: PKI[k] })) });
+    if (path === '/att/v1/validate' && req.method === 'POST') { state.attestValidations = (state.attestValidations ?? 0) + 1; return json(res, 200, { status: 'valid', expired: false }); }
+
     if (path === '/api/crypto/exdsa/sign' && req.method === 'POST') {
       const key = state.keys.find(k => k.kid === body?.kid);
       if (!key) return json(res, 404, { error: 'no such key' });
@@ -106,7 +166,8 @@ export async function startFakeHem({ keys }) {
   return {
     state,
     port,
-    deviceUrl: `http://127.0.0.1:${port}`,          // hsm_url the user enters (CSP: CSP_CONNECT_EXTRA)
+    deviceUrl: `http://127.0.0.1:${port}`,
+    attestUrl: `http://127.0.0.1:${port}/att`,       // ATTEST_URL for the OP          // hsm_url the user enters (CSP: CSP_CONNECT_EXTRA)
     brokerUrl: `http://127.0.0.1:${port}/brk`,      // ?hem_broker= for the page
     rpCallback: `http://localhost:${port}/cb`,      // redirect_uri (http allowed for localhost)
     rpBye: `http://localhost:${port}/bye`,

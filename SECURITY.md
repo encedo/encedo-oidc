@@ -70,12 +70,17 @@ Authorization codes (`code:{code}`) have a 60-second TTL and are deleted on firs
 ### Challenge-response at enrollment
 `/enrollment/validate` issues a 32-byte random challenge. The enrolling party must sign it with the new key and submit the signature to `/enrollment/submit`. Backend verifies Ed25519 — proves possession of the corresponding private key. A public-only key or a guessed key cannot pass enrollment.
 
-### Hardware attestation
-At enrollment, the frontend fetches `genuine` + `crt` from `GET {hsm_url}/api/system/config/attestation` and forwards them to `POST api.encedo.com/attest`. The backend (`src/services/attestation.js`) treats `result === 'ok'` from Encedo's attestation service as the outcome; freshness/replay checks are delegated to `api.encedo.com` (local timestamp validation was removed to avoid clock-skew false negatives).
+### Hardware attestation (HEM firmware 1.3)
+`/enrollment/validate` issues, next to the challenge, an attestation challenge `{nonce (32 B), aud = ISSUER}` kept in the enrollment session. The page asks the HEM for an attestation of the new key (`POST {hsm_url}/api/system/config/attestation` with `kid` and a signature proof of possession) and, on a PPA, for the device certificate. `src/services/attestation.js` checks, with the SDK's `Attest` class:
 
-The outcome is stored as `hw_attested` (`'true'`/`'false'`) in `user:{sub}`, and the X.509 device certificate (`hsm_crt`) is stored for audit.
+1. **Token (offline):** ES256 by the device key in the header `jwk`, `kid` = its hash, `iss`, our `aud` and `nonce` (no replay), the attested `kid`, and the **PoP**: the new key's own signature over `aud ‖ pubkey ‖ nonce`.
+2. **Key binding:** `key.pubkey.primary` is the public key being enrolled (the one that goes into the JWKS), and `properties` say it was generated inside the HEM (`privatekey: true`, `derived: false`), not imported.
+3. **Device (PPA, `assurance: hard`):** the device certificate's key is the token's key and chains to the **pinned** Encedo root (`ENCEDO_ROOT_SHA256` in the SDK; the CA list is fetched from `ATTEST_URL`, trust comes from the pin). Then `attest.encedo.com/v1/validate` (registry, revocation); `invalid` fails, a network error leaves the offline result.
+4. **EPA (`assurance: soft`):** the attestation key is derived, not in a secure element, and attest.encedo.com does not validate EPA yet — the token is all there is (status `token_only`).
 
-**Enforcement:** enrollment is **not** blocked when attestation fails — a failed/absent attestation is logged and stored as `hw_attested='false'`, and enrollment proceeds (`src/routes/enrollment.js`). This is a deliberate product decision: `hw_attested` is an **advisory** signal for audit and downstream trust, not a gate. Consumers that require a genuine device must check `hw_attested` themselves. To make it a hard gate, block enrollment when `hw_attested !== 'true'`.
+Result in `user:{sub}`: `attest_status` (`verified` = hard and chained · `token_only` · `failed` · `absent`), `attest_assurance`, `attest_reason`, `attest_online`, the whole signed `attest_jwt` (evidence), `hsm_crt`; `hw_attested='true'` only for `verified`.
+
+**Enforcement:** `ATTEST_POLICY` (per user `attest_policy`, admin panel): `advisory` (default — record, never refuse), `require` (`verified` or `token_only`), `require_hard` (`verified` only). A refusal happens before the enrollment token is consumed, so the link stays usable with another device. Users enrolled before firmware 1.3 keep their old `hw_attested` until they re-enroll.
 
 ---
 

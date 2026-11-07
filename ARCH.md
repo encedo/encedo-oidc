@@ -26,7 +26,7 @@ Browser / Relying Party
            |
            +-- Redis (sole persistence layer)
            |
-           +-- api.encedo.com  (HSM attestation, at enrollment only)
+           +-- attest.encedo.com  (key attestation: CA list, registry/revocation; at enrollment only)
            |
            +-- SMTP server  (optional: enrollment / verification emails)
 
@@ -98,11 +98,11 @@ Matches Encedo HSM convention. SHA-1 second-preimage resistance (~2¹⁶⁰) mak
 
 ### HSM key description
 ```javascript
-// Enrolled with:
-description = btoa('ETSOIDC' + sub)
+// Enrolled with (the SDK sends the text as UTF-8 bytes):
+createKeyPair(token, label, type, { descr: 'ETSOIDC' + sub })
 
 // Searched with:
-searchKeys(token, 'ETSOIDC')  // the SDK sends '^' + base64(pattern) -- anchored prefix match
+searchKeysAll(token, 'ETSOIDC')  // the SDK sends '^' + base64(pattern) -- anchored prefix match, every page
 ```
 This links HSM keys to user subs. Mobile app detection searches for `EXTAID` (sent on the wire as `^RVhUQUlE`).
 
@@ -116,27 +116,27 @@ body.msg = toB64(strToBytes(signing_input));
 ### Enrollment challenge-response
 `POST /enrollment/validate` (token in the JSON body) issues a 32-byte random challenge. The frontend signs it with the newly created HSM key and sends `signature` to `/enrollment/submit`. The backend verifies the signature using the submitted pubkey. This proves the enrolling party actually possesses the private key.
 
-### Hardware attestation
+### Hardware attestation (HEM firmware 1.3)
 ```
- Browser / HSM               Backend              api.encedo.com
-    |                            |                       |
-    |  GET {hsm_url}/api/system/config/attestation       |
-    |  <- HSM returns {genuine, crt}                     |
-    |                            |                       |
-    |-- POST /enrollment/submit->|                       |
-    |    {genuine, crt, ...}     |                       |
-    |                            |-- POST /attest ------>|
-    |                            |<-- {result,           |
-    |                            |    timestamp, checks} |
-    |                            |-- result === 'ok' ?  |
-    |                            |   (freshness checked  |
-    |                            |    by api.encedo.com) |
-    |                            |-- store hw_attested,  |
-    |                            |   hsm_crt in Redis    |
-    |<-- {ok, hw_attested} ------|                       |
+ Browser / HEM                       Backend                       attest.encedo.com
+    |-- POST /enrollment/validate ----->|  challenge + attest {nonce, aud}  |
+    |<-- {challenge, attest} -----------|  (kept in the enrollment session) |
+    |                                   |                                  |
+    |  POST {hsm_url}/api/system/config/attestation                        |
+    |    {nonce, aud, kid, pop_args:{}}  (scope keymgmt:use:<kid>, TLS)    |
+    |  <- {attestation: JWT ES256 + PoP}                                   |
+    |  GET  {hsm_url}/api/system/config/attestation -> {crt}  (PPA only)   |
+    |                                   |                                  |
+    |-- POST /enrollment/submit ------->|  Attest.verify (offline)         |
+    |    {..., attestation, crt}        |  key binding (pubkey, generated) |
+    |                                   |-- GET /v1/pki (once, pinned root)|
+    |                                   |-- POST /v1/validate  (PPA) ----->|
+    |                                   |  policy -> refuse (400, link     |
+    |                                   |  kept) or store attest_* fields  |
+    |<-- {ok, attest_status, ...} ------|                                  |
 ```
 
-`genuine` is a device-signed blob. `crt` is the X.509 device certificate (contains SKID). Both stored in `user:{sub}` for audit purposes. A failed or absent attestation does **not** block enrollment: `hw_attested` is an advisory flag (see `SECURITY.md`).
+Checks, statuses and policy: `SECURITY.md` §Hardware attestation.
 
 ---
 
@@ -162,7 +162,7 @@ encedo-oidc/
 │   ├── services/
 │   │   ├── redis.js              Singleton Redis client (node-redis v4), reconnects forever
 │   │   ├── securityLog.js        Security event log (Redis ZSET + stderr + Pub/Sub)
-│   │   ├── attestation.js        HSM attestation validation via api.encedo.com
+│   │   ├── attestation.js        HEM key attestation (FW 1.3): token, PoP, chain, attest.encedo.com, policy
 │   │   ├── jwt.js                JWT helpers: signature verification per key type, JWK building
 │   │   ├── tokens.js             Access-token bookkeeping and per-user revocation
 │   │   ├── issuer.js             Issuer URL resolution
@@ -224,11 +224,13 @@ The browser talks to the user's device through the HEM SDK (`hem-sdk-js/`, serve
 ```
 POST {hsm_url}/api/system/checkin             hemCheckin()
 GET  {hsm_url}/api/system/version             getVersion()  -- SSO: "is the device reachable?" before a one-click sign-in
-POST {hsm_url}/api/keymgmt/search             searchKeys(token, pattern)  -- 'EXTAID' (mobile app present?), 'ETSOIDC<sub>' (OIDC keys)
-POST {hsm_url}/api/keymgmt/create             createKeyPair()  -- enrollment
-POST {hsm_url}/api/auth/token                 authorizePassword(pwd, scope) / authorizeRemote(scope)  -- key-use token, lifetime chosen on the device
-POST {hsm_url}/api/crypto/exdsa/sign          exdsaSign(token, kid, msg)  -- msg = base64 of the UTF-8 signing_input
-GET  {hsm_url}/api/system/config/attestation  getAttestation(token)
+POST {hsm_url}/api/keymgmt/search             searchKeys(null, 'EXTAID', {limit:1}) -- mobile app present?; searchKeysAll(token, 'ETSOIDC') -- OIDC keys, every page (max 15 a page)
+POST {hsm_url}/api/keymgmt/create             createKeyPair(token, label, type, {descr: 'ETSOIDC'+sub, mode})  -- enrollment; mode 'ExDSA' for P-*
+GET  {hsm_url}/api/keymgmt/get/<kid>          getKeyPublicInfo(token, kid)  -- pubkey as bytes (EC compressed, Ed25519 raw)
+POST {hsm_url}/api/auth/token                 authorizePassword(pwd, scope, {expSeconds}) / authorizeRemote(scope)  -- the phone's answer sets the lifetime
+POST {hsm_url}/api/crypto/exdsa/sign          exdsaSign(token, kid, msg, {alg})  -- ECDSA comes back raw r||s (FW 1.3), checked by checkP1363()
+POST {hsm_url}/api/system/config/attestation  attest(token, {nonce, aud, kid, popArgs: {}})  -- key attestation JWT with PoP
+GET  {hsm_url}/api/system/config/attestation  getAttestation(token)  -- crt (PPA)
 ```
 
 ---
@@ -247,8 +249,15 @@ user:{sub}               Hash
   key_type               'Ed25519' | 'P256' | 'P384' | 'P521'
   kid                    hex — SHA1(pubkey)[:16 bytes]
   pubkey                 hex — Ed25519: raw 32 bytes; EC: uncompressed X||Y (64/96/132 bytes)
-  hw_attested            'true' | 'false'
-  hsm_crt                PEM X.509 device certificate (from enrollment)
+  hw_attested            'true' | 'false'  -- 'true' only for attest_status=verified (FW 1.3); older users keep the legacy value
+  hsm_crt                base64 DER device certificate (PPA; FW 1.3 enrollment), PEM on older records
+  attest_status          'verified' | 'token_only' | 'failed' | 'absent'  -- key attestation at the last enrollment (FW 1.3)
+  attest_assurance       'hard' (PPA) | 'soft' (EPA) | ''
+  attest_reason          why not verified (failed check, soft_assurance, no_crt, ...)
+  attest_online          attest.encedo.com verdict: 'valid' | 'valid_unverified' | 'invalid' | 'error' | ''
+  attest_jwt             the signed attestation token, kept as evidence
+  attest_at              ISO 8601
+  attest_policy          '' (server ATTEST_POLICY) | 'advisory' | 'require' | 'require_hard'
   clients                JSON array of client_id strings
   custom_claims          JSON object of extra claims for id_token/userinfo
   sso                    'false' to forbid single sign-on for this user (absent = allowed)

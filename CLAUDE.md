@@ -56,20 +56,18 @@ HEM SDK = the `hem-sdk-js/` submodule: `README.md`, `EXAMPLES.md`, `hem-sdk.brow
 - **SSO accounts screen** (`s-accounts`): `ssoList/ssoSave/ssoForget` over `localStorage` `encedo_sso:<hsm_url>|<kid>`; `doSsoPick()` = getVersion → `/authorize/login` with `sso_iat` → `exdsaSign` with the cached token (401 → drop + fresh `showConfirm` with a note); `showConfirm()` shared by the normal path; `authorizeLifetime()` = suggest_seconds when “remember” ticked; entry saved in `doCompleteSign` after a successful confirm. `HEM_OPTS`: `?hem_broker=` honoured on localhost only (E2E test).
 
 ### enrollment.js — 100%
-- pubkey converted base64 → hex before sending to backend
-- description: `btoa('ETSOIDC' + sub)`
-- Fetches attestation `{genuine, crt}` from HSM, sends to backend
-- Backend validates via `POST api.encedo.com/attest`
-- `hsm_crt` stored in Redis for audit
-- ECC keys: `createKeyPair` called with `mode: 'ExDSA'`; DER→P1363 conversion immediately after `exdsaSign`
-- `derToP1363(derBytes, keyType)` lives in `hsm-common.js` (one copy for all pages), validates the DER structure and handles short- and long-form lengths (P-521 uses a 3-byte header)
+- SDK for HEM firmware 1.3 only (`hem-sdk-js` ≥ `ffbac3d`): optional arguments go in one options object, an old positional call throws `invalid_arg`
+- `getKeyPublicInfo` gives the pubkey as bytes → hex to the backend
+- description: `createKeyPair(t, label, type, { descr: 'ETSOIDC' + sub, mode })` — text, the SDK sends UTF-8 bytes (same bytes as the old `btoa` form)
+- Key attestation: `attestKey()` (hsm-common) = `hem.attest(token, {nonce, aud, kid, popArgs:{}})` with the server's challenge from `/enrollment/validate` + `getAttestation().crt` (PPA); sent as `attestation` + `crt`; never throws (the server's policy decides)
+- ECC keys: `mode: 'ExDSA'`; FW 1.3 returns ECDSA as raw r‖s, `checkP1363()` (hsm-common) only checks the length (DER = firmware older than 1.3 → error)
 - Success screen: "Go to service" button (redirects to `client_redirect_origin`; hidden if not available)
 
 ### signup.js — 100%
 - Single-step flow: prefill → HSM enrollment → account creation in one pass
 - Calls `/signup/register` (creates user) then `/enrollment/validate` + `/enrollment/submit`
 - Locked username and locked key type supported (same UI pattern as enrollment.html)
-- Same `derToP1363` (from `hsm-common.js`) + `mode: 'ExDSA'` as enrollment.js
+- Same `checkP1363`, `attestKey` (from `hsm-common.js`) + `mode: 'ExDSA'` as enrollment.js
 - **Resumable**: once `/signup/register` succeeded the page keeps `{sub, enrollment_token, kid}` in `progress`; a failed HSM step lets the user press the button again without re-registering (the invite is consumed) or creating a second key. A used-up enrollment token after a failed submit is reported as “ask your administrator for a new link”.
 - "Go to service" redirects to `client_redirect_origin` from `/signup/register` response
 
@@ -127,14 +125,13 @@ verify(null, Buffer.from(signing_input), publicKey, Buffer.from(signature, 'base
 
 ### exdsaSign in hem-sdk-js
 ```javascript
-// msg = base64 of UTF-8 bytes of signing_input — must be this way, do not change
-body.msg = toB64(strToBytes(msg));
-// HSM returns standard base64 → convert to base64url for JWT
+// the page: exdsaSign(token, kid, signing_input, { alg }) -- text is sent as base64 of its UTF-8 bytes
+// returns bytes: Ed25519 64 B, ECDSA raw r||s (FW 1.3) -> base64url for the JWT
 ```
 
 ### pubkey encoding
-- HSM returns pubkey as **standard base64**
-- enrollment.js converts: `atob(keyInfo.pubkey)` → bytes → hex and sends to backend
+- `getKeyPublicInfo` returns `pubkey` as **bytes** (the SDK decodes the device's base64)
+- enrollment.js / signup.js: `bytesToHex(keyInfo.pubkey)` and send hex to the backend
 - **Ed25519**: backend stores raw 32 bytes as hex (64 hex chars)
 - **EC (P-256/P-384/P-521)**: HSM returns compressed point (`02`/`03` + X, 33/49/67 bytes)
   - Backend decompresses to uncompressed X||Y (64/96/132 bytes) via `decompressEcKey()` in `enrollment.js`
@@ -143,12 +140,12 @@ body.msg = toB64(strToBytes(msg));
 
 ### Key description format
 ```javascript
-// At enrollment:
-description = btoa('ETSOIDC' + sub)
-// Searching OIDC keys (the SDK prefixes '^' and base64-encodes the pattern itself):
-searchKeys(token, 'ETSOIDC')
-// Mobile detection ('EXTAID' keys):
-searchKeys(null, 'EXTAID')
+// At enrollment (text; the SDK sends it as UTF-8 bytes):
+createKeyPair(token, label, type, { descr: 'ETSOIDC' + sub, mode })
+// Searching OIDC keys (the SDK prefixes '^' and base64-encodes the pattern; every page, the device gives 15 at most):
+for await (const k of hem.searchKeysAll(token, 'ETSOIDC')) ...
+// Mobile detection ('EXTAID' keys) -- a page object, not an array:
+(await hem.searchKeys(null, 'EXTAID', { limit: 1 })).list.length
 ```
 
 ### Sub-based user lookup
@@ -189,19 +186,17 @@ mobileAbortCtrl?.abort(); mobileAbortCtrl = null;
 ### JWKS cache
 Module-level `jwksCache` variable in `oidc.js`, 60s TTL. Invalidated immediately after successful enrollment via `invalidateJwksCache()` exported from `oidc.js`.
 
-### Attestation validation
-`src/services/attestation.js` POSTs `{genuine, crt}` to `https://api.encedo.com/attest`.
-Checks `result === 'ok'` — timestamp validation delegated entirely to `api.encedo.com` (local check removed to avoid clock-skew false negatives).
-`crt` (X.509 PEM) stored as `hsm_crt` in Redis. Debug logging active (intended — useful in production for tracing).
-
-**Attestation v2 (roadmap — WAITING FOR OFFICIAL FIRMWARE):** the new HSM firmware will ship advanced
-attestation as a single **signed JWT** (firmware + hardware + bootloader + the key's KID + proof-of-possession,
-signed by the device attestation key rooted in the production-line PKI; KID = SHA256 of the public key,
-so the whole chain is verifiable). That lets attestation become **offline-verifiable** (no api.encedo.com
-round-trip) and a **hard enrollment gate** bound to the exact key. The signed JWT will be stored in Redis
-for evidence (not just the `hw_attested` flag), re-attestation is on demand (`POST {nonce,KID}` → JWT), and
-the PKI root will be published via api.encedo.com + the website. **Not implemented — pending the production
-firmware (currently in testing).** Full design in memory `project_attestation_v2`.
+### Key attestation (HEM firmware 1.3, 2026-11-07)
+Canonical description: `SECURITY.md` §Hardware attestation (checks, statuses, policy); flow diagram in `ARCH.md`.
+`src/services/attestation.js` imports the SDK in Node (`hem-sdk-js/hem-sdk.js` — in the image and the ZIP since then):
+`Attest.verify` offline (device signature by header `jwk`, aud/nonce, PoP), key binding (`pubkey.primary` = enrolled key,
+generated in the HEM), PPA: chain to the pinned root (`ENCEDO_ROOT_SHA256`) + `attest.encedo.com/v1/validate`; EPA (`soft`):
+token only — attest.encedo.com does not validate EPA yet (update announced). The old `api.encedo.com/attest` + `genuine` path is gone.
+- Statuses `verified | token_only | failed | absent`; `hw_attested='true'` only for `verified`.
+- Policy `ATTEST_POLICY` (`advisory` default) with per-user `attest_policy` (admin panel, Edit user) — so a test user can go through every policy without touching the tenant's `.env`. Existing users are untouched until they re-enroll.
+- Checked under the enrollment lock and **before** the token is consumed (refusal keeps the link). The SDK has no Node timeout — `withTimeout` 10 s around the network calls.
+- Tests: `test/attestation.test.js` (fake attest.encedo.com + the SDK's TEST PKI `hem-sdk-js/test/attest-test-pki.json`, `ATTEST_ROOT_SHA256` overridden); the browser E2E enrolls through the page with `ATTEST_POLICY=require_hard`.
+- Not done yet: on-demand re-attestation of an existing key (planned after tests on a real device, user-chosen account). Plan: `../FW13-SDK-PLAN.md`.
 
 ### Email enrollment link + `email_verified`
 Server can email the enrollment/invite link over SMTP, and a completed enrollment from an emailed link proves mailbox access → `email_verified`.
@@ -367,7 +362,7 @@ Relying-party specifics (Nextcloud `user_oidc`, Carbonio) are **not** kept here 
 2. HEM SDK `searchKeys` without token — default HSM config allows open search; 4xx = auth required
 3. Attestation debug logging is intentional — useful in production for tracing enrollment issues
 4. Server hiccup (SSH freeze, 503) on 1CPU/1GB VM — suspected Redis BGSAVE I/O spikes (3 instances × every 60s). Since 2026-09-20 the Redis client reconnects forever after the first successful connect (before: 10 tries ≈ 3.5 s, then the client closed for good while `/health` kept saying ok), `/health` PINGs Redis and answers 503 when it is down, and the image has a `HEALTHCHECK` on it.
-5. ECC `derToP1363`: P-521 DER uses long-form length (`30 81 xx`) — parser handles both short and long form
+5. ECC signatures: FW 1.3 returns raw r‖s (DEV-484, was DER). `checkP1363` checks the length only; the DER parser is gone with pre-1.3 firmware
 6. ECC pubkey decompression (`decompressEcKey`) uses Node.js built-in `ECDH.convertKey()` — no external deps
 7. "Go to service" button in enrollment.html hidden for admin-triggered re-enrollment (no `client_redirect_origin` in session)
 8. ⚠️ **A new UI file must be added to THREE places**, not one: `src/app.js` (route), `Dockerfile` (`COPY` list) and `.github/workflows/release.yml` (zip list). Both build lists name every HTML/JS asset explicitly — a page missing from them is absent from the image / release, and `res.sendFile` then fails at runtime on a server that looks correctly deployed. This is how `landing.html` shipped broken on the first rebuild. Plus `node update-csp-hashes.js` for the inline `<style>` (its `FILES` list is a fourth place; `logout.html` is a template read by `logoutPage()` in `src/routes/oidc.js` rather than a route, but it needs the other three all the same).
