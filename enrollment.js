@@ -1,4 +1,5 @@
 import { HEM } from '/hem-sdk.js';
+import { ensureLocalNetwork } from '/local-network.js';
 import { hsmKeyType, exdsaAlg, keyTypeLabel, checkP1363, bytesToBase64url, bytesToHex, fetchJson, hemErrMsg, authorizeScope, attestKey, hemOptions } from '/hsm-common.js';
 
 // Read token from URL fragment (#token=...) -- fragment is never sent to the server,
@@ -101,6 +102,7 @@ async function doSubmit() {
   try {
     // -- Step 0: checkin -------------------------------------------
     btn.textContent = 'Connecting to HSM...';
+    await ensureLocalNetwork(hsm_url);   // Chromium asks the user before a public page reaches a local device
     await hem.hemCheckin();
 
     // -- Step 1+2: create key pair (once -- a retry reuses the kid) ----

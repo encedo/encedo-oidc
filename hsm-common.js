@@ -147,6 +147,8 @@ export function hemErrMsg(err) {
     if (code === 'denied')    return 'The request was declined on your mobile device.';
     if (code === 'timeout')   return 'No answer from your mobile device in time. Try again or use the passphrase.';
     if (code === 'aborted')   return 'Cancelled.';
+    if (code === 'lna_cancelled') return 'Cancelled.';
+    if (code === 'lna_denied') return 'This browser blocks access to devices on your local network, so the page cannot reach your HEM. Allow “Local network” for this site in the browser’s site settings and try again.';
     if (code === 'network')   return 'Cannot reach the HSM. Check the URL and that the device is online.';
     if (code === 'checkin_error' || code === 'broker_error') return `HSM check-in failed (${code}): ${err.message}`;
     if (code.startsWith('http_')) return `HSM error (${code}): ${err.message}`;

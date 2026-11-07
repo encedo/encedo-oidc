@@ -1,4 +1,5 @@
 import { HEM, jwtParse } from '/hem-sdk.js';
+import { ensureLocalNetwork } from '/local-network.js';
 import { exdsaAlg, checkP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg, hemOptions } from '/hsm-common.js';
 
 // Test hook (?hem_broker=, localhost only) -- see hemOptions() in hsm-common.js.
@@ -279,6 +280,9 @@ async function doSsoPick(key) {
     session.keys        = [{ kid: entry.kid, label: entry.label || '' }];
     lsSaveHints(entry.hsm_url);
 
+    // Before the 4 s reachability check: a first visit may sit on the browser's
+    // local-network question, which that timeout would cut short.
+    await ensureLocalNetwork(entry.hsm_url);
     try {
       await session.hem.getVersion({ timeoutMs: 4000 });
     } catch {
@@ -376,6 +380,7 @@ async function doLogin() {
     const hem = new HEM(hsmUrl, HEM_OPTS);
     session.hem = hem;
     btn.textContent = 'Connecting to HSM...';
+    await ensureLocalNetwork(hsmUrl);   // Chromium asks the user before a public page reaches a local device
     await hem.hemCheckin();
 
     // Step A: detect mobile-app support (keys described 'EXTAID…'; the SDK anchors and base64-encodes the pattern)

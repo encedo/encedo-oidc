@@ -24,6 +24,7 @@ import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
 import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler, adminSendInviteEmailHandler } from './routes/invite.js';
 import { isMailEnabled } from './services/mailer.js';
+import { hostSpace, normalizeHost } from './services/addressSpace.js';
 import redis, { redisAlive } from './services/redis.js';
 import { confirmEmailHandler } from './routes/emailVerify.js';
 import { adminInviteClientHandler, adminDeleteClientInviteHandler, signupClientPrefillHandler, signupClientRegisterHandler } from './routes/inviteClient.js';
@@ -133,6 +134,22 @@ app.get('/health', async (_req, res) => {
   });
 });
 
+// --- HEM address space (Local Network Access) -----------------------------------
+// The pages ask before their first request to the HEM: is its host on the
+// user's own network? Chromium then asks the user for permission, and the page
+// says so first (local-network.js). DNS lookup only -- the host is never
+// contacted -- and only the space is returned, not the addresses.
+app.post('/hem/address-space',
+  rateLimit({ prefix: 'addr-space', max: 30, window: 60 }),
+  async (req, res, next) => {
+    try {
+      const host = normalizeHost(req.body?.host);
+      if (!host) return res.status(400).json({ error: 'invalid_host' });
+      const { space } = await hostSpace(host);
+      res.set('Cache-Control', 'no-store').json({ host, space });
+    } catch (err) { next(err); }
+  });
+
 // --- Static UI pages ----------------------------------------------------------
 // LANDING_PAGE=1 puts the product landing page on '/' -- meant for the public
 // instance only. Every instance keeps the operator status page, at /status, and
@@ -154,6 +171,7 @@ app.get('/index.js',        (_req, res) => res.sendFile(resolve(ROOT, 'index.js'
 app.get('/hem-sdk.js',      (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js')));
 app.get('/hem-sdk.browser.js.map', (_req, res) => res.sendFile(resolve(ROOT, 'hem-sdk-js/hem-sdk.browser.js.map')));
 app.get('/password-field.js', (_req, res) => res.sendFile(resolve(ROOT, 'password-field.js'))); // passphrase eye + form helpers
+app.get('/local-network.js', (_req, res) => res.sendFile(resolve(ROOT, 'local-network.js'))); // Local Network Access notice before the first HEM request
 app.get('/hsm-common.js',   (_req, res) => res.sendFile(resolve(ROOT, 'hsm-common.js')));   // shared by signin/enrollment/signup
 app.get('/logout.js',       (_req, res) => res.sendFile(resolve(ROOT, 'logout.js')));       // clears the SSO session on the /logout page
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));

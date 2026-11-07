@@ -163,6 +163,7 @@ encedo-oidc/
 │   │   ├── redis.js              Singleton Redis client (node-redis v4), reconnects forever
 │   │   ├── securityLog.js        Security event log (Redis ZSET + stderr + Pub/Sub)
 │   │   ├── attestation.js        HEM key attestation (FW 1.3): token, PoP, chain, attest.encedo.com, policy
+│   │   ├── addressSpace.js       Is the HEM host loopback / local / public (DNS only) -- POST /hem/address-space
 │   │   ├── jwt.js                JWT helpers: signature verification per key type, JWK building
 │   │   ├── tokens.js             Access-token bookkeeping and per-user revocation
 │   │   ├── issuer.js             Issuer URL resolution
@@ -184,7 +185,8 @@ encedo-oidc/
 ├── signup-client.html / signup-client.js   Client signup from an invite
 ├── verify-email.html / verify-email.js     Email verification link
 ├── admin-panel.html / admin-panel.js       Admin panel
-├── hsm-common.js                 Shared browser helpers (key-type maps, DER→P1363, JWT decode, fetchJson)
+├── hsm-common.js                 Shared browser helpers (key-type maps, checkP1363, key attestation, JWT decode, fetchJson)
+├── local-network.js              Chromium Local Network Access: notice + throwaway request + retry before the first HEM call
 ├── password-field.js             Passphrase eye (show/hide) + password-manager form helpers (signin, enrollment, signup, admin)
 ├── hem-sdk-js/                   Encedo HEM JavaScript SDK (git submodule → encedo/hem-sdk-js);
 │                                 hem-sdk.browser.js is served at /hem-sdk.js

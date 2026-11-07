@@ -1,4 +1,5 @@
 import { HEM } from '/hem-sdk.js';
+import { ensureLocalNetwork } from '/local-network.js';
 import { hsmKeyType, exdsaAlg, keyTypeLabel, checkP1363, bytesToBase64url, bytesToHex, fetchJson, hemErrMsg, authorizeScope, attestKey, hemOptions } from '/hsm-common.js';
 
 // Fragment carries token and, for an emailed invite, the email nonce (#token=...&n=...).
@@ -122,6 +123,7 @@ async function doSubmit() {
 
   try {
     setStatus('Connecting to HSM…');
+    await ensureLocalNetwork(hsm_url);   // Chromium asks the user before a public page reaches a local device
     await hem.hemCheckin();
 
     let sub, enrollment_token, kid;

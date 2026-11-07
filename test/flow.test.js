@@ -257,6 +257,17 @@ test('token: a public client is PKCE-only, and PKCE is mandatory for it', opt, a
   assert.equal(u.status, 401); assert.equal(u.headers.get('www-authenticate'), 'Bearer');
 });
 
+test('hem/address-space: classifies the HEM host for the local-network notice, validates input', opt, async () => {
+  const ask = (host) => fetch(BASE + '/hem/address-space', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ host }) })
+    .then(async r => ({ status: r.status, body: await r.json() }));
+  let r = await ask('192.168.7.1'); assert.equal(r.status, 200); assert.equal(r.body.space, 'local');
+  r = await ask('[::1]');       assert.equal(r.body.space, 'loopback');
+  r = await ask('8.8.8.8');     assert.equal(r.body.space, 'public');
+  assert.equal(r.body.addresses, undefined, 'only the space is returned, never the addresses');
+  r = await ask('http://x/y');  assert.equal(r.status, 400);
+  r = await ask(undefined);     assert.equal(r.status, 400);
+});
+
 test('discovery advertises exactly what the OP does', opt, async () => {
   const d = (await jget('/.well-known/openid-configuration', {})).body;
   assert.equal(d.issuer, BASE);
