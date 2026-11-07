@@ -110,7 +110,9 @@ export async function verifyKeyAttestation({ attestation, crt, challenge, kid, p
   }
   if (out.assurance !== 'hard') return fail(out, `assurance:${out.assurance}`);
 
-  // PPA: the device key must chain to the pinned Encedo root.
+  // PPA: the device key must chain to the pinned Encedo root. Certificate dates are NOT
+  // checked on purpose: the PPA certificate's ~2-year validity is the manufacturer's
+  // warranty, not the attestation's -- chained and not revoked = genuine device.
   if (typeof crt !== 'string' || !crt || crt.length > 8192) {
     out.status = 'token_only'; out.reason = 'no_crt'; return out;
   }
