@@ -9,7 +9,7 @@
 > | `SECURITY.md` | threat model, trust boundaries (user-signed ID Token, SSO token in the browser), controls, headers, accepted risks |
 > | `README.md` | operator documentation: install, deploy, update, release, backup, endpoints, admin API |
 > | `PRODUCT.md` | product positioning (public, English) |
-> | `../SSO-PLAN.md`, `../FW13-SDK-PLAN.md` | design records in the bundle, outside this repo |
+> | `../SSO-PLAN.md` | design record in the bundle, outside this repo (SSO phase 2) |
 >
 > A fact that lives in one of those files is linked from here, not copied.
 
