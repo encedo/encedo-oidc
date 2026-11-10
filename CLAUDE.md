@@ -222,8 +222,14 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
   system fonts only (no Google Fonts: the footer promises "nothing from third parties"); family `<head>` boilerplate
   (`canonical`, `theme-color`, `og:*`, `og.png` rendered from `og.html` with the command in that file); a **"What this
   costs you"** section whose five items come from `SECURITY.md` (every user needs a module, ID Token is the user's
-  signature, no RS256, one key per user in the JWKS, attestation advisory); footer = **RKV sp. z o.o.** → `https://rkv.pl`
-  (the company page everywhere; "Encedo HEM" is only the product's name) + the legal line used on wg/openpgp + MIT.
+  signature, no RS256, one key per user in the JWKS, attestation advisory); footer = only **RKV** → `https://rkv.pl`,
+  bottom right (2026-11-10: the legal line and the link row went — rkv.pl carries them; "Encedo HEM" is only the product's name).
+- **Comparison table `#compare` (2026-11-10)**, before "What this costs you": Encedo OIDC vs Keycloak, authentik, Okta,
+  Microsoft Entra ID — who signs the ID Token, operator/stolen key, database copy, hardware at sign-in, where it runs,
+  independence (software and module made in Poland by RKV; Encedo Ltd is being closed), protocols, cost. SAML carries
+  "² under development" **without a date**; SCIM is deliberately left out (a generic SCIM client is not what Okta/Entra
+  lifecycle management means). Every competitor cell is a fact checked at the source; the Storm-0558 footnote cites
+  the CSRB report. On a phone the table scrolls inside its frame (`min-width: 860px`), the page never sideways.
   Compatible services are **named, not linked** ("Tested with Nextcloud, Carbonio CE and GitLab") — OIDC is universal.
   Width harness: `~/develop/www/_kit/mobile-check.html` (copy `landing.html` to `page.html` there; 355/407/1275 px,
   no sideways scroll). rkv.pl's OIDC card is changed only after this page changes and only if it has to.

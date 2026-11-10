@@ -43,7 +43,7 @@
     --lift:       0 18px 60px rgba(0,0,0,.35);
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
     /* System fonts only, like every other RKV page: this page loads nothing
-       from third parties, and the footer says so. */
+       from third parties. */
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
 
@@ -191,7 +191,7 @@
     color: var(--purple); background: var(--purple-dim); display: inline-block;
     padding: 6px 11px; border-radius: 8px; font-variant-numeric: tabular-nums;
   }
-  .limits { margin-top: 22px; font-size: 14.5px; color: var(--muted); max-width: 64ch; }
+  .limits { margin-top: 22px; font-size: 14.5px; color: var(--muted); }
   .limits a { color: var(--purple); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 
   /* ---- single sign-on ----
@@ -256,8 +256,22 @@
   footer a { font-family: var(--mono); font-size: 12.5px; color: var(--muted); text-decoration: none; }
   footer a:hover { color: var(--purple); }
   footer .spacer { flex: 1; }
-  footer .legal { flex-basis: 100%; max-width: 76ch; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
-  footer .legal a { font-family: inherit; font-size: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+
+  /* ---- comparison ---- */
+  .cmp-wrap { border: 1px solid var(--hair); border-radius: 18px; overflow-x: auto; background: var(--paper); }
+  .cmp { width: 100%; min-width: 860px; border-collapse: collapse; font-size: 14px; }
+  .cmp th, .cmp td { padding: 14px 16px; text-align: left; vertical-align: top; border-top: 1px solid var(--hair); }
+  .cmp thead th { border-top: 0; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .cmp thead th small { display: block; font-family: var(--mono); font-size: 10.5px; font-weight: 400; letter-spacing: .06em; color: var(--muted); margin-top: 3px; text-transform: uppercase; }
+  .cmp tbody th { font-weight: 500; color: var(--ink); width: 210px; }
+  .cmp td { color: var(--muted); }
+  .cmp .us { background: var(--purple-dim); color: var(--ink); }
+  .cmp thead .us { color: var(--purple); }
+  .cmp .yes { color: var(--purple); font-weight: 600; }
+  .cmp .no  { color: #e08a8a; font-weight: 600; }
+  .cmp-note { margin-top: 18px; font-size: 14.5px; color: var(--muted); }
+  .cmp-note b { color: var(--ink); font-weight: 600; }
+  .cmp-foot { margin-top: 10px; font-size: 12.5px; color: var(--muted); opacity: .8; }
 </style>
 </head>
 <body>
@@ -428,6 +442,58 @@
         </div>
       </section>
 
+      <section id="compare">
+        <p class="sec-label">Compared with what you would use instead</p>
+        <div class="cmp-wrap">
+        <table class="cmp">
+          <thead><tr>
+            <th></th>
+            <th class="us">Encedo OIDC<small>MIT · self-hosted</small></th>
+            <th>Keycloak<small>Apache 2.0 · self-hosted</small></th>
+            <th>authentik<small>MIT core · self-hosted</small></th>
+            <th>Okta<small>commercial · cloud</small></th>
+            <th>Microsoft Entra ID<small>commercial · cloud</small></th>
+          </tr></thead>
+          <tbody>
+            <tr><th>Who signs the ID Token</th>
+              <td class="us">The user's hardware module</td>
+              <td>The provider's own key</td><td>The provider's own key</td><td>Okta's key</td><td>Microsoft's key</td></tr>
+            <tr><th>Can the operator, or a stolen signing key, log in as any user?</th>
+              <td class="us"><span class="yes">No.</span> There is no key to steal</td>
+              <td><span class="no">Yes</span></td><td><span class="no">Yes</span></td><td><span class="no">Yes</span></td><td><span class="no">Yes</span>¹</td></tr>
+            <tr><th>A copy of the database gives an attacker</th>
+              <td class="us">Public keys and display names</td>
+              <td>Password hashes, OTP seeds</td><td>Password hashes, OTP seeds</td><td colspan="2">The vendor's database, not yours to audit</td></tr>
+            <tr><th>Hardware at every sign-in</th>
+              <td class="us">Always. No password to fall back on</td>
+              <td>Optional (WebAuthn)</td><td>Optional (WebAuthn)</td><td>Optional (FIDO2, Okta Verify)</td><td>Optional (FIDO2, passkeys)</td></tr>
+            <tr><th>Where it runs</th>
+              <td class="us">Your small VM: Node.js + Redis</td>
+              <td>Your servers: Java + SQL database</td><td>Your servers: Python + PostgreSQL</td><td>Okta's cloud</td><td>Microsoft's cloud</td></tr>
+            <tr><th>Independence</th>
+              <td class="us">Needs no outside service on the server. Open source; software and module made in Poland by RKV</td>
+              <td>Needs no outside service. Open source, a CNCF project</td>
+              <td>Needs no outside service. Open-source core, enterprise features licensed</td>
+              <td>Vendor's cloud. US company, so the CLOUD Act applies</td>
+              <td>Vendor's cloud. US company, so the CLOUD Act applies</td></tr>
+            <tr><th>Protocols</th>
+              <td class="us">OIDC, SAML²</td>
+              <td>OIDC, SAML, LDAP / AD</td><td>OIDC, SAML, LDAP, RADIUS</td><td>OIDC, SAML, SCIM</td><td>OIDC, SAML, SCIM</td></tr>
+            <tr><th>Cost</th>
+              <td class="us">Free · a module per user</td>
+              <td>Free</td><td>Free · enterprise tier paid</td><td>Per-user subscription</td><td>Per-user subscription</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="cmp-note"><b>Why Encedo OIDC:</b> every other provider here is trusted because it holds a key that can sign for
+          anyone. Encedo OIDC holds none, so there is nothing on the server whose theft signs anyone in.
+          <b>Choose another when</b> you need SAML today, directory sync, password accounts or a large app catalogue:
+          Keycloak and authentik do all of that well, and Encedo OIDC does not try to.</p>
+        <p class="cmp-foot">¹ In 2023 a stolen Microsoft signing key was used to forge tokens for Exchange Online mailboxes
+          (Storm-0558; U.S. Cyber Safety Review Board report, April 2024).<br>
+          ² SAML is under development.</p>
+      </section>
+
       <section id="costs">
         <p class="sec-label">What this costs you</p>
         <dl class="costs">
@@ -492,20 +558,8 @@
       </section>
 
       <footer>
-        <a href="/status">Provider status</a>
-        <a href="/.well-known/openid-configuration">Discovery</a>
-        <a href="https://github.com/encedo/encedo-oidc">Source</a>
-        <a href="https://github.com/encedo/encedo-oidc/blob/main/SECURITY.md">Security model</a>
-        <a href="https://github.com/encedo/encedo-oidc/blob/main/LICENSE">MIT licence</a>
         <span class="spacer"></span>
-        <a href="https://rkv.pl">RKV sp. z o.o.</a>
-        <p class="legal">
-          Encedo OIDC is built and run by <a href="https://rkv.pl">RKV sp. z o.o.</a>, Wrocław
-          (KRS 0001173474), the company behind the Encedo product line. The Encedo HEM is a hardware
-          encryption module; it comes in two versions, the EPA and the PPA, which expose one and the same
-          API; only the strength of the attestation above depends on which of them you hold. This page sets no cookies, runs
-          no analytics and loads nothing from third parties. View the source to check.
-        </p>
+        <a href="https://rkv.pl">RKV</a>
       </footer>
     </main>
   </div>
