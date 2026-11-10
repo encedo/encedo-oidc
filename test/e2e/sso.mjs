@@ -65,11 +65,22 @@ await waitPort(REDIS_PORT);
 const hem = await startFakeHem({ keys: [] });   // the enrollment page creates the key
 procs.push({ kill: () => hem.close() });
 
-procs.push(spawn('node', ['src/app.js'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env,
+// The app's output is kept: a failure prints its tail (CI had 'fetch failed' with nothing else to go on).
+let appOut = '';
+const app = spawn('node', ['src/app.js'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
   REDIS_URL: `redis://127.0.0.1:${REDIS_PORT}`, PORT: String(APP_PORT), ISSUER: BASE, ADMIN_SECRET: SECRET,
   ADMIN_ALLOWED_IPS: '127.0.0.1,::1', CSP_CONNECT_EXTRA: hem.deviceUrl, SSO_SUGGEST_SECONDS: '28800',
-  ATTEST_URL: hem.attestUrl, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_POLICY: 'require_hard' } }));
+  ATTEST_URL: hem.attestUrl, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_POLICY: 'require_hard' } });
+for (const s of [app.stdout, app.stderr]) s.on('data', d => { appOut = (appOut + d).slice(-4000); });
+procs.push(app);
 await waitPort(APP_PORT);
+// An open port is not a ready app, and the test talks to BASE (localhost), not 127.0.0.1:
+// wait until /health answers 200 at the very address the requests below use.
+for (let i = 0; ; i++) {
+  try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* not yet */ }
+  if (i >= 100) throw new Error(`app never answered ${BASE}/health:\n${appOut}`);
+  await sleep(100);
+}
 
 if (await portOpen(CDP_PORT)) throw new Error(`port ${CDP_PORT} is already in use -- a chromium from an earlier run? (its profile would carry a stale session)`);
 // Which binary is "the browser" differs per machine (snap chromium here, a
@@ -278,7 +289,8 @@ try {
   page.close();
 } catch (e) {
   failed = true;
-  console.error('\nFAIL:', e.message);
+  console.error('\nFAIL:', e.message, e.cause ? `(${e.cause.code ?? e.cause.message})` : '');
+  if (appOut) console.error('--- app output (tail) ---\n' + appOut);
 } finally {
   await closeBrowser();
   for (const p of procs) { try { p.kill(); } catch { /* gone */ } }
