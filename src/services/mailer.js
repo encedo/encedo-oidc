@@ -111,6 +111,32 @@ export async function sendEnrollmentEmail({ to, url, clientName, name }) {
 }
 
 /**
+ * Send a re-attestation link: the user confirms, on the module, that the key
+ * already enrolled lives in a genuine Encedo HEM. Nothing about the key or the
+ * sign-in changes. Never throws.
+ */
+export async function sendReattestEmail({ to, url, name }) {
+  if (!isMailEnabled()) return { ok: false, error: 'mail_disabled' };
+  const intro = 'Please confirm that your sign-in key is held by your Encedo HEM: open the link below and approve on the module. Your key and your sign-in stay as they are.';
+  try {
+    const info = await getTransport().sendMail({
+      from:    process.env.MAIL_FROM,
+      to,
+      subject: 'Confirm your Encedo HEM',
+      text:
+        `Hello${name ? ` ${name}` : ''},\n\n${intro}\n${url}\n\n` +
+        `The link expires in 24 hours. If you did not expect this, ignore this message.\n`,
+      html: renderHtml({ heading: 'Confirm your Encedo HEM', greetingName: name, intro, url, buttonLabel: 'Confirm the module' }),
+      attachments: [{ filename: 'logo.png', path: LOGO_PATH, cid: LOGO_CID }],
+    });
+    return { ok: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('[Mailer] send failed:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Send a standalone "confirm your email address" link -- independent of
  * enrollment, so it works for any user (on-site Add, copied invite link, or a
  * changed address). Clicking it sets email_verified. Never throws.

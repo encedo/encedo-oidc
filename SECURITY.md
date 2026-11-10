@@ -80,7 +80,7 @@ Authorization codes (`code:{code}`) have a 60-second TTL and are deleted on firs
 
 Result in `user:{sub}`: `attest_status` (`verified` = hard and chained · `token_only` · `failed` · `absent`), `attest_assurance`, `attest_reason`, `attest_online`, the whole signed `attest_jwt` (evidence), `hsm_crt`; `hw_attested='true'` only for `verified`.
 
-**Enforcement:** `ATTEST_POLICY` (per user `attest_policy`, admin panel): `advisory` (default — record, never refuse), `require` (`verified` or `token_only`), `require_hard` (`verified` only). A refusal happens before the enrollment token is consumed, so the link stays usable with another device. Users enrolled before firmware 1.3 keep their old `hw_attested` until they re-enroll.
+**Enforcement:** `ATTEST_POLICY` (per user `attest_policy`, admin panel): `advisory` (default — record, never refuse), `require` (`verified` or `token_only`), `require_hard` (`verified` only). A refusal happens before the enrollment token is consumed, so the link stays usable with another device. Users enrolled before firmware 1.3 keep their old `hw_attested` until they re-enroll or **re-attest**: an admin-issued one-time link (`/reattest`) has the HEM attest the key already enrolled, with the same checks against the stored public key — the kid and the JWKS do not change. A re-attestation records evidence and never applies the policy (it cannot remove a key); a failure keeps the link, and a re-enrollment in between voids it.
 
 ---
 

@@ -30,7 +30,7 @@ HEM SDK = the `hem-sdk-js/` submodule: `README.md`, `EXAMPLES.md`, `hem-sdk.brow
 - `GET /.well-known/openid-configuration`
 - `GET`/`POST /logout` — RP-initiated logout: `id_token_hint` verified (signature + issuer), `client_id` accepted, `post_logout_redirect_uri` exact-matched against the client's `post_logout_redirect_uris` (legacy origin fallback when the list is empty, logged once). Browsers get `logout.html` (template, placeholders `{{SUB}}`/`{{REDIRECT}}`/`{{RP}}`/`{{TAIL}}` filled by `logoutPage()`) + `logout.js`: asks “also sign out of Encedo?” when the browser holds an SSO session for that `sub` (§2 of RP-Initiated Logout 1.0), clears on Yes only, redirects at once when nothing is kept
 - Admin API: full CRUD users + clients
-- Enrollment: challenge-response + hardware attestation via api.encedo.com
+- Enrollment: challenge-response + key attestation (HEM FW 1.3, attest.encedo.com); re-attestation of the enrolled key via an admin link (`/reattest`)
 - Security log: Redis ZSET + stderr dual-write
 - Audit log in admin panel: pagination, filtering
 - Invite flow (user): `POST /admin/invite` → one-time token → `POST /signup/prefill` + `POST /signup/register` (token always in the JSON body, never `?token=`)
@@ -196,7 +196,7 @@ token only — attest.encedo.com does not validate EPA yet (update announced). T
 - Policy `ATTEST_POLICY` (`advisory` default) with per-user `attest_policy` (admin panel, Edit user) — so a test user can go through every policy without touching the tenant's `.env`. Existing users are untouched until they re-enroll.
 - Checked under the enrollment lock and **before** the token is consumed (refusal keeps the link). The SDK has no Node timeout — `withTimeout` 10 s around the network calls.
 - Tests: `test/attestation.test.js` (fake attest.encedo.com + the SDK's TEST PKI `hem-sdk-js/test/attest-test-pki.json`, `ATTEST_ROOT_SHA256` overridden); the browser E2E enrolls through the page with `ATTEST_POLICY=require_hard`.
-- Not done yet: on-demand re-attestation of an existing key (planned after tests on a real device, user-chosen account). Plan: `../FW13-SDK-PLAN.md`.
+- **Re-attestation of an enrolled key** (F4, 2026-11-10): admin link `POST /admin/users/:sub/reattest` (+ `/send-email`) → page `/reattest` (`reattest.html`/`reattest.js`, UI file in all 4 places) → `src/routes/reattest.js`. Same kid; checked against the stored pubkey (`hemPubkeyHex()` compresses the stored EC X||Y); `verified`/`token_only` consume the link and replace `attest_*`, `failed`/`absent` keep it; no policy applied; the link names the kid (re-enrollment → 409 `key_changed`). Tests: `test/attestation.test.js` (clears `rl:*` counters — the file exceeds the per-IP enrollment limit), E2E step after enrollment.
 
 ### Email enrollment link + `email_verified`
 Server can email the enrollment/invite link over SMTP, and a completed enrollment from an emailed link proves mailbox access → `email_verified`.
@@ -246,6 +246,7 @@ Caveat (inherent to any email verification): intercepting the mail yields a fals
 
 Canonical: `ARCH.md` §Redis Schema (every key, field and TTL). Semantics that are easy to get wrong:
 
+- `user.reattest_token` / `reattest:{token}` mirror `enrollment_token`: one live link per user, never returned by the API, deleted with the user.
 - `user.email_verified` is upgrade-only: set by an emailed link's nonce or `/verify-email/confirm`, never lowered by re-enrollment; an admin email change resets it to `'false'`.
 - `client.allow_any_user` lets any **enrolled** user sign in to that client; it never creates identities. The login gate ORs it with `user.clients[]`.
 - `email_index` was introduced after the first users existed: records created before it are not backfilled and get indexed on their next email change.

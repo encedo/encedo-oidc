@@ -67,6 +67,11 @@ export const SEC = {
   ENROLL_FAIL:       'enrollment.fail',
   ENROLL_REGEN:      'enrollment.regen',
   ENROLL_EMAIL_SENT: 'enrollment.email_sent',
+  // Re-attestation of an enrolled key (link issued by the admin)
+  REATTEST_ISSUED:     'attestation.link',
+  REATTEST_EMAIL_SENT: 'attestation.email_sent',
+  REATTEST_OK:         'attestation.ok',
+  REATTEST_FAIL:       'attestation.fail',
   EMAIL_VERIFY_SENT: 'email.verify_sent',
   EMAIL_VERIFIED:    'email.verified',
   // Session

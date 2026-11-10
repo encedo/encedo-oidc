@@ -592,6 +592,10 @@ html.light .client-check-name{color:var(--text)}
       <div class="field">
         <label class="field-label">Key attestation</label>
         <div class="id-badge" id="eu-attest" style="word-break:break-all;white-space:normal">--</div>
+        <div class="field-hint" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-xs" id="eu-reattest-btn" style="display:none" data-action="request-reattest">Re-attestation link</button>
+          <span>The user confirms the enrolled key on the module; the key does not change</span>
+        </div>
       </div>
       <div class="field">
         <label class="field-label">Attestation policy</label>
@@ -678,6 +682,28 @@ html.light .client-check-name{color:var(--text)}
       <button class="btn btn-ghost" data-action="close-modal" data-modal="modal-enrollment">Close</button>
       <button class="btn btn-ghost" data-action="copy-close" data-target="enroll-url" data-modal="modal-enrollment">Copy &amp; Close</button>
       <button class="btn btn-primary" data-action="open-url" data-target="enroll-url">Open</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modal-reattest">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Re-attestation link</div>
+      <button class="modal-close" data-action="close-modal" data-modal="modal-reattest">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <div class="enroll-box">
+        <div class="enroll-box-label">Re-attestation link (24h)</div>
+        <div class="enroll-url" id="reattest-url"></div>
+        <div class="enroll-warn">&#9888; Send to user &#8212; they approve on the module, the key stays the same</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-action="close-modal" data-modal="modal-reattest">Close</button>
+      <button class="btn btn-ghost" id="reattest-email-btn" style="display:none" data-action="email-reattest-link">Email link</button>
+      <button class="btn btn-ghost" data-action="copy-close" data-target="reattest-url" data-modal="modal-reattest">Copy &amp; Close</button>
+      <button class="btn btn-primary" data-action="open-url" data-target="reattest-url">Open</button>
     </div>
   </div>
 </div>

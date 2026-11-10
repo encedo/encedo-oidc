@@ -231,3 +231,80 @@ test('admin: attest_policy is validated and can be reset to the server default',
   assert.equal((await call('PATCH', `/admin/users/${u.sub}`, { attest_policy: '' })).status, 200);
   assert.equal((await getUser(u.sub)).attest_policy, '');
 });
+
+// --- re-attestation of the enrolled key (F4) ------------------------------------
+// This file enrolls more than the per-IP limit allows in a minute: start each
+// re-attestation test with fresh counters (the test owns this Redis).
+function clearRateLimits() {
+  execSync(`redis-cli -p ${REDIS_PORT} --scan --pattern 'rl:*' | xargs -r redis-cli -p ${REDIS_PORT} del`, { stdio: 'ignore', shell: '/bin/sh' });
+}
+async function reattestLink(sub) {
+  clearRateLimits();
+  const r = await call('POST', `/admin/users/${sub}/reattest`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  return r.body.reattest_url.split('#token=')[1];
+}
+const reValidate = (token) => call('POST', '/reattest/validate', { token });
+const reSubmit   = (token, body) => call('POST', '/reattest/submit', { token, ...body });
+
+test('re-attestation: an enrolled key without attestation becomes verified, same kid and pubkey', opt, async () => {
+  for (const type of ['Ed25519', 'P256']) {
+    const u = await addUser(undefined, type); const k = genKey(type);
+    assert.equal((await enroll(u, k)).body.attest_status, 'absent');
+    const before = await getUser(u.sub);
+
+    const token = await reattestLink(u.sub);
+    assert.equal((await getUser(u.sub)).reattest_token, undefined, 'the token is never exposed');
+    const v = await reValidate(token);
+    assert.equal(v.status, 200);
+    assert.equal(v.body.kid, k.kid); assert.equal(v.body.attest.aud, BASE);
+    const r = await reSubmit(token, { attestation: await attestToken(k, v.body.attest), crt: CRT });
+    assert.equal(r.status, 200, `${type}: ${JSON.stringify(r.body)}`);
+    assert.equal(r.body.attest_status, 'verified');
+
+    const after = await getUser(u.sub);
+    assert.equal(after.kid, before.kid); assert.equal(after.pubkey, before.pubkey);
+    assert.equal(after.attest_status, 'verified'); assert.equal(after.hw_attested, 'true');
+    assert.match(after.attest_jwt, /^ey/);
+    assert.equal((await reValidate(token)).status, 404, 'one-time link');
+  }
+});
+
+test('re-attestation: a failed check keeps the link; a wrong key or a replay does not pass', opt, async () => {
+  const u = await addUser(); const k = genKey();
+  await enroll(u, k);
+  const token = await reattestLink(u.sub);
+  const v = await reValidate(token);
+  const other = genKey();
+  const bad = await reSubmit(token, { attestation: await attestToken(other, v.body.attest), crt: CRT });
+  assert.equal(bad.status, 400); assert.equal(bad.body.error, 'attestation_failed');
+  const replay = await reSubmit(token, { attestation: await attestToken(k, { nonce: b64(crypto.randomBytes(32)), aud: BASE }), crt: CRT });
+  assert.equal(replay.status, 400);
+  assert.equal((await reSubmit(token, {})).status, 400, 'no attestation');
+  assert.equal((await getUser(u.sub)).attest_status, 'absent', 'record untouched');
+  const v2 = await reValidate(token);
+  assert.equal(v2.status, 200, 'link still valid');
+  assert.equal(v2.body.attest.nonce, v.body.attest.nonce, 'same challenge');
+  assert.equal((await reSubmit(token, { attestation: await attestToken(k, v2.body.attest), crt: CRT })).status, 200);
+});
+
+test('re-attestation: a re-enrollment voids the link; no link without an enrolled key', opt, async () => {
+  const u = await addUser(); const k = genKey();
+  await enroll(u, k);
+  const token = await reattestLink(u.sub);
+  const again = await call('POST', `/admin/users/${u.sub}/enrollment`, {});
+  const re = await enroll({ sub: u.sub, token: again.body.enrollment_url.split('#token=')[1] }, genKey());
+  assert.equal(re.status, 200, `re-enrollment: ${JSON.stringify(re.body)}`);
+  const v = await reValidate(token);
+  assert.equal(v.status, 409); assert.equal(v.body.error, 'key_changed');
+
+  const fresh = await addUser();
+  const r = await call('POST', `/admin/users/${fresh.sub}/reattest`);
+  assert.equal(r.status, 409); assert.equal(r.body.error, 'not_enrolled');
+
+  const t1 = await reattestLink(u.sub), t2 = await reattestLink(u.sub);
+  assert.equal((await reValidate(t1)).status, 404, 'a new link replaces the old one');
+  assert.equal((await reValidate(t2)).status, 200);
+  const mail = await call('POST', `/admin/users/${u.sub}/reattest/send-email`);
+  assert.equal(mail.status, 409); assert.equal(mail.body.error, 'mail_disabled', 'no SMTP in this test');
+});

@@ -6,6 +6,8 @@ import { sendVerificationEmailHandler } from './emailVerify.js';
 import { issuer } from '../services/issuer.js';
 import { revokeUserTokens } from '../services/tokens.js';
 import { ATTEST_POLICIES } from '../services/attestation.js';
+import { REATTEST_TTL } from './reattest.js';
+import { sendReattestEmail } from '../services/mailer.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -18,7 +20,7 @@ const router = Router();
 
 function deserialize(raw) {
   if (!raw || Object.keys(raw).length === 0) return null;
-  const { enrollment_token, ...rest } = raw; // internal field -- never exposed via API (omitted here)
+  const { enrollment_token, reattest_token, ...rest } = raw; // internal fields -- never exposed via API (omitted here)
   return {
     ...rest,
     clients:              JSON.parse(rest.clients       ?? '[]'),
@@ -316,6 +318,48 @@ router.post('/:sub/enrollment', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// --- POST /admin/users/:sub/reattest -------------------------
+// A one-time link (24 h) for the user to attest the key already enrolled --
+// same kid, nothing changes for the relying parties. Replaces a previous link.
+router.post('/:sub/reattest', async (req, res, next) => {
+  try {
+    const { sub } = req.params;
+    const raw = await redis.hGetAll(`user:${sub}`);
+    if (!raw?.sub) return res.status(404).json({ error: 'user_not_found' });
+    if (!raw.kid || !raw.pubkey) return res.status(409).json({ error: 'not_enrolled',
+      error_description: 'This user has no enrolled key to attest -- send an enrollment link instead' });
+
+    if (raw.reattest_token) await redis.del(`reattest:${raw.reattest_token}`);
+    const token = randomBytes(32).toString('base64url');
+    await redis.set(`reattest:${token}`, JSON.stringify({ sub, username: raw.username, kid: raw.kid }), { EX: REATTEST_TTL });
+    await redis.hSet(`user:${sub}`, { reattest_token: token });
+
+    await logSecurity(SEC.REATTEST_ISSUED, { sub, username: raw.username, kid: raw.kid, ip: req.ip });
+    res.json({ reattest_url: `${issuer()}/reattest#token=${token}` });
+  } catch (err) { next(err); }
+});
+
+// --- POST /admin/users/:sub/reattest/send-email ----------------
+// Emails the CURRENT re-attestation link to the address on the record (never
+// one from the request -- no open relay). Issue the link first.
+router.post('/:sub/reattest/send-email', async (req, res, next) => {
+  try {
+    const { sub } = req.params;
+    const raw = await redis.hGetAll(`user:${sub}`);
+    if (!raw?.sub) return res.status(404).json({ error: 'user_not_found' });
+    if (!raw.email) return res.status(400).json({ error: 'no_email', error_description: 'This user has no email address' });
+    const token = raw.reattest_token;
+    if (!token || !(await redis.exists(`reattest:${token}`))) {
+      return res.status(409).json({ error: 'no_link', error_description: 'Create a re-attestation link first' });
+    }
+    const r = await sendReattestEmail({ to: raw.email, url: `${issuer()}/reattest#token=${token}`, name: raw.name || raw.username });
+    if (r.error === 'mail_disabled') return res.status(409).json({ error: 'mail_disabled', error_description: 'SMTP is not configured on this server' });
+    if (!r.ok) return res.status(502).json({ error: 'mail_failed', error_description: r.error });
+    await logSecurity(SEC.REATTEST_EMAIL_SENT, { sub, username: raw.username, ip: req.ip });
+    res.json({ ok: true, to: raw.email });
+  } catch (err) { next(err); }
+});
+
 // --- GET /admin/users/:sub/claims -----------------------------
 router.get('/:sub/claims', async (req, res, next) => {
   try {
@@ -378,16 +422,18 @@ router.delete('/:sub', async (req, res, next) => {
     // Revoke all active access tokens for this user
     const revokedTokens = await revokeUserTokens(sub);
 
-    const [username, email, enrollToken] = await Promise.all([
+    const [username, email, enrollToken, reattestToken] = await Promise.all([
       redis.hGet(`user:${sub}`, 'username'),
       redis.hGet(`user:${sub}`, 'email'),
       redis.hGet(`user:${sub}`, 'enrollment_token'),
+      redis.hGet(`user:${sub}`, 'reattest_token'),
     ]);
     // Release the email only if THIS sub owns its index entry (grandfathered
     // dupes may point elsewhere). Decide first, then delete everything in one MULTI.
     const ownsEmail = email && (await redis.hGet('email_index', email)) === sub;
     const tx = redis.multi().del(`user:${sub}`).sRem('users', sub);
     if (enrollToken) tx.del(`enrollment:${enrollToken}`);
+    if (reattestToken) tx.del(`reattest:${reattestToken}`);
     if (username)    tx.hDel('username_index', username);
     if (ownsEmail)   tx.hDel('email_index', email);
     await tx.exec();

@@ -357,6 +357,7 @@ async function openEditUser(idx) {
   $('eu-key-type').textContent  = u.key_type || 'EdDSA';
   $('eu-attest').textContent    = attestSummary(u);
   $('eu-attest-policy').value   = u.attest_policy || '';
+  $('eu-reattest-btn').style.display = u.kid ? '' : 'none';
   $('eu-pubkey-preview').textContent = u.pubkey
     ? btoa(u.pubkey.match(/../g).map(h=>String.fromCharCode(parseInt(h,16))).join(''))
     : '--';
@@ -464,6 +465,28 @@ async function requestEnrollment(idx) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+
+// Re-attestation of the enrolled key (same kid): a one-time link for the user.
+async function requestReattest() {
+  const sub = $('eu-sub').textContent.trim();
+  try {
+    const data = await api(`/admin/users/${encodeURIComponent(sub)}/reattest`, { method: 'POST' });
+    $('reattest-url').textContent = data.reattest_url;
+    $('reattest-email-btn').style.display = _mailEnabled && $('eu-email').value.trim() ? '' : 'none';
+    $('reattest-email-btn').dataset.sub = sub;
+    openModal('modal-reattest');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function emailReattestLink() {
+  const btn = $('reattest-email-btn');
+  btn.disabled = true;
+  try {
+    const r = await api(`/admin/users/${encodeURIComponent(btn.dataset.sub)}/reattest/send-email`, { method: 'POST' });
+    toast(`Re-attestation link sent to ${r.to}`);
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
 
 // Invite branch of the shared New-user form: same fields as Add, minus HSM URL
 // (the invitee supplies their device at enrollment). Identity is required for
@@ -583,6 +606,7 @@ function auditColor(type) {
   if (type.startsWith('auth.'))       return 'var(--red)';
   if (type.startsWith('admin.'))      return 'var(--amber)';
   if (type.startsWith('enrollment.')) return 'var(--lavender)';
+  if (type.startsWith('attestation.')) return 'var(--lavender)';
   if (type.startsWith('ratelimit.'))  return 'var(--amber)';
   return 'var(--soft)';
 }
@@ -880,6 +904,8 @@ const ACTIONS = {
   'submit-invite-client':    () => submitInviteClient(),
   'email-invite-link':       () => emailInviteLink(),
   'send-verification-email': () => sendVerificationEmail(),
+  'request-reattest':        () => requestReattest(),
+  'email-reattest-link':     () => emailReattestLink(),
   'add-claim-row':           () => addClaimRow(),
   'submit-edit-user':        () => submitEditUser(),
   'submit-add-client':       () => submitAddClient(),

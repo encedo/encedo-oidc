@@ -9,6 +9,7 @@ COPY index.html     index.js     \
      landing.html   landing.js   \
      signin.html    signin.js    hsm-common.js password-field.js local-network.js logout.html logout.js \
      enrollment.html enrollment.js \
+     reattest.html reattest.js \
      admin-panel.html admin-panel.js \
      signup.html     signup.js    \
      signup-client.html signup-client.js \

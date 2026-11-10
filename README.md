@@ -690,7 +690,7 @@ curl -s https://oidc.example.com/health   # {"status":"ok","version":"1.1.0","co
 with the server.
 
 - A key that is still on the module after its firmware update keeps working: same `kid`, same user record, no re-enrollment.
-- Key attestation runs at enrollment only. Existing users keep their old `hw_attested` until they re-enroll; with the default
+- Key attestation runs at enrollment and on a re-attestation link (see *Re-attestation*). Existing users keep their old `hw_attested` until then; with the default
   `ATTEST_POLICY=advisory` nothing is refused.
 - New settings, both optional: `ATTEST_POLICY` (`advisory` | `require` | `require_hard`) and `ATTEST_URL`
   (default `https://attest.encedo.com`). The old `api.encedo.com/attest` check is gone.
@@ -1059,6 +1059,7 @@ failure, so they are safe to drive from cron.
 | `/admin` | Admin panel (API calls behind `ADMIN_ALLOWED_IPS` + `ADMIN_SECRET`) |
 | `/signup`, `/signup-client` | Invite flows |
 | `/enrollment` | HSM key enrollment |
+| `/reattest` | Re-attestation of the enrolled key (admin's link; the key does not change) |
 | `/verify-email` | Standalone email verification link |
 
 The landing page (`landing.html` + `landing.js`) is the public product page: it describes the
@@ -1083,6 +1084,8 @@ All `/admin/*` endpoints require `Authorization: Bearer <ADMIN_SECRET>` and are 
 | `GET/POST` | `/admin/users` | List / create users |
 | `GET/PATCH/DELETE` | `/admin/users/:sub` | Read / update / delete user |
 | `POST` | `/admin/users/:sub/enrollment` | Generate new enrollment link |
+| `POST` | `/admin/users/:sub/reattest` | Generate a re-attestation link for the enrolled key (replaces the previous one) |
+| `POST` | `/admin/users/:sub/reattest/send-email` | Email the current re-attestation link to the user (needs SMTP) |
 | `GET/PUT` | `/admin/users/:sub/claims` | Read / replace the user's custom claims (and `hsm_url_in_userinfo`) |
 | `POST` | `/admin/users/:sub/send-verification-email` | Email a standalone verification link (needs SMTP) |
 | `POST` | `/admin/invite` | Create a one-time user invite (link to `/signup`) |
@@ -1103,6 +1106,14 @@ New users receive a one-time enrollment link (24 h TTL). Opening it in a browser
 2. Signs a server-issued challenge (proof of key possession)
 3. Attests the key on the HEM (firmware 1.3: `POST /api/system/config/attestation` with the server's nonce)
 4. Submits public key + attestation to `/enrollment/submit`; the server verifies it and applies `ATTEST_POLICY`
+
+### Re-attestation (the key stays)
+
+A user enrolled before firmware 1.3, or whose attestation should be refreshed, does not need a new key. In the admin
+panel, *Edit user → Re-attestation link* creates a one-time link (24 h; *Email link* sends it to the user's address).
+The user opens it, approves on the module (passphrase or phone), and the HEM attests the key it already holds. The
+`kid`, the public key and the JWKS stay as they are, so relying parties notice nothing. A check that does not pass keeps
+the link for another try; a re-enrollment in between voids it.
 
 ---
 

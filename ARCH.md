@@ -11,6 +11,7 @@ Browser / Relying Party
 |                                              |
 |  OIDC endpoints  ->  src/routes/oidc.js      |
 |  Enrollment      ->  src/routes/enrollment.js|
+|  Re-attestation  ->  src/routes/reattest.js  |
 |  Invites/signup  ->  src/routes/invite.js,   |
 |                      inviteClient.js         |
 |  Email verify   ->  src/routes/emailVerify.js|
@@ -138,6 +139,14 @@ body.msg = toB64(strToBytes(signing_input));
 
 Checks, statuses and policy: `SECURITY.md` §Hardware attestation.
 
+**Re-attestation of an enrolled key** (`src/routes/reattest.js`, page `reattest.html`): the admin issues a one-time link
+(`POST /admin/users/:sub/reattest`, optionally emailed with `/reattest/send-email`); `/reattest/validate` returns the user's
+`kid` and a fresh `{nonce, aud}`; the page authorizes `keymgmt:use:<kid>` and sends `hem.attest()` for that kid;
+`/reattest/submit` checks it exactly as above against the **stored** public key (EC compressed from the stored X||Y).
+`verified`/`token_only` replace the record's `attest_*` fields and consume the link; `failed`/`absent` keep it (400). The key,
+the kid and the JWKS do not change, and no policy is applied (it records evidence, it never removes a key). The link names the
+kid it was issued for: a re-enrollment in between voids it (409 `key_changed`).
+
 ---
 
 ## File Structure
@@ -149,6 +158,7 @@ encedo-oidc/
 │   ├── routes/
 │   │   ├── oidc.js               All OIDC endpoints + JWKS cache + discovery + logout page
 │   │   ├── enrollment.js         HSM key enrollment (validate + submit)
+│   │   ├── reattest.js           Re-attestation of the enrolled key (validate + submit)
 │   │   ├── invite.js             User invite flow (/admin/invite, /signup/*) + invites list
 │   │   ├── inviteClient.js       Client invite flow (/admin/invite-client, /signup-client/*)
 │   │   ├── emailVerify.js        Standalone email verification link (/verify-email/confirm)
@@ -181,6 +191,7 @@ encedo-oidc/
 ├── signin.html / signin.js       Trusted App: sign-in page + SSO account chooser (served at /authorize)
 ├── logout.html / logout.js       Sign-out page: asks before ending the browser's SSO session
 ├── enrollment.html / enrollment.js   Enrollment flow
+├── reattest.html / reattest.js       Re-attestation of the enrolled key (admin's link)
 ├── signup.html / signup.js       User signup from an invite
 ├── signup-client.html / signup-client.js   Client signup from an invite
 ├── verify-email.html / verify-email.js     Email verification link
@@ -264,6 +275,7 @@ user:{sub}               Hash
   custom_claims          JSON object of extra claims for id_token/userinfo
   sso                    'false' to forbid single sign-on for this user (absent = allowed)
   enrollment_token       base64url — present until enrollment completes
+  reattest_token         base64url — the current re-attestation link, until used (never returned by the API)
   enrolled_at            ISO 8601
   created_at             ISO 8601
   updated_at             ISO 8601
@@ -306,7 +318,9 @@ enrollment:{token}       JSON  TTL 24h → 30 min after validate
   sub, username, forced_key_type, hsm_url, challenge?,
   client_redirect_origin?, email_nonce?, via_email?
 
-enroll_lock:{sub}        String TTL 30s  (Redis NX lock, one enrollment at a time)
+reattest:{token}         JSON  TTL 24h → 30 min after validate  { sub, username, kid, attest? }
+
+enroll_lock:{sub}        String TTL 30s  (Redis NX lock, one enrollment or re-attestation at a time)
 
 invite:{token}           JSON  TTL 24h  { clients, client_name(s), username, name, email, email_nonce? }
 client-invite:{token}    JSON  TTL 24h  { note }
@@ -338,6 +352,10 @@ Defined in `src/services/securityLog.js`:
 | `enrollment.fail` | Enrollment failure (invalid token, sig, duplicate key, …) |
 | `enrollment.regen` | Admin regenerated enrollment link |
 | `enrollment.email_sent` | Enrollment / invite link emailed |
+| `attestation.link` | Admin issued a re-attestation link |
+| `attestation.email_sent` | Re-attestation link emailed |
+| `attestation.ok` | Enrolled key re-attested (`verified` / `token_only`) |
+| `attestation.fail` | Re-attestation did not pass (link kept) |
 | `email.verify_sent` | Standalone verification email sent |
 | `email.verified` | `/verify-email/confirm` accepted, `email_verified=true` |
 | `admin.auth.fail` | Wrong ADMIN_SECRET |
@@ -366,6 +384,8 @@ Applied per endpoint via `src/middleware/rateLimit.js` (sliding window, Redis-ba
 | `GET`/`POST /logout` | 20 | 60s | IP |
 | `POST /enrollment/validate` | 10 + 30 | 60s | enrollment token, plus an IP backstop |
 | `POST /enrollment/submit` | 5 + 20 | 60s | enrollment token, plus an IP backstop |
+| `POST /reattest/validate` | 10 + 30 | 60s | re-attestation token, plus an IP backstop |
+| `POST /reattest/submit` | 5 + 20 | 60s | re-attestation token, plus an IP backstop |
 | `POST /verify-email/confirm` | 20 | 60s | IP |
 | `/admin/*` (authenticated) | 60 | 60s | IP |
 | `/admin/*` failed authentications | 10 | 60s | IP — then every admin call from that IP is 429 until the window passes |

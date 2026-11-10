@@ -163,6 +163,25 @@ try {
   assert.deepEqual(page.errors, [], 'no page errors during enrollment');
   console.log('   ok: kid', kid, 'attest', rec.attest_status, rec.attest_assurance);
 
+  // ---- Re-attestation of the same key through the admin's link (F4) --------
+  console.log('Re-attestation: the admin link, the page attests the enrolled kid');
+  const reLink = await jpost(`/admin/users/${user.sub}/reattest`, {});
+  assert.equal(reLink.status, 200, JSON.stringify(reLink.body));
+  await page.goto(`${BASE}/reattest?hem_broker=${encodeURIComponent(hem.brokerUrl)}#token=${reLink.body.reattest_url.split('#token=')[1]}`);
+  await page.until("document.querySelector('.screen.visible')?.id === 's-form'", 're-attestation form');
+  assert.equal(await page.evalJs("document.getElementById('f-kid').textContent"), kid);
+  await page.type('#f-password', 'correct horse');
+  await page.click('#submit-btn');
+  await page.until("document.querySelector('.screen.visible')?.id === 's-success'", 're-attestation success', 30000);
+  const rec2 = (await fetch(`${BASE}/admin/users/${user.sub}`, { headers: H }).then(r => r.json()));
+  assert.equal(rec2.kid, kid, 'same key'); assert.equal(rec2.pubkey, rec.pubkey);
+  assert.equal(hem.state.keys.length, 1, 'no new key on the device');
+  assert.equal(rec2.attest_status, 'verified');
+  assert.ok(rec2.attest_at > rec.attest_at, 'a fresh attestation recorded');
+  assert.equal(hem.state.attestValidations, 2, 'attest.encedo.com asked again');
+  assert.deepEqual(page.errors, [], 'no page errors during re-attestation');
+  console.log('   ok: same kid, attest', rec2.attest_status);
+
   const authz = (client, extra = {}) => `${BASE}/authorize?` + new URLSearchParams({ client_id: client.client_id, redirect_uri: hem.rpCallback, response_type: 'code', scope: 'openid email', state: 'st-' + client.name.slice(-1), nonce: 'n1', hem_broker: hem.brokerUrl, ...extra });
   const exchange = (client, code) => jpost('/token', { grant_type: 'authorization_code', code, redirect_uri: hem.rpCallback, client_id: client.client_id, client_secret: client.client_secret });
   // ---- Flow A: full sign-in to A, remember ----------------------------------

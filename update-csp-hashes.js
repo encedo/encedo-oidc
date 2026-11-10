@@ -21,6 +21,7 @@ const FILES = [
   { file: 'signup-client.html', label: 'signup-client.html' },
   { file: 'verify-email.html', label: 'verify-email.html' },
   { file: 'logout.html',      label: 'logout.html' },
+  { file: 'reattest.html',    label: 'reattest.html' },
 ];
 
 function styleHash(html) {

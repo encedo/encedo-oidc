@@ -22,6 +22,7 @@ import adminUsers, { getAuditLog }              from './routes/adminUsers.js';
 import adminClients                              from './routes/adminClients.js';
 import oidc, { discoveryHandler }               from './routes/oidc.js';
 import enrollment                               from './routes/enrollment.js';
+import reattest                                 from './routes/reattest.js';
 import { adminInviteHandler, adminListInvitesHandler, adminDeleteInviteHandler, signupPrefillHandler, signupRegisterHandler, adminSendInviteEmailHandler } from './routes/invite.js';
 import { isMailEnabled } from './services/mailer.js';
 import { hostSpace, normalizeHost } from './services/addressSpace.js';
@@ -74,6 +75,7 @@ const STYLE_HASHES = [
   "'sha256-qXZuPZxV+KsTgO6hwVLJlO7Yhnbtl+1AlknyPXSu5hI='", // signup-client.html
   "'sha256-QeAjkqncaNqHQ0XCC7p7SXeTpzgU0LJQXom27mfg4A4='", // verify-email.html
   "'sha256-aO/5eCFVjZmaJTh8HHmJld86rx45wTTYYOkF685TFCk='", // logout.html
+  "'sha256-luqTklYubAFNiRs4wxVb3szwH4aC9Osm85huzBbE2Jw='", // reattest.html
 ].join(' ');
 const CSP = [
   "default-src 'self'",
@@ -160,6 +162,7 @@ app.get('/status',          (_req, res) => res.sendFile(resolve(ROOT, 'index.htm
 app.get('/landing.js',      (_req, res) => res.sendFile(resolve(ROOT, 'landing.js')));
 app.get('/admin',           (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.html')));
 app.get('/enrollment',      (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.html')));
+app.get('/reattest',        (_req, res) => res.sendFile(resolve(ROOT, 'reattest.html')));   // re-attest the enrolled key (admin's link)
 app.get('/signup.js',            (_req, res) => res.sendFile(resolve(ROOT, 'signup.js')));
 app.get('/signup-client.js',     (_req, res) => res.sendFile(resolve(ROOT, 'signup-client.js')));
 app.get('/logo.png',        (_req, res) => res.sendFile(resolve(ROOT, 'logo.png')));
@@ -176,6 +179,7 @@ app.get('/hsm-common.js',   (_req, res) => res.sendFile(resolve(ROOT, 'hsm-commo
 app.get('/logout.js',       (_req, res) => res.sendFile(resolve(ROOT, 'logout.js')));       // clears the SSO session on the /logout page
 app.get('/signin.js',       (_req, res) => res.sendFile(resolve(ROOT, 'signin.js')));
 app.get('/enrollment.js',   (_req, res) => res.sendFile(resolve(ROOT, 'enrollment.js')));
+app.get('/reattest.js',     (_req, res) => res.sendFile(resolve(ROOT, 'reattest.js')));
 app.get('/admin-panel.js',  (_req, res) => res.sendFile(resolve(ROOT, 'admin-panel.js')));
 
 // --- /.well-known -- registered directly to bypass path-to-regexp dot bug ------
@@ -186,6 +190,7 @@ app.use('/', oidc);
 
 // --- Enrollment (token-authenticated) -----------------------------------------
 app.use('/enrollment', enrollment);
+app.use('/reattest', reattest);   // token-authenticated, like enrollment
 
 // --- Signup (invite flow, public) ---------------------------------------------
 app.get('/signup',                 (_req, res) => res.sendFile(resolve(ROOT, 'signup.html')));

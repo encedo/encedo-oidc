@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=yes">
+<title>Encedo -- Key Attestation</title>
+<link rel="icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  ::-webkit-scrollbar { width: 5px; background: rgba(0,0,0,.08); }
+  ::-webkit-scrollbar-thumb { background: #6E358C; }
+
+  :root {
+    --purple:  #6E358C;
+    --navy:    #2A225E;
+    --text:    #222;
+    --muted:   #666;
+    --border:  #ccc;
+    --bg:      #f4f4f4;
+    --white:   #fff;
+    --panel:   #f8f6fc;
+    --green:   #2ecc71;
+    --red:     #e74c3c;
+    --amber:   #f39c12;
+    --shadow:  -10px -1px 82px 43px rgba(0,0,0,.09);
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eee, #fff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 16px;
+    color: var(--text);
+    overflow-x: hidden;
+  }
+
+  .screen { display: none; width: 100%; max-width: 480px; }
+  .screen.visible { display: block; }
+
+  /* -- Card -- */
+  .card {
+    background: var(--white);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+    padding: 36px 40px 40px;
+  }
+
+  /* -- Logo -- */
+  .logo-block { text-align: center; margin-bottom: 28px; }
+  .logo-block img { height: 48px; border-radius: 14px; }
+  .logo-sub {
+    font-size: 11px; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase; margin-top: 10px;
+  }
+
+  /* -- Step label -- */
+  .step-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 18px;
+  }
+
+  /* -- Identity box -- */
+  .identity-box {
+    background: var(--panel);
+    border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 22px;
+  }
+  .identity-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; margin-bottom: 7px; gap: 12px;
+  }
+  .identity-row:last-child { margin-bottom: 0; }
+  .identity-key { color: var(--muted); flex-shrink: 0; }
+  .identity-val { color: var(--purple); font-weight: 600; text-align: right; white-space: nowrap; font-size: 11px; }
+
+  /* -- Fields -- */
+  .field { margin-bottom: 16px; }
+  .field-label {
+    display: block; font-size: 11px; font-weight: 600;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 7px;
+  }
+  .field-input {
+    display: block; width: 100%;
+    padding: 13px 16px; border: 1px solid var(--border);
+    border-radius: 20px; font-family: 'Inter', sans-serif;
+    font-size: 15px; color: var(--text); background: var(--white);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+  }
+  .field-input:focus {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(110,53,140,.12);
+  }
+  .field-input::placeholder { color: #aaa; }
+  .field-hint {
+    font-size: 11px; color: var(--muted);
+    margin-top: 6px; line-height: 1.5;
+  }
+
+  /* -- Divider -- */
+  .divider { height: 1px; background: #eee; margin: 20px 0; }
+
+  /* -- Buttons -- */
+  @keyframes gradient-shift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .btn {
+    display: inline-block; padding: 14px 28px;
+    border: none; border-radius: 22px;
+    font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: .03em; cursor: pointer;
+    transition: box-shadow .3s, transform .15s; text-align: center; line-height: 1;
+  }
+  .btn-full { display: block; width: 100%; margin-top: 6px; }
+  .btn-primary {
+    background: linear-gradient(-45deg, #6E358C, #2A225E, #6E358C);
+    background-size: 400% 400%;
+    animation: gradient-shift 3s ease infinite;
+    color: var(--white);
+    box-shadow: 0 6px 24px rgba(110,53,140,.3);
+  }
+  .btn-primary:hover { box-shadow: 0 8px 32px rgba(110,53,140,.5); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; animation: none; }
+
+  /* -- Error -- */
+  .err-msg {
+    font-size: 12px; color: var(--red);
+    min-height: 18px; margin-top: 8px; text-align: center;
+  }
+
+  /* -- Hint row -- */
+  .hint-row {
+    margin-top: 18px; padding-top: 16px; border-top: 1px solid #eee;
+    font-size: 11px; color: var(--muted); text-align: center; letter-spacing: .05em;
+  }
+
+  /* -- Icon circle -- */
+  .icon-circle {
+    width: 72px; height: 72px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 22px;
+  }
+  .icon-circle-ok   { background: rgba(46,204,113,.1);  border: 1px solid rgba(46,204,113,.35); }
+  .icon-circle-warn { background: rgba(243,156,18,.1);  border: 1px solid rgba(243,156,18,.35); }
+
+  /* -- Success info -- */
+  .success-info {
+    background: var(--panel); border: 1px solid rgba(110,53,140,.15);
+    border-radius: 14px; padding: 14px 16px; text-align: left;
+  }
+
+  /* -- Loading -- */
+  .loading-text {
+    text-align: center; font-size: 13px; color: var(--muted); padding: 8px 0;
+  }
+
+  @media (max-width: 520px) {
+    .card { padding: 28px 22px 30px; border-radius: 22px; }
+  }
+  @media (max-width: 360px) {
+    body { font-size: 14px; padding: 16px 10px; }
+    .card { padding: 22px 16px 24px; }
+  }
+
+  /* -- Passphrase eye: password-field.js wraps every password input -- */
+  .pw-wrap { position: relative; display: block; }
+  .pw-wrap input { padding-right: 46px; }
+  .pw-eye {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    border: none; background: none; color: var(--muted);
+    padding: 6px; cursor: pointer; display: grid; place-items: center;
+  }
+  .pw-eye:hover { color: var(--text); }
+  @media (pointer: coarse) { .pw-eye { padding: 10px; right: 4px; } }
+</style>
+</head>
+<body>
+
+<!-- --- LOADING --------------------------------------- -->
+<div class="screen visible" id="s-loading">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Key Attestation</div>
+  </div>
+  <div class="card">
+    <p class="loading-text">Validating the link&hellip;</p>
+  </div>
+</div>
+
+<!-- --- FORM ------------------------------------------ -->
+<div class="screen" id="s-form">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Key Attestation</div>
+  </div>
+  <!-- A real <form> so password managers offer to save the HSM passphrase,
+       under the HSM URL as the "username" (signin.html fills it back the same way). -->
+  <form class="card" id="reattest-form" data-enter-next>
+    <div class="step-label">Confirm that your key is held by your Encedo HEM</div>
+
+    <div class="identity-box">
+      <div class="identity-row">
+        <span class="identity-key">username</span>
+        <span class="identity-val" id="f-username">&hellip;</span>
+      </div>
+      <div class="identity-row">
+        <span class="identity-key">key</span>
+        <span class="identity-val" id="f-kid">&hellip;</span>
+      </div>
+    </div>
+
+    <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 18px;">
+      The module signs a statement that this key was generated inside it. Your key and your sign-in stay as they are.
+    </p>
+
+    <div class="field">
+      <label class="field-label" for="f-hsm-url">Encedo HSM URL</label>
+      <input class="field-input" id="f-hsm-url" type="url"
+        placeholder="https://my.ence.do" value="https://my.ence.do" autocomplete="username">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field">
+      <label class="field-label" for="f-password">
+        HSM passphrase <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span>
+      </label>
+      <input class="field-input" id="f-password" type="password"
+        placeholder="Leave empty to approve on your phone" autocomplete="current-password">
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Confirm &rarr;</button>
+    <div class="err-msg" id="form-err"></div>
+    <div class="hint-row">this link is valid for 24 hours &nbsp;&middot;&nbsp; one-time use</div>
+  </form>
+</div>
+
+<!-- --- SUCCESS ---------------------------------------- -->
+<div class="screen" id="s-success">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Attestation Complete</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-ok">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="#2ecc71" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+    </div>
+    <p style="font-size:16px;font-weight:700;color:#2ecc71;margin-bottom:18px;" id="s-title">Module confirmed</p>
+    <div class="success-info">
+      <div class="identity-row">
+        <span class="identity-key">username</span>
+        <span class="identity-val" id="s-username"></span>
+      </div>
+      <div class="identity-row" style="margin-bottom:0">
+        <span class="identity-key">result</span>
+        <span class="identity-val" id="s-result"></span>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-full" id="s-close-btn" style="margin-top:22px;" data-action="do-close">Done. Close this page</button>
+    <p id="s-close-hint" style="display:none;font-size:13px;color:var(--muted);margin-top:16px;">Done — you can now close this tab.</p>
+  </div>
+</div>
+
+<!-- --- ERROR ------------------------------------------ -->
+<div class="screen" id="s-error">
+  <div class="logo-block">
+    <img src="/logo.png" alt="Encedo">
+    <div class="logo-sub">Error</div>
+  </div>
+  <div class="card" style="text-align:center;">
+    <div class="icon-circle icon-circle-warn">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+           stroke="#f39c12" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+    <p style="font-size:16px;font-weight:700;color:var(--amber);margin-bottom:10px;">Attestation failed</p>
+    <p style="font-size:13px;color:var(--muted);line-height:1.7;" id="error-msg">
+      This link may be expired or invalid.
+    </p>
+  </div>
+</div>
+
+<script src="/password-field.js"></script>
+<script type="module" src="/reattest.js"></script>
+</body>
+</html>
