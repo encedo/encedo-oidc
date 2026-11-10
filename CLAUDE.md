@@ -9,7 +9,7 @@
 > | `SECURITY.md` | threat model, trust boundaries (user-signed ID Token, SSO token in the browser), controls, headers, accepted risks |
 > | `README.md` | operator documentation: install, deploy, update, release, backup, endpoints, admin API |
 > | `PRODUCT.md` | product positioning (public, English) |
-> | `../SSO-PLAN.md`, `../REVIEW-2026-09-20.md` | design and review records in the bundle, outside this repo |
+> | `../SSO-PLAN.md`, `../FW13-SDK-PLAN.md` | design records in the bundle, outside this repo |
 >
 > A fact that lives in one of those files is linked from here, not copied.
 
@@ -311,7 +311,7 @@ Open (accepted or delegated):
 - Redis TLS → ops configuration (`rediss://`)
 - **ID Token signed by the user's key** (design): RPs trust it only as the `/token` response — documented in SECURITY.md / README; never "fix" this in code
 - No RS256 (HSM has no RSA) — documented, not fixable
-- 2026-09-20 review: all packages deployed, including per-tenant Redis network + `requirepass` (M13) and enrollment/invite tokens in POST bodies (M16). Report: `../REVIEW-2026-09-20.md`
+- 2026-09-20 review: all packages deployed, including per-tenant Redis network + `requirepass` (M13) and enrollment/invite tokens in POST bodies (M16). The review record itself was retired 2026-11-10; the fixes are the commits `98dc55f`…`8dad09b`.
 
 ---
 
