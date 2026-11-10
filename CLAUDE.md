@@ -381,7 +381,7 @@ Relying-party specifics (Nextcloud `user_oidc`, Carbonio) are **not** kept here 
 
 ## Release Process
 
-Canonical procedure: README §*Releasing*. Versions are semver tags `vX.Y.Z`; `package.json` carries the same number and `/health` reports it as `version` next to `commit`. Current: **v1.3.0** (2026-11-10): re-attestation of the enrolled key through a link for the user (1.2.x: HEM firmware 1.3 only, key attestation, landing).
+Canonical procedure: README §*Releasing*. Versions are semver tags `vX.Y.Z`; `package.json` carries the same number and `/health` reports it as `version` next to `commit`. Current: **v1.2.3** (2026-11-10): re-attestation of the enrolled key through a link for the user, edit-user dialog in two columns (1.2.0: HEM firmware 1.3 only, key attestation; 1.2.1/1.2.2: landing). **1.3.0 is reserved for SAML** — a tag v1.3.0 was cut by mistake on 2026-11-10 for what became 1.2.3.
 
 ```bash
 npm version 1.2.0 --no-git-tag-version && git commit -am "release: v1.2.0"
