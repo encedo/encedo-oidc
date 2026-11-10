@@ -98,11 +98,11 @@ A breach of the Encedo OIDC database exposes nothing that can be used to authent
 
 ## Hardware attestation — proving the key is real
 
-During enrollment, the user's HSM device provides a cryptographic attestation certificate (`genuine` + X.509 `crt`), validated in real-time against Encedo's attestation service. The provider records whether the key is genuinely hardware-backed.
+During enrollment (HEM firmware 1.3), the module signs an attestation statement that names the device and the new key, bound to a one-time challenge from the provider and countersigned by the new key itself (proof of possession). The provider checks that the attested key is the one going into the JWKS and that it was generated inside the module, not imported. On a PPA the statement carries the device certificate, which must chain to the pinned Encedo root and is checked against attest.encedo.com for revocation; an EPA's statement is checked by its signatures (attest.encedo.com does not cover EPA yet). The signed statement is stored with the account as evidence.
 
 This gives organisations a verifiable answer to the question: *"Is this key stored in certified hardware, or could it have been copied?"*
 
-Organisations can enforce policy: only hardware-attested keys can access critical systems.
+Organisations can enforce policy: by default the outcome is recorded (`advisory`); `ATTEST_POLICY=require_hard`, for the whole instance or per user, refuses any key that is not attested by a PPA.
 
 ---
 
@@ -173,7 +173,7 @@ Modern SCADA and ICS platforms increasingly support OpenID Connect for operator 
 - **No token without hardware.** Every authentication requires a physical HSM to sign the token. No exceptions.
 - **No impersonation by the operator.** The server cannot sign on behalf of a user, even with full database access.
 - **No credential exposure.** The database contains only public keys, public certificates, and display data. Nothing that enables authentication without hardware.
-- **Hardware provenance.** Keys are verified as hardware-generated at enrollment time. Attestation records are stored for audit.
+- **Hardware provenance.** At enrollment the module proves the key was generated inside it, with a proof of possession over a fresh challenge. The signed attestation is stored for audit.
 - **Standard protocol.** OpenID Connect Core 1.0 Authorization Code Flow — PKCE, JWKS, UserInfo, discovery, RP-initiated logout — with one deliberate difference: the ID Token is signed by the user's hardware key, so a Relying Party trusts it as the response of the token endpoint, not as a free-floating JWT.
 
 ### Defence in depth
