@@ -683,6 +683,19 @@ curl -s https://oidc.example.com/health   # {"status":"ok","version":"1.1.0","co
 
 `git pull` on `main` works too, but a tag is what the tests gated and what the GitHub Release describes.
 
+#### Upgrading to 1.2.0 (HEM firmware 1.3)
+
+1.2.0 speaks the HEM firmware 1.3 API only. A user whose module still runs older firmware cannot sign in after the upgrade
+(for P-256/384/521 keys the older firmware returns a DER signature, which is refused). Update the modules to 1.3 together
+with the server.
+
+- A key that is still on the module after its firmware update keeps working: same `kid`, same user record, no re-enrollment.
+- Key attestation runs at enrollment only. Existing users keep their old `hw_attested` until they re-enroll; with the default
+  `ATTEST_POLICY=advisory` nothing is refused.
+- New settings, both optional: `ATTEST_POLICY` (`advisory` | `require` | `require_hard`) and `ATTEST_URL`
+  (default `https://attest.encedo.com`). The old `api.encedo.com/attest` check is gone.
+- A new enrollment gives the user a new `kid`; a relying party that caches the JWKS may need a refresh before it accepts it.
+
 ### Releasing
 
 Versions are [semver](https://semver.org/) tags `vX.Y.Z`; `package.json` carries the same number and `/health` reports it.
