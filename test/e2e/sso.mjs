@@ -29,6 +29,17 @@ const BASE   = `http://localhost:${APP_PORT}`;
 const SECRET = 'e2e-secret';
 const H = { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json' };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// A pooled keep-alive socket the server has already closed (Node's 5 s keepAliveTimeout,
+// easily exceeded while the browser starts on a CI runner) fails the next request with
+// UND_ERR_SOCKET before it reaches the app. Retry that once, on a fresh connection.
+const rawFetch = globalThis.fetch;
+globalThis.fetch = async (...args) => {
+  try { return await rawFetch(...args); }
+  catch (e) {
+    if (!['UND_ERR_SOCKET', 'ECONNRESET'].includes(e.cause?.code)) throw e;
+    return rawFetch(...args);
+  }
+};
 const jpost = (p, b, h = H) => fetch(BASE + p, { method: 'POST', headers: h, body: JSON.stringify(b) }).then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
 const jwtPayload = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
 const portOpen = (port) => new Promise(res => { const s = net.connect(port, '127.0.0.1'); s.on('connect', () => { s.destroy(); res(true); }); s.on('error', () => res(false)); });
@@ -309,6 +320,7 @@ try {
 } catch (e) {
   failed = true;
   console.error('\nFAIL:', e.message, e.cause ? `(${e.cause.code ?? e.cause.message})` : '');
+  console.error(e.stack?.split('\n').slice(1, 4).join('\n'));
   if (appOut) console.error('--- app output (tail) ---\n' + appOut);
 } finally {
   await closeBrowser();
