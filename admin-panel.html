@@ -75,6 +75,8 @@ html.light .page-title{color:var(--text)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;animation:none}
 .btn-ghost{background:transparent;border:1px solid var(--dim);color:var(--soft)}
 .btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-ghost:disabled:hover{border-color:var(--dim);color:var(--soft)}
 .btn-danger{background:transparent;border:1px solid rgba(255,77,114,.25);color:var(--red)}
 .btn-danger:hover{background:rgba(255,77,114,.08)}
 .btn-xs{padding:4px 10px;font-size:11px}
@@ -124,6 +126,10 @@ html.light .client-card-name{color:var(--text)}
 .overlay.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--rim);border-radius:20px;width:460px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.4);animation:modalIn .18s ease}
 .modal-wide{width:540px}
+.modal-2col{width:1000px}
+.modal-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 36px}
+.modal-cols>.modal-col{min-width:0}
+@media (max-width:900px){.modal-cols{grid-template-columns:1fr}}
 @keyframes modalIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:var(--surface);z-index:1}
 .modal-title{font-size:16px;font-weight:700;color:var(--white)}
@@ -540,12 +546,13 @@ html.light .client-check-name{color:var(--text)}
 
 <!-- EDIT USER -->
 <div class="overlay" id="modal-edit-user">
-  <div class="modal modal-wide">
+  <div class="modal modal-2col">
     <div class="modal-header">
       <div class="modal-title">Edit user</div>
       <button class="modal-close" data-action="close-modal" data-modal="modal-edit-user">&#215;</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body modal-cols">
+     <div class="modal-col">
       <div class="section-label">Identity</div>
       <div class="field">
         <label class="field-label">SUB (UUID)</label>
@@ -575,6 +582,13 @@ html.light .client-check-name{color:var(--text)}
         </div>
       </div>
       <div class="divider"></div>
+      <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
+      <div class="clients-list" id="eu-clients-list">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
+      </div>
+      <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to</div>
+     </div>
+     <div class="modal-col">
       <div class="section-label">Hardware</div>
       <div class="field">
         <label class="field-label">HSM URL</label>
@@ -592,9 +606,9 @@ html.light .client-check-name{color:var(--text)}
       <div class="field">
         <label class="field-label">Key attestation</label>
         <div class="id-badge" id="eu-attest" style="word-break:break-all;white-space:normal">--</div>
-        <div class="field-hint" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-xs" id="eu-reattest-btn" style="display:none" data-action="request-reattest">Re-attestation link</button>
-          <span>The user confirms the enrolled key on the module; the key does not change</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px">
+          <span class="field-hint" style="margin:0">The user confirms the enrolled key on the module; the key does not change</span>
+          <button class="btn btn-ghost btn-xs" id="eu-reattest-btn" style="display:none;flex-shrink:0" data-action="request-reattest">Re-attestation link</button>
         </div>
       </div>
       <div class="field">
@@ -608,12 +622,6 @@ html.light .client-check-name{color:var(--text)}
         <div class="field-hint">Checked at this user's next enrollment; the current key is not affected</div>
       </div>
       <div class="divider"></div>
-      <div class="section-label" style="margin-bottom:10px">Allowed clients</div>
-      <div class="clients-list" id="eu-clients-list">
-        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);padding:10px 0">loading...</div>
-      </div>
-      <div class="field-hint" style="margin-top:6px">Check which OIDC clients this user may authenticate to</div>
-      <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Custom claims (userinfo)</div>
       <label class="client-check" style="margin-bottom:10px">
         <input type="checkbox" id="eu-hsm-url-toggle">
@@ -626,6 +634,7 @@ html.light .client-check-name{color:var(--text)}
       <div id="eu-claims-list" style="margin-bottom:8px"></div>
       <button class="btn btn-ghost btn-xs" data-action="add-claim-row">Add claim</button>
       <div class="field-hint" style="margin-top:6px">Custom key/value claims returned by /userinfo endpoint</div>
+     </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" data-action="close-modal" data-modal="modal-edit-user">Cancel</button>

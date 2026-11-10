@@ -28,7 +28,15 @@ let _usersCache = [];
 let _clientsCache = [];
 let _editClientId = null;
 let _rotateId = null;
-let _mailEnabled = false;   // from /health.mail_enabled -- gates the "Email link" button
+let _mailEnabled = false;   // from /health.mail_enabled -- gates the "Email link" buttons
+const NO_SMTP = 'SMTP is not configured on this server (SMTP_HOST, MAIL_FROM)';
+// Mail buttons stay in place and are disabled with the reason, never hidden:
+// a missing button reads as a missing feature.
+function setMailButton(btn, reason) {
+  btn.style.display = '';
+  btn.disabled = !!reason;
+  btn.title = reason || '';
+}
 let _inviteToken = null;    // token of the invite shown in the invite-link modal
 
 /* -- helpers -- */
@@ -347,7 +355,7 @@ async function openEditUser(idx) {
   $('eu-lastname').value        = parts.slice(1).join(' ') || '';
   $('eu-email').value           = u.email || '';
   _setEmailStatus(u.email_verified === true || u.email_verified === 'true');   // cached, may be stale
-  $('eu-verify-btn').style.display = _mailEnabled ? '' : 'none';
+  setMailButton($('eu-verify-btn'), _mailEnabled ? '' : NO_SMTP);
   $('eu-sso').checked = u.sso !== false;
   // email_verified can flip OUTSIDE the panel (the user clicks the emailed link),
   // so the cache is often stale here -- refresh this one field from the server.
@@ -472,7 +480,7 @@ async function requestReattest() {
   try {
     const data = await api(`/admin/users/${encodeURIComponent(sub)}/reattest`, { method: 'POST' });
     $('reattest-url').textContent = data.reattest_url;
-    $('reattest-email-btn').style.display = _mailEnabled && $('eu-email').value.trim() ? '' : 'none';
+    setMailButton($('reattest-email-btn'), !_mailEnabled ? NO_SMTP : !$('eu-email').value.trim() ? 'This user has no email address' : '');
     $('reattest-email-btn').dataset.sub = sub;
     openModal('modal-reattest');
   } catch (e) { toast(e.message, 'err'); }
@@ -512,12 +520,8 @@ async function submitInviteUser() {
     // Token for the optional "Email link" action -- parse it out of the URL fragment.
     _inviteToken = (data.invite_url.split('#token=')[1] || '').split('&')[0] || null;
     const emailBtn = $('inv-email-btn');
-    if (_mailEnabled && _inviteToken) {
-      emailBtn.style.display = '';
-      emailBtn.textContent = `✉ Email link to ${email}`;
-    } else {
-      emailBtn.style.display = 'none';
-    }
+    emailBtn.textContent = `✉ Email link to ${email}`;
+    setMailButton(emailBtn, !_mailEnabled ? NO_SMTP : !_inviteToken ? 'No invite token' : '');
     openModal('modal-invite-link');
   } catch (e) { toast(e.message, 'err'); }
 }
