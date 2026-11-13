@@ -54,10 +54,22 @@ The browser (Trusted App, `signin.js`) communicates with the HSM directly over H
     |-- POST /authorize/login -->|                       |
     |      {sub, client_id,      |                       |
     |       code_challenge}      |                       |
-    |                            |-- build signing_input |
+    |                            |-- claims (no auth_*)  |
     |                            |-- store pending:{sid} |
-    |<-- {session_id,            |                       |
-    |     signing_input} --------|                       |
+    |<-- {session_id, claims,    |                       |
+    |     attest{nonce,aud,kid}, |                       |
+    |     loa{required}} --------|                       |
+    |                            |                       |
+    |-- POST /api/system/config/attestation (token) ---->|  FW 1.3: + auth block
+    |<-- attestation JWT (device-signed login context) --|  (mth, age, org, actx)
+    |                            |                       |
+    |-- POST /authorize/attest ->|                       |
+    |      {session_id,          |-- verify offline vs   |
+    |       attestation}         |   enrolled device     |
+    |                            |-- org = OP origin?    |
+    |                            |-- level >= required?  |
+    |                            |-- auth_time/amr/acr   |
+    |<-- {signing_input} --------|                       |
     |                            |                       |
     |-- POST /api/crypto/exdsa/sign -------------------->|
     |<-- signature --------------------------------------|
@@ -221,9 +233,12 @@ browser (OP origin localStorage)           OP server                      HEM
    ├─ accounts screen ── click ─────────►  /authorize/login {sub, sso_iat}
    │                                       policy: SSO_ENABLED ∧ client.sso ∧ user.sso
    │                                               ∧ age ≤ SSO_MAX ∧ ¬prompt=login ∧ age ≤ max_age
-   │                       ◄── signing_input (auth_time = iat, amr = [hwk,sso]) ──┤
+   │                       ◄── claims + attest challenge (sso.used) ─────────────┤
    ├─ getVersion (reachable?) ───────────────────────────────────────────────────►
-   ├─ exdsaSign(cached token) ──────────────────────────────────────────────────►  401 → drop entry, fresh sign-in
+   ├─ attest(cached token) ─────────────────────────────────────────────────────►  401 → drop entry, fresh sign-in
+   ├─ /authorize/attest ───────────────►  device age > SSO_MAX / max_age → sso_stale → fresh sign-in
+   │                       ◄── signing_input (auth_time = now − age, amr [...,sso], acr)
+   ├─ exdsaSign(cached token) ──────────────────────────────────────────────────►
    └─ /authorize/confirm ──────────────►  code → redirect
 ```
 The token never leaves the browser. `/logout` serves `logout.html` + `logout.js`: when the browser still holds a session for the signed-out user, the page asks whether to end that session too (OpenID Connect RP-Initiated Logout 1.0 §2) and removes the entries only on *Yes*; either answer then follows the permitted post-logout redirect. With nothing kept it redirects at once.
@@ -300,10 +315,12 @@ client:{client_id}       Hash
   access_token_ttl       seconds (integer string)
   created_at             ISO 8601
 
-pending:{session_id}     JSON  TTL 120s
+pending:{session_id}     JSON  TTL 180s
   sub, kid, client_id, scope, nonce
-  redirect_uri, code_challenge, code_challenge_method
-  signing_input, state, auth_time, amr
+  redirect_uri, code_challenge, state
+  header, claims (without auth_time/amr/acr), attest {nonce, aud}
+  required (level), max_age, sso, sso_auth_time
+  signing_input (null until /authorize/attest), loa
 
 code:{code}              JSON  TTL 60s
   sub, client_id, scope, nonce

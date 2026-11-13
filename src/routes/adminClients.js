@@ -3,6 +3,7 @@ import redis from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
 import { validate, vClientName, vTtl } from '../middleware/validate.js';
 import { generateClientSecret, generateClientId, validateRedirectUris } from '../services/client.js';
+import { parseLoa, validLoa } from '../services/loa.js';
 
 const router = Router();
 
@@ -20,6 +21,7 @@ function deserialize(raw) {
     public:           raw.public === 'true',
     sso:              raw.sso !== 'false',      // default true
     allow_any_user:   raw.allow_any_user === 'true',
+    min_loa:          parseLoa(raw.min_loa),   // 0..3, default 0
     id_token_ttl:     parseInt(raw.id_token_ttl)     || 3600,
     access_token_ttl: parseInt(raw.access_token_ttl) || 3600,
   };
@@ -64,6 +66,7 @@ router.post('/', async (req, res, next) => {
       public: isPublic = false,
       sso = true,
       allow_any_user = false,
+      min_loa = 0,
       id_token_ttl = 3600,
       access_token_ttl = 3600,
     } = req.body ?? {};
@@ -95,6 +98,9 @@ router.post('/', async (req, res, next) => {
     }
     if (typeof allow_any_user !== 'boolean') {
       return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
+    }
+    if (!validLoa(min_loa)) {
+      return res.status(400).json({ error: 'validation_error', error_description: 'min_loa must be 0, 1, 2 or 3' });
     }
 
     const uriErr = validateRedirectUris(redirect_uris);
@@ -132,6 +138,8 @@ router.post('/', async (req, res, next) => {
       // Open client: ANY enrolled user may authenticate (skips the per-user
       // clients[] allowlist). Off by default -- admin opts in explicitly.
       allow_any_user:   String(allow_any_user),
+      // The lowest level of assurance a sign-in to this RP must reach (src/services/loa.js).
+      min_loa:          String(min_loa),
       id_token_ttl:     String(id_token_ttl),
       access_token_ttl: String(access_token_ttl),
       created_at:       new Date().toISOString(),
@@ -218,6 +226,13 @@ router.patch('/:id', async (req, res, next) => {
         return res.status(400).json({ error: 'validation_error', error_description: 'allow_any_user must be a boolean' });
       }
       updates.allow_any_user = String(req.body.allow_any_user);
+    }
+
+    if (req.body.min_loa !== undefined) {
+      if (!validLoa(req.body.min_loa)) {
+        return res.status(400).json({ error: 'validation_error', error_description: 'min_loa must be 0, 1, 2 or 3' });
+      }
+      updates.min_loa = String(req.body.min_loa);
     }
 
     if (req.body.id_token_ttl !== undefined) {

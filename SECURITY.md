@@ -41,6 +41,16 @@ Signing algorithms are those the HSM supports: `EdDSA` (Ed25519) and `ES256/ES38
 ### kid is session-locked
 `POST /authorize/login` stores the user's current `kid` in the pending session. `POST /authorize/confirm` rejects any mismatch — prevents key substitution between the two calls.
 
+### Login context and level of assurance (HEM FW 1.3, DEV-511)
+The ID Token's `auth_time`, `amr` and `acr` come from the device, not from the page. `/authorize/login` returns the claims without them and a fresh challenge; the page asks the HEM for an attestation with the token it signs with (`kid` named, so the token must be `keymgmt:use:<kid>`), the device adds the signed `auth` block, and `POST /authorize/attest` checks it **offline**: device signature, nonce, aud, kid, and that the attesting device key is the one attested at enrollment (`attest_jwt`). Only then is the signing input built — one login context per session.
+
+- **Phishing:** the block carries `org`, the Origin of the HEM login request. A login made on another site is refused at any level (`origin_mismatch`, logged): a page that drives the user's HEM for itself cannot turn that into a sign-in here. The Origin is what the browser sends (as in WebAuthn); malware on the user's computer is out of scope. A login without an Origin stays at level ≤ 1.
+- **Levels** (`urn:encedo:loa:0..3`, `src/services/loa.js`): 0 signature only; 1 context from the enrolled device; 2 + user verification and this origin; 3 + a PPA verified at enrollment and, by phone, PIN / fingerprint at this approval with the app key in hardware. Required = max(client, user, `acr_values`); below it the sign-in is refused (`insufficient_assurance`).
+- **What the phone says is the app's statement.** `actx` (lock, `uvm`, `hw`) is signed by the app and copied by the device, which does not interpret it; `hw` names where the app's storage key lives, while the pairing key is decrypted into app memory to sign. The `ctx` requirement the page sends (`uv=pin`) is a request to the app, not bound by the device.
+- **Freshness from the device:** `auth_time` = now − `age`, where `age` comes from the device uptime; a kept SSO session is judged by that age, not by the `sso_iat` the page reports.
+- **Revocation lag:** the device's genuineness is the enrollment verdict (attest.encedo.com then); there is no per-sign-in online check yet, so a device revoked later keeps level 3 until it is re-attested. A periodic per-device re-check is planned.
+- The levels are this provider's; they are not advertised as `phr` / `phrh` until a security review.
+
 ---
 
 ## Authentication Controls
@@ -57,7 +67,7 @@ After an authorization the sign-in page may keep the HEM-issued token for the us
 - The token is a bearer credential to sign with that key until it expires. It is worth nothing without network access to the HEM, and it **never reaches the server** — the page reports only the authorization time (`sso_iat`); a server holding the token could sign without the device, which would break the core guarantee.
 - Lifetime is decided by the device/user (the page suggests `SSO_SUGGEST_SECONDS`, default 8 h; the user may change it on the phone). The server refuses a session older than `SSO_MAX_SECONDS` (8 h) regardless.
 - Policy is a conjunction: `SSO_ENABLED`, `client.sso`, `user.sso`, the browser tick, and the RP's `prompt`/`max_age`. Any refusal turns the attempt into a normal interactive sign-in; the reason is reported to the page.
-- `auth_time` in the ID Token is the original HEM authorization; `amr` distinguishes `["hwk"]` from `["hwk","sso"]`, so an RP can require freshness on its own.
+- `auth_time` in the ID Token is the original HEM authorization, from the device's own `age` of the login (see *Login context*); `amr` ends in `"sso"` for a reused session, so an RP can require freshness on its own.
 - Ending a session: token expiry, `/logout` on the provider (its page, `logout.html` + `logout.js`, asks whether to sign out of Encedo as well when the browser still holds a session for the signed-out user — RP-Initiated Logout 1.0 §2 — and clears the entries only on “Yes”; with no session kept it redirects at once), “Forget all sessions in this browser”, or the device refusing the token (unplugged/rebooted — the HEM issues no long-lived state to the phone app).
 - Exposure: an XSS on the provider origin could read the token — the same threat as a session cookie without HttpOnly; the CSP (no inline script, no inline handlers) is the control. A stolen token is usable only while the HEM stays reachable to the thief.
 

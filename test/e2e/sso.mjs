@@ -10,7 +10,8 @@
 // Flow A: full sign-in to client A (password path) with "remember" -> the
 //         page caches the HEM token the device issued for 8 h.
 // Flow B: sign-in to client B is the accounts screen + one click; the
-//         id_token carries amr [hwk, sso] and auth_time of flow A.
+//         id_token carries amr [..., sso] and auth_time of flow A (from the
+//         device's login context: the HEM attests every sign-in, DEV-511).
 // Flow C: RP-initiated logout on the OP clears the session in the browser.
 // Fallback: a token the device no longer accepts drops the session and turns
 //         into a fresh, interactive sign-in.
@@ -220,8 +221,11 @@ try {
   const codeA = hem.state.callbacks.at(-1).code; assert.ok(codeA); assert.equal(hem.state.callbacks.at(-1).state, 'st-A');
   const tokA = await exchange(A, codeA); assert.equal(tokA.status, 200);
   const pA = jwtPayload(tokA.body.id_token);
-  assert.deepEqual(pA.amr, ['hwk']); assert.equal(pA.email, 'k@e2e.test');
-  console.log('   ok: amr', pA.amr, 'auth_time', pA.auth_time, 'entry until', new Date(entry.exp * 1000).toISOString());
+  // DEV-511: the HEM attested the login (passphrase, this origin, the device
+  // attested at enrollment) -> level 3, amr from the device's login context.
+  assert.deepEqual(pA.amr, ['hwk', 'pwd', 'mfa']); assert.equal(pA.acr, 'urn:encedo:loa:3'); assert.equal(pA.email, 'k@e2e.test');
+  assert.ok(hem.state.attestations >= 3, 'enrollment, re-attestation and this sign-in asked the device');
+  console.log('   ok: amr', pA.amr, 'acr', pA.acr, 'auth_time', pA.auth_time, 'entry until', new Date(entry.exp * 1000).toISOString());
 
   // ---- Flow B: one click into B --------------------------------------------
   console.log('B: sign-in to App B from the accounts screen');
@@ -238,8 +242,9 @@ try {
   const codeB = hem.state.callbacks.at(-1).code; assert.equal(hem.state.callbacks.at(-1).state, 'st-B');
   const tokB = await exchange(B, codeB); assert.equal(tokB.status, 200);
   const pB = jwtPayload(tokB.body.id_token);
-  assert.deepEqual(pB.amr, ['hwk', 'sso']);
-  assert.equal(pB.auth_time, authA.iat, 'auth_time is the original HEM authorization');
+  assert.deepEqual(pB.amr, ['hwk', 'pwd', 'mfa', 'sso']); assert.equal(pB.acr, 'urn:encedo:loa:3');
+  // auth_time from the device's age of the kept token, not from what the page stored
+  assert.ok(Math.abs(pB.auth_time - authA.iat) <= 2, `auth_time is the original HEM authorization (${pB.auth_time} vs ${authA.iat})`);
   console.log('   ok: amr', pB.amr, 'auth_time', pB.auth_time);
 
   // ---- prompt=login / max_age refuse the session --------------------------

@@ -36,6 +36,8 @@ export async function startFakeHem({ keys }) {
     devKeys: await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']),
     spkB64: null,
     revoked: false,     // true = every issued token is refused (device rebooted / unplugged)
+    boot: Math.floor(Date.now() / 1000) - 1000,   // "power-up" time: token upt = now - boot
+    ageShift: 0,        // seconds added to every login age (an old SSO token)
     log: [],            // { path, method, body, auth }
     issued: [],         // tokens issued: { scope, iat, exp }
     callbacks: [],      // RP callbacks received: URL search params
@@ -64,7 +66,7 @@ export async function startFakeHem({ keys }) {
   // POST /api/system/config/attestation, built as the firmware builds it
   // (attestation_jwt_sign + hem_pop_sig): ES256 by the device key, PoP over
   // prefix | aud | pubkey | nonce by the attested key itself.
-  async function attestationJwt(key, { nonce, aud }) {
+  async function attestationJwt(key, { nonce, aud, pop_args: popArgs }, token) {
     const devPriv = await crypto.subtle.importKey('pkcs8', Buffer.from(PKI.devicePkcs8, 'base64'), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
     const jwk = await crypto.subtle.exportKey('jwk', devPriv);
     const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
@@ -74,8 +76,13 @@ export async function startFakeHem({ keys }) {
     const iat = Math.floor(Date.now() / 1000);
     const claims = { iss: 'https://attest.encedo.com', aud, iat, exp: iat + 300, nonce, jti: crypto.randomUUID(),
       device: { hwv: 'PPA e2e', fwv: 'Encedo nGINE FW v1.3.0', blv: 'bl', assurance: 'hard', cc_mode: 0, policy: [] },
-      key: { kid: key.kid, type: 'ED25519', modes: ['ExDSA'], pubkey: { primary: b64(pub) }, properties: { privatekey: true, derived: false }, created: iat, updated: iat },
-      pop: { signature: b64(crypto.sign(null, canon, key.privateKey)) } };
+      key: { kid: key.kid, type: 'ED25519', modes: ['ExDSA'], pubkey: { primary: b64(pub) }, properties: { privatekey: true, derived: false }, created: iat, updated: iat } };
+    if (popArgs) claims.pop = { signature: b64(crypto.sign(null, canon, key.privateKey)) };
+    // DEV-511: the login context of the token the request carried.
+    if (token) {
+      claims.auth = { v: 1, iat: token.iat, age: Math.max(0, iat - token.iat) + state.ageShift, mth: 'pwd', tts: true,
+        ...(token.org ? { org: token.org } : {}) };
+    }
     const input = `${b64url(Buffer.from(JSON.stringify(header)))}.${b64url(Buffer.from(JSON.stringify(claims)))}`;
     const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, devPriv, Buffer.from(input));
     return `${input}.${b64url(new Uint8Array(sig))}`;
@@ -109,7 +116,11 @@ export async function startFakeHem({ keys }) {
     if (path === '/api/auth/token' && req.method === 'POST') {
       const { ok, payload } = await verifyEjwt(body.auth);
       if (!ok) return json(res, 401, { error: 'bad signature' });
-      const tok = { scope: payload.scope, iat: payload.iat, exp: payload.exp, sub: 'user' };
+      // FW 1.3 (DEV-511): the login context goes into the token - the request
+      // Origin, the device uptime at the login, the context version.
+      const now = Math.floor(Date.now() / 1000);
+      const tok = { scope: payload.scope, iat: payload.iat, exp: payload.exp, sub: 'U', upt: now - state.boot, v: 1,
+        ...(req.headers.origin ? { org: req.headers.origin } : {}) };
       state.issued.push(tok);
       return json(res, 200, { token: tokenJwt(tok) });
     }
@@ -131,8 +142,9 @@ export async function startFakeHem({ keys }) {
       const key = state.keys.find(k => k.kid === body?.kid);
       if (!key) return json(res, 400, undefined);
       if (!bearerOk(req, `keymgmt:use:${key.kid}`)) return json(res, 403, undefined);
-      if (!body.pop_args || Object.keys(body.pop_args).length) return json(res, 400, undefined);   // signature PoP: {}
-      return json(res, 200, { attestation: await attestationJwt(key, body) });
+      if (body.pop_args && Object.keys(body.pop_args).length) return json(res, 400, undefined);   // signature PoP {} or none (sign-in)
+      state.attestations = (state.attestations ?? 0) + 1;
+      return json(res, 200, { attestation: await attestationJwt(key, body, parseJwt(req.headers.authorization.slice(7))) });
     }
     if (path === '/api/system/config/attestation' && req.method === 'GET') {
       if (!bearerOk(req, null)) return json(res, 401, undefined);

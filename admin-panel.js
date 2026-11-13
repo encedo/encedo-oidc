@@ -366,6 +366,7 @@ async function openEditUser(idx) {
   $('eu-key-type').textContent  = u.key_type || 'EdDSA';
   $('eu-attest').textContent    = attestSummary(u);
   $('eu-attest-policy').value   = u.attest_policy || '';
+  $('eu-min-loa').value         = String(u.min_loa ?? 0);
   $('eu-reattest-btn').style.display = u.kid ? '' : 'none';
   $('eu-pubkey-preview').textContent = u.pubkey
     ? btoa(u.pubkey.match(/../g).map(h=>String.fromCharCode(parseInt(h,16))).join(''))
@@ -444,6 +445,7 @@ async function submitEditUser() {
     clients  : [...document.querySelectorAll('#eu-clients-list input:checked')].map(el => el.dataset.cid),
     sso      : $('eu-sso').checked,
     attest_policy: $('eu-attest-policy').value,
+    min_loa  : parseInt($('eu-min-loa').value, 10) || 0,
   };
   if (!updates.username) return toast('Username required', 'err');
   if (!updates.hsm_url)  return toast('HSM URL required', 'err');
@@ -798,6 +800,7 @@ function openAddClient() {
   $('c-public').classList.remove('on'); // confidential by default -- secret required at /token
   $('c-sso').classList.add('on');       // SSO allowed by default
   $('c-open').classList.remove('on');   // open access off by default -- explicit opt-in
+  $('c-min-loa').value = '0';           // no minimum level by default
   initScopeTags('c-scopes');
   openModal('modal-add-client');
   setTimeout(() => $('c-name').focus(), 60);
@@ -812,13 +815,14 @@ async function submitAddClient() {
   const sso      = $('c-sso').classList.contains('on');
   const pkce   = isPublic || $('c-pkce').classList.contains('on');   // a public client is PKCE-only
   const allow_any_user = $('c-open').classList.contains('on');
+  const min_loa = parseInt($('c-min-loa').value, 10) || 0;
   const id_token_ttl     = parseInt($('c-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('c-at-ttl').value) || 3600;
   if (!name)        return toast('Name required', 'err');
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     const c = await api('/admin/clients', {method:'POST', body:JSON.stringify({
-      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, min_loa, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-add-client');
     $('rc-id').textContent = c.client_id;
@@ -844,6 +848,7 @@ function openEditClient(idx) {
   $('ec-sso').classList.toggle('on', c.sso !== false);
   if (c.allow_any_user) $('ec-open').classList.add('on');
   else $('ec-open').classList.remove('on');
+  $('ec-min-loa').value = String(c.min_loa ?? 0);
   initScopeTags('ec-scopes');
   openModal('modal-edit-client');
   setTimeout(() => $('ec-name').focus(), 60);
@@ -858,13 +863,14 @@ async function submitEditClient() {
   const sso      = $('ec-sso').classList.contains('on');
   const pkce   = isPublic || $('ec-pkce').classList.contains('on');
   const allow_any_user = $('ec-open').classList.contains('on');
+  const min_loa = parseInt($('ec-min-loa').value, 10) || 0;
   const id_token_ttl     = parseInt($('ec-id-ttl').value) || 3600;
   const access_token_ttl = parseInt($('ec-at-ttl').value) || 3600;
   if (!name)        return toast('Name required', 'err');
   if (!uris.length) return toast('At least one redirect URI required', 'err');
   try {
     await api(`/admin/clients/${_editClientId}`, {method:'PATCH', body:JSON.stringify({
-      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, id_token_ttl, access_token_ttl
+      name, redirect_uris:uris, post_logout_redirect_uris, scopes, pkce, public: isPublic, sso, allow_any_user, min_loa, id_token_ttl, access_token_ttl
     })});
     closeModal('modal-edit-client');
     toast('Client updated');

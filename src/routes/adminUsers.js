@@ -16,6 +16,8 @@ import { validate, vEmail, vUrl, vUsername, vDisplayName, vUuid, vClaimKey, vOpt
 
 const DEFAULT_KEY_TYPE = 'Ed25519';
 
+import { parseLoa, validLoa } from '../services/loa.js';
+
 const router = Router();
 
 function deserialize(raw) {
@@ -27,6 +29,7 @@ function deserialize(raw) {
     custom_claims:        JSON.parse(rest.custom_claims ?? '{}'),
     hsm_url_in_userinfo:  rest.hsm_url_in_userinfo !== '0', // default true
     sso:                  rest.sso !== 'false',              // default true: browser may reuse a HEM authorization
+    min_loa:              parseLoa(rest.min_loa),            // 0..3: this user's sign-ins must reach at least this level
   };
 }
 
@@ -223,6 +226,15 @@ router.patch('/:sub', async (req, res, next) => {
           error_description: `attest_policy must be '' or one of: ${ATTEST_POLICIES.join(', ')}` });
       }
       updates.attest_policy = p;
+    }
+
+    // Per-user minimum level of assurance; the effective one is the higher of
+    // the user's and the client's (and the RP's acr_values). See services/loa.js.
+    if (req.body.min_loa !== undefined) {
+      if (!validLoa(req.body.min_loa)) {
+        return res.status(400).json({ error: 'validation_error', error_description: 'min_loa must be 0, 1, 2 or 3' });
+      }
+      updates.min_loa = String(req.body.min_loa);
     }
 
     if (Object.keys(updates).length === 0) {

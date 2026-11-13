@@ -22,7 +22,8 @@ HEM SDK = the `hem-sdk-js/` submodule: `README.md`, `EXAMPLES.md`, `hem-sdk.brow
 
 ### Backend (`src/`) — 100%
 - `GET`/`POST /authorize` — OIDC param validation, serves `signin.html` (POST → 303 to the GET form so signin.js reads the params from the URL); `prompt=none` → `login_required` (the OP has no session)
-- `POST /authorize/login` — user lookup (by `sub` or `username`), builds `signing_input`, Redis session TTL 120s
+- `POST /authorize/login` — user lookup (by `sub` or `username`), claims without `auth_time`/`amr`/`acr`, attestation challenge, required level (`min_loa` client/user, `acr_values`); Redis session TTL 180s
+- `POST /authorize/attest` — the HEM login attestation (FW 1.3 DEV-511, `auth` block) checked offline against the enrolled device (`attest_jwt`); refuses `origin_mismatch` / `insufficient_assurance` / `sso_stale`; builds `signing_input` with `auth_time` (now − device age), `amr`, `acr` `urn:encedo:loa:N`. Levels: `src/services/loa.js`
 - `POST /authorize/confirm` — Ed25519 verify, assembles JWT, emits code
 - `POST /token` — client_secret ALWAYS for confidential clients (Basic or POST) + PKCE S256 when the code has a challenge; `public=true` clients are PKCE-only. `Cache-Control: no-store`. Returns pre-signed `id_token` + `access_token`
 - `GET/POST /userinfo` — Bearer token
@@ -287,7 +288,8 @@ doCancelMobile()
   else → showPinScreen() [pendingAfterPin='use']
 
 finalizeSign(useToken, kid, label)
-  → POST /authorize/login → { session_id, signing_input }
+  → POST /authorize/login → { session_id, kid, claims, attest, loa }
+  → hem.attest(useToken, { nonce, aud, kid }) → POST /authorize/attest → { signing_input }
   → hem.exdsaSign(useToken, kid, signing_input) → signature (base64url)
   → POST /authorize/confirm → { redirect_url }
   → countdown 5s → window.location.href = redirect_url

@@ -308,3 +308,167 @@ test('re-attestation: a re-enrollment voids the link; no link without an enrolle
   const mail = await call('POST', `/admin/users/${u.sub}/reattest/send-email`);
   assert.equal(mail.status, 409); assert.equal(mail.body.error, 'mail_disabled', 'no SMTP in this test');
 });
+
+// --- sign-in: the HEM login context (FW 1.3, DEV-511) ----------------------------
+// The page asks the HEM for an attestation over the /authorize/login challenge
+// with the token it signs with; the device adds the `auth` block. Levels and
+// refusals: src/services/loa.js and /authorize/attest in src/routes/oidc.js.
+
+/** An attestation at sign-in: device only plus the key block, no PoP, with `auth`. */
+async function loginAttestation(key, { nonce, aud }, auth, { otherDevice = false } = {}) {
+  const priv = otherDevice
+    ? (await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign'])).privateKey
+    : await crypto.subtle.importKey('pkcs8', Buffer.from(PKI.devicePkcs8, 'base64'), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
+  const jwk = await crypto.subtle.exportKey('jwk', priv);
+  const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'), Buffer.from(jwk.y, 'base64url')]);
+  const header = { alg: 'ES256', typ: 'encedo-attest+jwt', kid: crypto.createHash('sha1').update(point).digest('hex'),
+    jwk: { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y } };
+  const iat = Math.floor(Date.now() / 1000);
+  const body = { iss: 'https://attest.encedo.com', aud, iat, exp: iat + 300, nonce, jti: crypto.randomUUID(),
+    device: { hwv: 'PPA rev 2.2', fwv: 'Encedo nGINE FW v1.3.0', blv: 'bl', assurance: 'hard', cc_mode: 0, policy: [] },
+    key: { kid: key.kid, type: key.hemType, modes: ['ExDSA'], pubkey: { primary: b64(key.pub) }, properties: { privatekey: true, derived: false }, created: iat, updated: iat },
+    ...(auth ? { auth: { v: 1, iat: iat - (auth.age ?? 0), tts: true, ...auth } } : {}) };
+  const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(body))}`;
+  const sig = Buffer.from(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, priv, Buffer.from(input)));
+  return `${input}.${b64url(sig)}`;
+}
+const jwtBody = (t) => JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString());
+const AKID = '00112233445566778899aabbccddeeff';
+
+let loaClient;
+async function loaSetup({ attested = true } = {}) {
+  clearRateLimits();
+  if (!loaClient) loaClient = (await call('POST', '/admin/clients', { name: 'LoA RP', redirect_uris: ['https://loa/cb'], scopes: ['openid'], pkce: false, allow_any_user: true })).body;
+  const key = genKey();
+  const user = await addUser();
+  const r = await enroll(user, key, attested ? async (chal) => ({ attestation: await attestToken(key, chal), crt: CRT }) : null);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  return { key, sub: user.sub };
+}
+const loaLogin = (sub, extra = {}) => call('POST', '/authorize/login', { sub, client_id: loaClient.client_id, redirect_uri: 'https://loa/cb',
+  response_type: 'code', scope: 'openid', nonce: 'n', ...extra });
+const loaAttest = (login, attestation) => call('POST', '/authorize/attest', { session_id: login.body.session_id, ...(attestation ? { attestation } : {}) });
+
+test('sign-in context: passphrase on an attested PPA from this origin is level 3; the ID Token carries it', opt, async () => {
+  const { key, sub } = await loaSetup();
+  assert.equal((await getUser(sub)).attest_status, 'verified');
+  const login = await loaLogin(sub);
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+  assert.equal(login.body.signing_input, undefined, 'nothing to sign before the login context');
+  assert.deepEqual(login.body.loa, { required: 0 });
+  assert.equal(login.body.attest.kid, key.kid);
+  assert.equal(login.body.claims.sub, sub);
+
+  const att = await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 3, org: BASE });
+  const ctx = await loaAttest(login, att);
+  assert.equal(ctx.status, 200, JSON.stringify(ctx.body));
+  const p = jwtBody(ctx.body.signing_input);
+  assert.equal(p.acr, 'urn:encedo:loa:3');
+  assert.deepEqual(p.amr, ['hwk', 'pwd', 'mfa']);
+  const now = Math.floor(Date.now() / 1000);
+  assert.ok(Math.abs(p.auth_time - (now - 3)) <= 2, `auth_time from the device age: ${p.auth_time} vs ${now - 3}`);
+  assert.equal((await loaAttest(login, att)).status, 400, 'one login context per session');
+
+  const conf = await call('POST', '/authorize/confirm', { session_id: login.body.session_id, signature: b64url(key.sign(ctx.body.signing_input)) });
+  assert.equal(conf.status, 200, JSON.stringify(conf.body));
+  const code = new URL(conf.body.redirect_url).searchParams.get('code');
+  const tok = await call('POST', '/token', { grant_type: 'authorization_code', code, redirect_uri: 'https://loa/cb', client_id: loaClient.client_id, client_secret: loaClient.client_secret });
+  assert.equal(tok.status, 200);
+  assert.equal(jwtBody(tok.body.id_token).acr, 'urn:encedo:loa:3');
+
+  const disco = (await call('GET', '/.well-known/openid-configuration')).body;
+  assert.deepEqual(disco.acr_values_supported, ['urn:encedo:loa:0', 'urn:encedo:loa:1', 'urn:encedo:loa:2', 'urn:encedo:loa:3']);
+  assert.ok(disco.claims_supported.includes('acr'));
+});
+
+test('sign-in context: a login started on another site is refused, and the session is gone', opt, async () => {
+  const { key, sub } = await loaSetup();
+  const login = await loaLogin(sub);
+  const r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 1, org: 'https://evil.example' }));
+  assert.equal(r.status, 403); assert.equal(r.body.error, 'origin_mismatch');
+  assert.match(r.body.error_description, /evil\.example/);
+  const conf = await call('POST', '/authorize/confirm', { session_id: login.body.session_id, signature: b64url(key.sign('x')) });
+  assert.equal(conf.status, 400, 'nothing left to confirm');
+});
+
+test('sign-in context: phone levels from actx (uvm, lock, hw) and the required level', opt, async () => {
+  const { key, sub } = await loaSetup();
+  const level = async (actx, extra = {}) => {
+    const login = await loaLogin(sub, extra);
+    const r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'ext', age: 5, akid: AKID, org: BASE, actx }));
+    return r.status === 200 ? jwtBody(r.body.signing_input).acr.slice(-1) : `${r.status}:${r.body.error}:${r.body.level}`;
+  };
+  assert.equal(await level({ v: 1, lock: 'none', uvm: 'none', hw: 'tee' }), '1', 'approved, nobody verified');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'none', hw: 'tee' }), '2', 'the app is locked with a PIN');
+  assert.equal(await level({ v: 1, lock: 'none', uvm: 'pin', hw: 'sw' }), '2', 'PIN at this approval, but the app key in software');
+  assert.equal(await level({ v: 1, lock: 'none', uvm: 'pin', hw: 'kc' }), '2', 'iOS keychain is not hardware here');
+  assert.equal(await level({ v: 1, lock: 'bio+pin', uvm: 'bio', hw: 'tee' }), '3');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'pin', hw: 'sb' }), '3');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'bio', hw: 'se' }), '3');
+
+  // required: max(client, user, acr_values)
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'none', hw: 'tee' }, { acr_values: 'urn:encedo:loa:3' }), '403:insufficient_assurance:2');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'none', hw: 'tee' }, { acr_values: 'urn:encedo:loa:2 urn:encedo:loa:3' }), '2', 'the lowest listed value');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'none', hw: 'tee' }, { acr_values: 'urn:other:gold' }), '2', 'unknown values ignored');
+  assert.equal((await call('PATCH', `/admin/users/${sub}`, { min_loa: 3 })).status, 200);
+  assert.equal((await getUser(sub)).min_loa, 3);
+  assert.equal((await loaLogin(sub)).body.loa.required, 3, 'the user is stricter than the client');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'none', hw: 'tee' }), '403:insufficient_assurance:2');
+  assert.equal(await level({ v: 1, lock: 'pin', uvm: 'bio', hw: 'tee' }), '3');
+  assert.equal((await call('PATCH', `/admin/users/${sub}`, { min_loa: 9 })).status, 400);
+  await call('PATCH', `/admin/users/${sub}`, { min_loa: 0 });
+});
+
+test('sign-in context: no attestation, another device, an unattested enrollment = level 0', opt, async () => {
+  const { key, sub } = await loaSetup();
+  let login = await loaLogin(sub);
+  let r = await loaAttest(login, null);
+  assert.equal(r.status, 200); assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0');
+  assert.deepEqual(jwtBody(r.body.signing_input).amr, ['hwk']);
+
+  login = await loaLogin(sub);
+  r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 1, org: BASE }, { otherDevice: true }));
+  assert.equal(r.status, 200); assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'not the device attested at enrollment');
+
+  login = await loaLogin(sub);
+  r = await loaAttest(login, await loginAttestation(key, { ...login.body.attest, nonce: b64(crypto.randomBytes(32)) }, { mth: 'pwd', age: 1, org: BASE }));
+  assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'another challenge');
+
+  const plain = await loaSetup({ attested: false });
+  login = await loaLogin(plain.sub);
+  r = await loaAttest(login, await loginAttestation(plain.key, login.body.attest, { mth: 'pwd', age: 1, org: BASE }));
+  assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'no device on record to compare with');
+
+  // the client asks for more: level 0 is refused
+  assert.equal((await call('PATCH', `/admin/clients/${loaClient.client_id}`, { min_loa: 1 })).status, 200);
+  login = await loaLogin(sub);
+  assert.equal(login.body.loa.required, 1);
+  r = await loaAttest(login, null);
+  assert.equal(r.status, 403); assert.equal(r.body.error, 'insufficient_assurance'); assert.equal(r.body.level, 0);
+  login = await loaLogin(sub);
+  r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 1 }));
+  assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:1', 'no Origin at the HEM login: at most level 1');
+  assert.equal((await call('PATCH', `/admin/clients/${loaClient.client_id}`, { min_loa: '4' })).status, 400);
+  await call('PATCH', `/admin/clients/${loaClient.client_id}`, { min_loa: 0 });
+});
+
+test('sign-in context: max_age and a kept SSO session are judged by the device age', opt, async () => {
+  const { key, sub } = await loaSetup();
+  let login = await loaLogin(sub, { max_age: '60' });
+  let r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 600, org: BASE }));
+  assert.equal(r.status, 409); assert.equal(r.body.error, 'sso_stale');
+
+  // the page says 10 minutes ago, the device says 9 hours: the device wins
+  const now = Math.floor(Date.now() / 1000);
+  login = await loaLogin(sub, { sso_iat: String(now - 600) });
+  assert.equal(login.body.sso.used, true);
+  r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 9 * 3600, org: BASE }));
+  assert.equal(r.status, 409); assert.equal(r.body.error, 'sso_stale');
+
+  login = await loaLogin(sub, { sso_iat: String(now - 600) });
+  r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 620, org: BASE }));
+  assert.equal(r.status, 200);
+  const p = jwtBody(r.body.signing_input);
+  assert.deepEqual(p.amr, ['hwk', 'pwd', 'mfa', 'sso']);
+  assert.ok(Math.abs(p.auth_time - (now - 620)) <= 3);
+});

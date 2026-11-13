@@ -787,12 +787,44 @@ the cached token, and redirects. No phone, no passphrase — but the HEM must be
 Every layer has to allow it: `SSO_ENABLED`, the client's *Allow single sign-on* toggle (admin panel), the user's
 *Allow single sign-on* checkbox (admin panel, Edit user), the “remember” tick in the browser, and the relying party
 itself (`prompt=login` or a `max_age` shorter than the session age force a fresh authorization). The ID Token tells
-the RP what happened: `auth_time` is the time of the HEM authorization, `amr` is `["hwk"]` for a fresh one and
-`["hwk","sso"]` for a reused one. A session ends when the token expires, when the user answers *Yes* on the
+the RP what happened: `auth_time` is the time of the HEM authorization (as the device reports it, see below), and
+`amr` ends in `"sso"` for a reused one. A session ends when the token expires, when the user answers *Yes* on the
 provider's `/logout` page (RP-initiated logout: the page asks whether to sign out of Encedo as well, as OpenID Connect
 RP-Initiated Logout 1.0 §2 recommends; *No* keeps the session and returns to the application), with *Forget all
 sessions in this browser*, or when the device refuses the token (unplugged, rebooted) — the page then falls back to
 a normal sign-in.
+
+## Level of assurance (acr) — HEM FW 1.3
+
+At every sign-in the page asks the HEM for an **attestation of the login** over a fresh server challenge, with the
+token it is about to sign with (`hem.attest(token, {nonce, aud, kid})`, firmware 1.3 / DEV-511). The device signs how
+that token was obtained: passphrase or the paired phone app, how long ago (from its uptime, independent of any
+clock), on which site (`org`, the Origin of the login request) and, for the phone, what the authenticator app
+declared (`actx`: app lock, PIN / fingerprint at this approval, where the app keeps its key). The server checks it
+offline — no call to attest.encedo.com per sign-in — against the device attested at enrollment, and only then
+builds the ID Token:
+
+| `acr` | Reached when |
+|---|---|
+| `urn:encedo:loa:0` | the HEM signature only (no attestation, another device, or a key enrolled without attestation) |
+| `urn:encedo:loa:1` | the login context comes from the device attested at enrollment |
+| `urn:encedo:loa:2` | + the user verified (passphrase; phone app locked or confirmed with PIN / fingerprint) + the login was made on this provider's origin |
+| `urn:encedo:loa:3` | + the device is a PPA proven genuine at enrollment (`attest_status` verified, hard); by phone also a PIN / fingerprint at this approval (`actx.uvm`) and the app's storage key in hardware (`actx.hw` `sb` / `tee` / `se`) |
+
+`auth_time` = now − the device's `age` of the login; `amr` lists `hwk`, then `pwd` (passphrase) or `user` (phone
+approval), `mfa` when the user was verified, `sso` for a kept session.
+
+- **Required level** = the highest of the client's *Level of assurance* (admin panel), the user's *Minimum level of
+  assurance* (Edit user — e.g. 3 for an administrator) and the lowest `urn:encedo:loa:N` the RP lists in
+  `acr_values`. A sign-in below it is refused on the page (`insufficient_assurance`); a kept SSO session below it,
+  or older than `max_age` by the device's account, turns into a fresh sign-in. For level 3 by phone the page asks
+  the app for a PIN / fingerprint at the approval (`ctx` `uv=pin`) — a request; what counts is what the app reports.
+- **Another site:** a HEM login whose `org` is not this provider's origin is refused at any level
+  (`origin_mismatch`, security event `auth.origin_mismatch`): a page drove the user's device for itself.
+- The phone app's context is signed by the app and copied by the device, not checked by it; `hw` says where the key
+  that wraps the app's storage lives (the pairing key is decrypted into app memory to sign).
+- Default 0 everywhere: nothing changes for existing clients until an admin raises a level. The levels are this
+  provider's own (`urn:encedo:loa:*`), not `phr` / `phrh`, until a security review.
 
 ## Email delivery (optional)
 
@@ -1041,7 +1073,8 @@ failure, so they are safe to drive from cron.
 | `GET` | `/.well-known/openid-configuration` | Discovery document |
 | `GET` | `/jwks.json` | Public keys of every enrolled user (`EdDSA`, `ES256`, `ES384`, `ES512`). `?kid=<kid>` returns that key alone — the set changes with every enrollment, so an RP that caches it must refetch on an unknown `kid` |
 | `GET` | `/authorize` | Start login flow — serves `signin.html` |
-| `POST` | `/authorize/login` | Initiate signing session |
+| `POST` | `/authorize/login` | Initiate signing session: claims preview, attestation challenge, required level |
+| `POST` | `/authorize/attest` | The HEM login attestation (optional): checked offline, refusals (`origin_mismatch`, `insufficient_assurance`, `sso_stale`), returns the `signing_input` with `auth_time` / `amr` / `acr` |
 | `POST` | `/authorize/confirm` | Submit HSM signature, get auth code |
 | `POST` | `/token` | Exchange code for tokens (PKCE) |
 | `GET/POST` | `/userinfo` | Return claims for access token |

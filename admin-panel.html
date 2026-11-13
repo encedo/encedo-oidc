@@ -621,6 +621,16 @@ html.light .client-check-name{color:var(--text)}
         </select>
         <div class="field-hint">Checked at this user's next enrollment; the current key is not affected</div>
       </div>
+      <div class="field">
+        <label class="field-label">Minimum level of assurance</label>
+        <select class="field-input" id="eu-min-loa" style="appearance:auto;cursor:pointer;">
+          <option value="0">0 &mdash; HEM signature</option>
+          <option value="1">1 &mdash; login attested by the HEM</option>
+          <option value="2">2 &mdash; + user verified (passphrase / PIN)</option>
+          <option value="3">3 &mdash; + genuine PPA, PIN / fingerprint now</option>
+        </select>
+        <div class="field-hint">Every sign-in of this user must reach at least this level, whatever the client allows (e.g. 3 for an administrator)</div>
+      </div>
       <div class="divider"></div>
       <div class="section-label" style="margin-bottom:10px">Custom claims (userinfo)</div>
       <label class="client-check" style="margin-bottom:10px">
@@ -804,6 +814,16 @@ html.light .client-check-name{color:var(--text)}
           <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">Skips the per-user allow-list &mdash; every enrolled user can sign in here</div>
         </div>
       </div>
+      <div class="section-label" style="margin-top:14px">Level of assurance</div>
+      <div class="field">
+        <select class="field-input" id="c-min-loa" style="appearance:auto;cursor:pointer;">
+          <option value="0">0 &mdash; HEM signature</option>
+          <option value="1">1 &mdash; login attested by the HEM</option>
+          <option value="2">2 &mdash; + user verified (passphrase / PIN)</option>
+          <option value="3">3 &mdash; + genuine PPA, PIN / fingerprint now</option>
+        </select>
+        <div class="field-hint">The lowest level a sign-in here must reach (acr <code>urn:encedo:loa:N</code>). 2: the passphrase, or the phone app locked or confirmed with a PIN / fingerprint. 3: also a PPA proven genuine at enrollment and, by phone, a PIN / fingerprint at this approval with the app key in hardware. A user's own minimum or the application's <code>acr_values</code> can only raise it</div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" data-action="close-modal" data-modal="modal-add-client">Cancel</button>
@@ -909,6 +929,16 @@ html.light .client-check-name{color:var(--text)}
           <div style="font-family:var(--mono);font-size:11px;color:var(--text);margin-bottom:2px">Allow any enrolled user</div>
           <div style="font-family:var(--mono);font-size:10px;color:var(--amber)">Skips the per-user allow-list &mdash; every enrolled user can sign in here</div>
         </div>
+      </div>
+      <div class="section-label" style="margin-top:14px">Level of assurance</div>
+      <div class="field">
+        <select class="field-input" id="ec-min-loa" style="appearance:auto;cursor:pointer;">
+          <option value="0">0 &mdash; HEM signature</option>
+          <option value="1">1 &mdash; login attested by the HEM</option>
+          <option value="2">2 &mdash; + user verified (passphrase / PIN)</option>
+          <option value="3">3 &mdash; + genuine PPA, PIN / fingerprint now</option>
+        </select>
+        <div class="field-hint">The lowest level a sign-in here must reach (acr <code>urn:encedo:loa:N</code>). 2: the passphrase, or the phone app locked or confirmed with a PIN / fingerprint. 3: also a PPA proven genuine at enrollment and, by phone, a PIN / fingerprint at this approval with the app key in hardware. A user's own minimum or the application's <code>acr_values</code> can only raise it</div>
       </div>
     </div>
     <div class="modal-footer">

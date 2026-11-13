@@ -49,6 +49,10 @@ async function waitHealth(tries = 50) {
 }
 
 const H = { Authorization: `Bearer ${SECRET}`, 'Content-Type': 'application/json' };
+// The HEM login context step (/authorize/attest): the software key has no
+// device, so no attestation -> level 0; returns the signing input.
+const ctxInput = async (login, attestation = null) =>
+  (await jpost('/authorize/attest', { session_id: login.body.session_id, ...(attestation ? { attestation } : {}) })).body.signing_input;
 const jpost = (p, b, h = H) => fetch(BASE + p, { method: 'POST', headers: h, body: JSON.stringify(b) })
   .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }));
 const jget  = (p, h = H) => fetch(BASE + p, { headers: h })
@@ -132,8 +136,8 @@ test('login: PKCE S256 + one-time authorization code', opt, async () => {
     const chal     = crypto.createHash('sha256').update(verifier).digest('base64url');
     const login = await jpost('/authorize/login', { sub, client_id: client.client_id, redirect_uri: 'https://rp/cb',
       response_type: 'code', scope: 'openid email', code_challenge: chal, code_challenge_method: 'S256', state: 's', nonce: 'n' });
-    assert.equal(login.status, 200, 'login must return signing_input');
-    const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
+    assert.equal(login.status, 200, 'login must open a session');
+    const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(await ctxInput(login)) });
     assert.equal(confirm.status, 200, 'a valid signature must confirm');
     return { code: new URL(confirm.body.redirect_url).searchParams.get('code'), verifier };
   }
@@ -187,7 +191,7 @@ async function signerFor(username, client) {
     if (pkce) Object.assign(body, { code_challenge: chal, code_challenge_method: 'S256' });
     const login = await jpost('/authorize/login', body);
     if (login.status !== 200 || !sign) return { login };
-    const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
+    const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(await ctxInput(login)) });
     assert.equal(confirm.status, 200);
     return { login, code: new URL(confirm.body.redirect_url).searchParams.get('code'), verifier };
   };
@@ -496,7 +500,7 @@ test('rp-server: verifies the id_token (signature via JWKS, iss, aud, nonce) and
     async function signWith(params) {
       const login = await jpost('/authorize/login', { sub, ...params });
       assert.equal(login.status, 200);
-      const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(login.body.signing_input) });
+      const confirm = await jpost('/authorize/confirm', { session_id: login.body.session_id, signature: key.sign(await ctxInput(login)) });
       return new URL(confirm.body.redirect_url);
     }
     const cb = await signWith(q);
@@ -531,18 +535,18 @@ test('sso: an accepted session sets auth_time/amr; every policy layer can refuse
   const now = () => Math.floor(Date.now() / 1000);
   // login only (no signature): this test makes ~15 sign-in requests, the confirm limit is 10/min
   const login = async (extra) => (await getCode({ pkce: false, extra, sign: false })).login;
-  { const k = redisCli("keys 'rl:login*'").replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
+  for (const pat of ['rl:login*', 'rl:attest*']) { const k = redisCli(`keys '${pat}'`).replace(/\n/g, ' ').trim(); if (k) redisCli('del ' + k); }
 
   // fresh sign-in: no sso_iat -> auth_time = now, amr = [hwk], page told it may cache
   let l = await login({});
-  let p = jwtPayload(l.body.signing_input);
+  let p = jwtPayload(await ctxInput(l));
   assert.deepEqual(p.amr, ['hwk']); assert.ok(Math.abs(p.auth_time - now()) < 5);
   assert.equal(l.body.sso.enabled, true); assert.equal(l.body.sso.used, false); assert.equal(l.body.sso.suggest_seconds, 28800);
 
   // session from 20 minutes ago -> accepted: auth_time is THAT time, amr adds sso
   const iat = now() - 1200;
   l = await login({ sso_iat: String(iat) });
-  p = jwtPayload(l.body.signing_input);
+  p = jwtPayload(await ctxInput(l));
   assert.equal(l.body.sso.used, true); assert.equal(p.auth_time, iat); assert.deepEqual(p.amr, ['hwk', 'sso']);
   // ...and the id_token issued from it carries the same
   const c = await getCode({ pkce: false, extra: { sso_iat: String(iat) } });
@@ -551,7 +555,7 @@ test('sso: an accepted session sets auth_time/amr; every policy layer can refuse
 
   // refusals: each answers a fresh sign-in (auth_time now, amr hwk) and names the reason
   const refused = async (extra, why) => {
-    const r = await login(extra); const q = jwtPayload(r.body.signing_input);
+    const r = await login(extra); const q = jwtPayload(await ctxInput(r));
     assert.equal(r.status, 200); assert.equal(r.body.sso.used, false); assert.equal(r.body.sso.rejected, why, `expected refusal ${why}`);
     assert.deepEqual(q.amr, ['hwk']); assert.ok(Math.abs(q.auth_time - now()) < 5);
     return r;

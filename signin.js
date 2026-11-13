@@ -1,6 +1,6 @@
 import { HEM, jwtParse } from '/hem-sdk.js';
 import { ensureLocalNetwork } from '/local-network.js';
-import { exdsaAlg, checkP1363, keyTypeDisplay, bytesToBase64url, decodeJwtHeader, decodeJwtPayload, fetchJson, hemErrMsg, hemOptions } from '/hsm-common.js';
+import { exdsaAlg, checkP1363, keyTypeDisplay, bytesToBase64url, fetchJson, hemErrMsg, hemOptions } from '/hsm-common.js';
 
 // Test hook (?hem_broker=, localhost only) -- see hemOptions() in hsm-common.js.
 const HEM_OPTS = hemOptions();
@@ -21,12 +21,14 @@ const OIDC = {
   prompt:                params.get('prompt')                || '',
   max_age:               params.get('max_age')               || '',
   login_hint:            params.get('login_hint')            || '',
+  // Levels of assurance the RP asks for (urn:encedo:loa:N), see src/services/loa.js.
+  acr_values:            params.get('acr_values')            || '',
 };
 // What every /authorize/login call carries. Empty optionals are left out
 // (the server treats a present-but-empty max_age as a number to parse).
 function oidcBody(extra = {}) {
   const b = { ...OIDC, ...extra };
-  for (const k of ['prompt', 'max_age', 'login_hint', 'state', 'nonce', 'code_challenge', 'code_challenge_method']) {
+  for (const k of ['prompt', 'max_age', 'login_hint', 'acr_values', 'state', 'nonce', 'code_challenge', 'code_challenge_method']) {
     if (b[k] === '') delete b[k];
   }
   return b;
@@ -296,7 +298,7 @@ async function doSsoPick(key) {
     });
     const { kid } = entry; const label = entry.label || '';
     // The server pins the registered key; a stale entry (re-enrolled key) is useless.
-    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    const expectedKid = loginData.kid;
     if (expectedKid && expectedKid !== kid) {
       ssoForget(entry.key);
       throw new Error('This session belongs to a key that is no longer registered. Sign in with your HEM.');
@@ -319,7 +321,7 @@ async function doSsoPick(key) {
 
 // Populate and show the confirm screen for a /authorize/login response.
 function showConfirm(loginData, kid, label, note = null) {
-  const payload = decodeJwtPayload(loginData.signing_input);
+  const payload = loginData.claims;
   document.getElementById('tc-username').textContent = loginData.user_username || '';
   document.getElementById('tc-audience').textContent = loginData.client_name || payload?.aud || OIDC.client_id;
   document.getElementById('tc-iss').textContent      = payload?.iss || '';
@@ -452,7 +454,7 @@ async function tryFasttrack(kid, label, sub, btn) {
     // The server pins the registered key in the JWT header. A cached kid from
     // before a re-enrollment would sign with the wrong key and fail at
     // /authorize/confirm every time; detect it here and fall back to the list.
-    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    const expectedKid = loginData.kid;
     if (expectedKid && expectedKid !== kid) throw new Error(`cached key ${kid} is no longer the registered key (${expectedKid})`);
 
     session.selectedKey = { kid, label, sub };
@@ -614,7 +616,7 @@ async function doSelectKey() {
     // attempt leaves one behind); if the user picked a clone, switch to the
     // registered one when it is on the device, otherwise say so instead of
     // producing a signature the server will reject.
-    const expectedKid = decodeJwtHeader(loginData.signing_input)?.kid;
+    const expectedKid = loginData.kid;
     if (expectedKid && expectedKid !== kid) {
       const registered = session.keys.find(k => k.kid === expectedKid);
       if (!registered) {
@@ -688,7 +690,10 @@ async function doApproveSign() {
       mobileAbortCtrl = new AbortController();
       // No lifetime to ask for: the phone's answer sets it (FW 1.3 ext/request
       // takes no exp). doCompleteSign reads exp from the token itself.
+      // The highest level needs the PIN / fingerprint at this approval: ask the
+      // app for it (a request; what it did comes back signed in actx.uvm).
       useToken = await session.hem.authorizeRemote(scope, {
+        ...((loginData.loa?.required ?? 0) >= 3 ? { require: { uv: 'pin' } } : {}),
         pollInterval: 2_000, pollTimeout: 60_000,
         onPending: () => console.debug(`[HEM] ${scope}: waiting\u2026`),
         signal: mobileAbortCtrl.signal,
@@ -732,9 +737,51 @@ async function doCompleteSign(useToken, kid, label, loginData) {
   showScreen('s-signing');
 
   try {
-    let rawSigBytes;
+    let rawSigBytes, signingInput;
     try {
-      rawSigBytes = await session.hem.exdsaSign(useToken, kid, loginData.signing_input, { alg: exdsaAlg(loginData.key_type) });
+      // The login context: the device attests how this token was obtained, over
+      // the server's challenge. A device that cannot (or a refused request)
+      // sends none - the server then counts the sign-in at the lowest level.
+      let attestation = null;
+      if (loginData.attest) {
+        try {
+          attestation = await session.hem.attest(useToken, {
+            nonce: Uint8Array.from(atob(loginData.attest.nonce), c => c.charCodeAt(0)),
+            aud:   loginData.attest.aud,
+            kid:   loginData.attest.kid,
+          });
+        } catch (e) {
+          // The kept SSO token is no longer accepted: the same as a refused signature below.
+          if (session.ssoEntry && (e?.code === 'http_401' || e?.code === 'http_403')) throw e;
+          console.warn('[signin] no attestation from the HEM:', e);
+        }
+      }
+      try {
+        const ctx = await fetchJson('/authorize/attest', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ session_id: loginData.session_id, ...(attestation ? { attestation } : {}) }),
+        });
+        signingInput = ctx.signing_input;
+      } catch (e) {
+        // A kept SSO session that is too old or too weak for this application:
+        // start an interactive sign-in for the same key instead of failing.
+        if (session.ssoEntry && (e.code === 'sso_stale' || e.code === 'insufficient_assurance')) {
+          const keptKey = session.ssoEntry.key;
+          session.ssoEntry = null;
+          if (e.code === 'sso_stale') ssoForget(keptKey);
+          const fresh = await fetchJson('/authorize/login', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(oidcBody({ sub: session.selectedKey?.sub })),
+          });
+          showConfirm(fresh, kid, label, e.message);
+          return;
+        }
+        showError(e.message);
+        return;
+      }
+      rawSigBytes = await session.hem.exdsaSign(useToken, kid, signingInput, { alg: exdsaAlg(loginData.key_type) });
     } catch (e) {
       // A cached SSO token the device no longer accepts (expired, device
       // rebooted or unplugged, token revoked): drop it and start a fresh,
@@ -787,7 +834,7 @@ async function doCompleteSign(useToken, kid, label, loginData) {
         token: useToken,
         iat: Number.isFinite(tp.iat) ? tp.iat : now,
         exp: Number.isFinite(tp.exp) ? tp.exp : now + (loginData.sso.suggest_seconds || 300),
-        sub: session.selectedKey?.sub || decodeJwtPayload(loginData.signing_input)?.sub || null,
+        sub: session.selectedKey?.sub || loginData.claims?.sub || null,
         username: loginData.user_username || '',
         label, kid, hsm_url: session.hsm_url, key_type: loginData.key_type,
       });

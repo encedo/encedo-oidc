@@ -53,6 +53,11 @@ export const SEC = {
   SIG_FAIL:          'auth.signature.fail',
   SIG_OK:            'auth.signature.ok',
   TOKEN_ISSUED:      'auth.token.issued',
+  // Login context (HEM attestation at sign-in, DEV-511)
+  LOGIN_CONTEXT:     'auth.context.ok',        // level reached, method, age
+  LOGIN_CONTEXT_BAD: 'auth.context.unusable',  // attestation missing / failed / another device
+  ORIGIN_MISMATCH:   'auth.origin_mismatch',   // the HEM login came from another site: refused
+  LOA_INSUFFICIENT:  'auth.loa.insufficient',  // below the required level: refused
   // Admin
   ADMIN_AUTH_FAIL:   'admin.auth.fail',
   ADMIN_USER_CREATE: 'admin.user.create',

@@ -10,6 +10,9 @@ import { validate, vState, vNonce, vCodeChallenge, vCodeVerifier, vSignature } f
 import { revokeUserTokens } from '../services/tokens.js';
 import { JWT_ALG, b64urlStr, verifySignature, buildJwk } from '../services/jwt.js';
 import { oidcIssuer } from '../services/issuer.js';
+import { Attest } from '../../hem-sdk-js/hem-sdk.js';
+import { newAttestChallenge } from '../services/attestation.js';
+import { requiredLevel, assessLogin, enrolledDevicePoint, loaUrn, levelHint, LOA_VALUES } from '../services/loa.js';
 
 const router = Router();
 
@@ -147,8 +150,10 @@ export function discoveryHandler(_req, res) {
     // 'none' = public client (client.public=true): PKCE only, no secret.
     token_endpoint_auth_methods_supported:  ['client_secret_basic', 'client_secret_post', 'none'],
     code_challenge_methods_supported:       ['S256'],
-    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'amr', 'nonce',
+    claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'amr', 'acr', 'nonce',
                        'name', 'email', 'email_verified', 'preferred_username'],
+    // Levels of assurance from the HEM login context (see src/services/loa.js).
+    acr_values_supported:                   LOA_VALUES,
   });
 }
 
@@ -253,7 +258,7 @@ router.post('/authorize/login',
       const {
         sub: subParam, username, client_id, redirect_uri, scope,
         state, nonce, code_challenge, response_type,
-        prompt, max_age, sso_iat,
+        prompt, max_age, sso_iat, acr_values,
       } = req.body;
 
       if (!response_type) {
@@ -331,19 +336,18 @@ router.post('/authorize/login',
         else { ssoUsed = true; authTime = Math.min(iat, now); }
       }
 
-      // Build signing_input = base64url(header).base64url(payload)
+      // The ID Token is built in two steps. Here: everything but the claims of
+      // the authentication itself. /authorize/attest adds auth_time, amr and
+      // acr from the HEM's login context and only then hands out the signing
+      // input -- so the page signs what the device reported, not what it claims.
       const keyType = user.key_type || 'Ed25519';
       const header  = { alg: JWT_ALG[keyType] ?? 'EdDSA', kid: user.kid };
-      const payload = {
+      const claims  = {
         iss:                oidcIssuer(),
         sub:                user.sub,
         aud:                client_id,
         iat:                now,
         exp:                now + idTokenTtl,
-        // auth_time is when the HEM authorized the key, not when this page was
-        // clicked (Core s.2); amr says whether that authorization was fresh.
-        auth_time:          authTime,
-        amr:                ssoUsed ? ['hwk', 'sso'] : ['hwk'],
         jti:                randomBytes(16).toString('base64url'),
         ...(nonce ? { nonce } : {}),
         email:              user.email,
@@ -351,8 +355,9 @@ router.post('/authorize/login',
         name:               user.name,
         preferred_username: user.username,
       };
-
-      const signing_input = `${b64urlStr(JSON.stringify(header))}.${b64urlStr(JSON.stringify(payload))}`;
+      const required = requiredLevel(clientRaw, user, acr_values);
+      const attest   = newAttestChallenge();
+      const maxAgeN  = max_age !== undefined && Number.isFinite(parseInt(max_age, 10)) ? parseInt(max_age, 10) : null;
 
       // Create pending session -- kid anchored here, cannot be changed by frontend
       const session_id = randomBytes(32).toString('base64url');
@@ -365,16 +370,28 @@ router.post('/authorize/login',
         code_challenge: code_challenge ?? null,
         redirect_uri,
         state:          state ?? null,
-        signing_input,
+        header,
+        claims,
+        attest,
+        required,
+        max_age:        maxAgeN,
         sso:            ssoUsed,
-      }), { EX: 120 });
+        sso_auth_time:  ssoUsed ? authTime : null,
+        signing_input:  null,
+      }), { EX: 180 });
 
-      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, username: user.username, client_id, sso: ssoUsed, ip: req.ip });
-      console.log(`[OIDC] Login initiated: client=${client_id} session=${session_id.slice(0, 8)}...`);
+      await logSecurity(SEC.LOGIN_OK, { sub: user.sub, username: user.username, client_id, sso: ssoUsed, required_loa: required, ip: req.ip });
+      console.log(`[OIDC] Login initiated: client=${client_id} session=${session_id.slice(0, 8)}... loa>=${required}`);
 
       res.json({
         session_id,
-        signing_input,
+        kid:           user.kid,
+        // What will be signed, without auth_time / amr / acr: for the confirm screen.
+        claims,
+        // The page asks the HEM for an attestation over this challenge with the
+        // token it signs with, and sends it to /authorize/attest.
+        attest:        { nonce: attest.nonce, aud: attest.aud, kid: user.kid },
+        loa:           { required },
         user_name:     user.name,
         user_username: user.username,
         client_name:   clientRaw.name || client_id,
@@ -384,6 +401,124 @@ router.post('/authorize/login',
         sso: { enabled: ssoAllowed, used: ssoUsed, rejected: ssoRejected,
                suggest_seconds: SSO.suggest(), max_seconds: SSO.max() },
       });
+
+    } catch (err) { next(err); }
+  }
+);
+
+// --- 4b. POST /authorize/attest -------------------------------
+// The HEM's login context (FW 1.3, DEV-511). The page has authorized the key on
+// the HEM (passphrase, phone, or a kept SSO token) and asked the device for an
+// attestation over the challenge from /authorize/login with that token. Here
+// the server checks it offline against the device attested at enrollment,
+// refuses a login that came from another site (`org`) or is below the required
+// level, and completes the ID Token: auth_time from the device's `age`, amr,
+// acr. Only then does the page get a signing input. No attestation (a device
+// that cannot give one) is level 0 - accepted while nothing more is required.
+const opOrigin = () => { try { return new URL(oidcIssuer()).origin; } catch { return null; } };
+
+router.post('/authorize/attest',
+  rateLimit({ prefix: 'attest', max: 20, window: 60 }),
+  singleValued,
+  async (req, res, next) => {
+    try {
+      const { session_id, attestation } = req.body ?? {};
+      if (!session_id) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'missing session_id' });
+      }
+      if (attestation !== undefined && attestation !== null && (typeof attestation !== 'string' || attestation.length > 16384)) {
+        return res.status(400).json({ error: 'invalid_request', error_description: 'malformed attestation' });
+      }
+      const key = `pending:${session_id}`;
+      const pendingRaw = await redis.get(key);
+      if (!pendingRaw) {
+        return res.status(400).json({ error: 'invalid_session', error_description: 'session expired or not found' });
+      }
+      const pending = JSON.parse(pendingRaw);
+      // One login context per session: a second try would let the page shop for a better one.
+      if (pending.signing_input) {
+        return res.status(400).json({ error: 'invalid_session', error_description: 'the login context was already given' });
+      }
+      const userRaw = await redis.hGetAll(`user:${pending.sub}`);
+      if (!userRaw?.sub || userRaw.kid !== pending.kid) {
+        await redis.del(key);
+        return res.status(400).json({ error: 'invalid_session', error_description: 'key mismatch' });
+      }
+      const log = { sub: pending.sub, username: userRaw.username, client_id: pending.client_id, ip: req.ip };
+      const refuse = async (status, error, description, extra = {}) => {
+        await redis.del(key);
+        return res.status(status).json({ error, error_description: description, ...extra });
+      };
+
+      // -- the attestation, offline -------------------------------------------
+      let auth = null, deviceMatch = false, unusable = null;
+      if (attestation) {
+        const state = { aud: pending.attest.aud, nonce: new Uint8Array(Buffer.from(pending.attest.nonce, 'base64')), kid: pending.kid.toLowerCase(), pop: null };
+        let r = null;
+        try { r = await Attest.verify(attestation, state, { requireAuth: true }); }
+        catch (e) { unusable = `verify_error:${e.message}`; }
+        if (r && !r.ok) unusable = r.failed.join(',');
+        if (r?.ok) {
+          auth = r.auth;
+          const enrolled = enrolledDevicePoint(userRaw);
+          deviceMatch = !!enrolled && Buffer.from(r.point).toString('hex') === enrolled;
+          if (!deviceMatch) unusable = enrolled ? 'another_device' : 'no_enrolled_device';
+        }
+      } else {
+        unusable = 'no_attestation';
+      }
+
+      // A HEM login made on another site is refused whatever the level: that is
+      // a page that drove the user's device for itself (phishing).
+      const origin = opOrigin();
+      if (auth?.org && auth.org !== origin) {
+        await logSecurity(SEC.ORIGIN_MISMATCH, { ...log, org: auth.org, method: auth.method });
+        return refuse(403, 'origin_mismatch',
+          `This sign-in was started on ${auth.org}, not on ${origin}. It was refused. If you did not just sign in there, someone may be trying to use your HEM.`);
+      }
+
+      const now = Math.floor(Date.now() / 1000);
+      const usable = auth && deviceMatch;
+      // auth_time from the device's uptime-based age: independent of both clocks.
+      const deviceAuthTime = usable ? Math.min(now, now - auth.age) : null;
+
+      // A kept SSO authorization: the page told /authorize/login when it was
+      // made; the device now says so itself. The device wins.
+      if (pending.sso && usable) {
+        if (auth.age > SSO.max() || (pending.max_age !== null && auth.age > pending.max_age)) {
+          return refuse(409, 'sso_stale', 'The kept HEM session is too old for this application. Sign in with your HEM again.');
+        }
+      } else if (!pending.sso && usable && pending.max_age !== null && auth.age > pending.max_age) {
+        return refuse(409, 'sso_stale', 'This HEM authorization is too old for this application. Sign in with your HEM again.');
+      }
+
+      const { level, amr } = assessLogin({
+        auth: usable ? auth : null, deviceMatch,
+        orgMatch: !!auth?.org && auth.org === origin,
+        hardDevice: userRaw.attest_status === 'verified' && userRaw.attest_assurance === 'hard',
+      });
+      if (unusable) await logSecurity(SEC.LOGIN_CONTEXT_BAD, { ...log, reason: unusable });
+
+      if (level < pending.required) {
+        await logSecurity(SEC.LOA_INSUFFICIENT, { ...log, level, required: pending.required, method: auth?.method ?? null, reason: unusable });
+        return refuse(403, 'insufficient_assurance', levelHint(pending.required, auth?.method === 'ext'),
+          { level, required: pending.required });
+      }
+
+      if (pending.sso) amr.push('sso');
+      const claims = {
+        ...pending.claims,
+        auth_time: deviceAuthTime ?? (pending.sso ? pending.sso_auth_time : now),
+        amr,
+        acr: loaUrn(level),
+      };
+      const signing_input = `${b64urlStr(JSON.stringify(pending.header))}.${b64urlStr(JSON.stringify(claims))}`;
+      const ok = await redis.set(key, JSON.stringify({ ...pending, signing_input, loa: level }), { KEEPTTL: true, XX: true });
+      if (!ok) return res.status(400).json({ error: 'invalid_session', error_description: 'session expired or not found' });
+
+      await logSecurity(SEC.LOGIN_CONTEXT, { ...log, level, required: pending.required, method: auth?.method ?? null,
+        age: usable ? auth.age : null, uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null, sso: pending.sso === true });
+      res.json({ signing_input, acr: claims.acr });
 
     } catch (err) { next(err); }
   }
@@ -410,6 +545,9 @@ router.post('/authorize/confirm',
         return res.status(400).json({ error: 'invalid_session', error_description: 'session expired or not found' });
       }
       const pending = JSON.parse(pendingRaw);
+      if (!pending.signing_input) {
+        return res.status(400).json({ error: 'invalid_session', error_description: 'no login context: /authorize/attest first' });
+      }
 
       // Load user
       const userRaw = await redis.hGetAll(`user:${pending.sub}`);
