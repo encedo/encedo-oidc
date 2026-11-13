@@ -7,7 +7,7 @@ import { issuer } from '../services/issuer.js';
 import { revokeUserTokens } from '../services/tokens.js';
 import { ATTEST_POLICIES } from '../services/attestation.js';
 import { REATTEST_TTL } from './reattest.js';
-import { sendReattestEmail } from '../services/mailer.js';
+import { sendReattestEmail, sendEnrollmentEmail } from '../services/mailer.js';
 
 const AUDIT_ZSET = 'security:log';
 import { logSecurity, SEC } from '../services/securityLog.js';
@@ -315,6 +315,40 @@ router.post('/:sub/enrollment', async (req, res, next) => {
 
     await logSecurity(SEC.ENROLL_REGEN, { sub, username: raw.username, ip: req.ip });
     res.json({ enrollment_url });
+  } catch (err) { next(err); }
+});
+
+// --- POST /admin/users/:sub/enrollment/send-email -------------
+// Emails the user's CURRENT enrollment link (from Add user or Renew) to the
+// address on the record -- never one from the request (no open relay). The
+// emailed link carries an email nonce stored on the enrollment session, so
+// completing enrollment from it sets email_verified (/enrollment/submit); the
+// nonce and the emailed URL are never returned to the admin.
+router.post('/:sub/enrollment/send-email', async (req, res, next) => {
+  try {
+    const { sub } = req.params;
+    const raw = await redis.hGetAll(`user:${sub}`);
+    if (!raw?.sub) return res.status(404).json({ error: 'user_not_found' });
+    if (!raw.email) return res.status(400).json({ error: 'no_email', error_description: 'This user has no email address' });
+    const token = raw.enrollment_token;
+    const sessRaw = token ? await redis.get(`enrollment:${token}`) : null;
+    if (!sessRaw) return res.status(409).json({ error: 'no_link', error_description: 'Create an enrollment link first' });
+    const session = JSON.parse(sessRaw);
+    if (!session.email_nonce) {
+      session.email_nonce = randomBytes(32).toString('base64url');
+      // Same TTL; XX: a link consumed or replaced meanwhile is not resurrected.
+      const ok = await redis.set(`enrollment:${token}`, JSON.stringify(session), { KEEPTTL: true, XX: true });
+      if (!ok) return res.status(409).json({ error: 'no_link', error_description: 'The enrollment link was used or replaced meanwhile' });
+    }
+    const url = `${issuer()}/enrollment#token=${token}&n=${session.email_nonce}`;
+    const r = await sendEnrollmentEmail({ to: raw.email, url, name: raw.name || raw.username });
+    if (r.error === 'mail_disabled') return res.status(409).json({ error: 'mail_disabled', error_description: 'SMTP is not configured on this server' });
+    if (!r.ok) {
+      await logSecurity(SEC.ENROLL_FAIL, { action: 'enrollment_email_failed', sub, reason: r.error, ip: req.ip });
+      return res.status(502).json({ error: 'mail_failed', error_description: r.error });
+    }
+    await logSecurity(SEC.ENROLL_EMAIL_SENT, { sub, to: raw.email, ip: req.ip });
+    res.json({ ok: true, to: raw.email });   // no nonce, no url
   } catch (err) { next(err); }
 });
 

@@ -322,6 +322,7 @@ async function submitAddUser() {
     $('nu-username').textContent   = user.username;
     $('nu-sub').textContent        = user.sub;
     $('nu-enroll-url').textContent = enrollment_url;
+    armEnrollEmail($('nu-email-btn'), user.sub, email);
     openModal('modal-user-created');
 
     loadUsers();
@@ -469,10 +470,26 @@ async function requestEnrollment(idx) {
   try {
     const data = await api(`/admin/users/${encodeURIComponent(sub)}/enrollment`, { method: 'POST' });
     document.getElementById('enroll-url').textContent = data.enrollment_url;
+    armEnrollEmail($('enroll-email-btn'), sub, u.email);
     openModal('modal-enrollment');
   } catch (e) { toast(e.message, 'err'); }
 }
 
+
+// "Email link" on both enrollment-link dialogs (Add user, Renew): the server
+// emails the user's current link to the address on the record.
+function armEnrollEmail(btn, sub, email) {
+  btn.dataset.sub = sub;
+  setMailButton(btn, !_mailEnabled ? NO_SMTP : !email ? 'This user has no email address' : '');
+}
+async function emailEnrollLink(btn) {
+  btn.disabled = true;
+  try {
+    const r = await api(`/admin/users/${encodeURIComponent(btn.dataset.sub)}/enrollment/send-email`, { method: 'POST' });
+    toast(`Enrollment link sent to ${r.to}`);
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
+}
 
 // Re-attestation of the enrolled key (same kid): a one-time link for the user.
 async function requestReattest() {
@@ -910,6 +927,7 @@ const ACTIONS = {
   'send-verification-email': () => sendVerificationEmail(),
   'request-reattest':        () => requestReattest(),
   'email-reattest-link':     () => emailReattestLink(),
+  'email-enroll-link':       el => emailEnrollLink(el),
   'add-claim-row':           () => addClaimRow(),
   'submit-edit-user':        () => submitEditUser(),
   'submit-add-client':       () => submitAddClient(),

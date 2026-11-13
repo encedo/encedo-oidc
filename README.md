@@ -1084,6 +1084,7 @@ All `/admin/*` endpoints require `Authorization: Bearer <ADMIN_SECRET>` and are 
 | `GET/POST` | `/admin/users` | List / create users |
 | `GET/PATCH/DELETE` | `/admin/users/:sub` | Read / update / delete user |
 | `POST` | `/admin/users/:sub/enrollment` | Generate new enrollment link |
+| `POST` | `/admin/users/:sub/enrollment/send-email` | Email the current enrollment link to the user (needs SMTP; the emailed link sets `email_verified`) |
 | `POST` | `/admin/users/:sub/reattest` | Generate a re-attestation link for the enrolled key (replaces the previous one) |
 | `POST` | `/admin/users/:sub/reattest/send-email` | Email the current re-attestation link to the user (needs SMTP) |
 | `GET/PUT` | `/admin/users/:sub/claims` | Read / replace the user's custom claims (and `hsm_url_in_userinfo`) |
