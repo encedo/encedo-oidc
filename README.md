@@ -1058,11 +1058,48 @@ failure, so they are safe to drive from cron.
 
 ### Scheduled backups
 
+Single instance:
+
 ```cron
 # daily 03:15, keep 14 days
 15 3 * * * cd /opt/encedo-oidc && npm run backup -- --out /var/backups/oidc --quiet && \
            find /var/backups/oidc -name '*.ndjson.gz' -mtime +14 -delete
 ```
+
+Multi-tenant (Docker), encrypted with [age](https://age-encryption.org) to a recipient whose identity is kept **off**
+the server. Put the job in `/etc/cron.d/` (that format has a user field) — never paste a line with `root` into
+`crontab -e`: the user crontab has no user field, cron runs `root …` as the command, it fails, and `age` happily
+encrypts the empty stream into a ~200-byte file every night (this happened in production, 2026-07 → 2026-11).
+
+```bash
+# /usr/local/sbin/oidc-backup  (chmod 700)
+#!/bin/bash
+set -euo pipefail
+R=age1...                       # your age recipient
+D=/var/backups/oidc
+day=$(date +%F)
+trap 'logger -t oidc-backup -p user.err "FAILED at line $LINENO"; rm -f "${tmp:-}"' ERR
+for T in prod demo test; do
+  tmp=$(mktemp "$D/.oidc-$T-XXXXXX")
+  docker exec "oidc-$T" node src/cli/backup.js --skip-ephemeral --file - 2>/dev/null | age -r "$R" > "$tmp"
+  # an empty stream encrypts to ~200 B: that is a failed dump, not a backup
+  if [ "$(stat -c %s "$tmp")" -lt 300 ]; then
+    logger -t oidc-backup -p user.err "$T: dump too small, kept nothing"; rm -f "$tmp"; exit 1
+  fi
+  chmod 600 "$tmp"; mv "$tmp" "$D/oidc-$T-$day.ndjson.gz.age"
+done
+find "$D" -name "oidc-*-????-??-??.ndjson.gz.age" -mtime +14 -delete   # daily files only; manual pre-* copies stay
+logger -t oidc-backup "ok: prod demo test"
+```
+
+```cron
+# /etc/cron.d/oidc-backup
+15 3 * * * root /usr/local/sbin/oidc-backup
+```
+
+Check it the morning after: `journalctl -t oidc-backup` and the file sizes (a real dump is kilobytes). Once in a while
+decrypt one on the machine that holds the identity (`age -d -i key.txt file.age | gunzip | head`) — a backup that was
+never restored is a guess.
 
 ---
 
