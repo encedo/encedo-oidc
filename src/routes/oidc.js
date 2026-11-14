@@ -500,7 +500,8 @@ router.post('/authorize/attest',
       if (unusable) await logSecurity(SEC.LOGIN_CONTEXT_BAD, { ...log, reason: unusable });
 
       if (level < pending.required) {
-        await logSecurity(SEC.LOA_INSUFFICIENT, { ...log, level, required: pending.required, method: auth?.method ?? null, reason: unusable });
+        await logSecurity(SEC.LOA_INSUFFICIENT, { ...log, level, required: pending.required, method: auth?.method ?? null,
+          uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null, reason: unusable });
         return refuse(403, 'insufficient_assurance', levelHint(pending.required, auth?.method === 'ext'),
           { level, required: pending.required });
       }

@@ -623,6 +623,9 @@ const AUDIT_DOT_COLOR = {
   'auth.login.ok':     'var(--green)',
   'auth.signature.ok': 'var(--green)',
   'auth.token.issued': 'var(--green)',
+  'auth.context.ok':   'var(--green)',     // the login context reached the required level
+  'auth.context.unusable': 'var(--amber)', // a warning; the refusal itself is auth.loa.insufficient
+  'auth.logout':       'var(--soft)',
 };
 function auditColor(type) {
   if (AUDIT_DOT_COLOR[type])          return AUDIT_DOT_COLOR[type];

@@ -364,6 +364,10 @@ Defined in `src/services/securityLog.js`:
 | `auth.signature.ok` | Valid Ed25519 signature in /authorize/confirm |
 | `auth.signature.fail` | Invalid signature |
 | `auth.token.issued` | Successful /token exchange |
+| `auth.context.ok` | /authorize/attest reached the required level: `level`, `required`, `method`, `age`, `uvm`, `hw`, `sso` |
+| `auth.context.unusable` | The login attestation is missing / failed / from another device (`reason`): the sign-in counts as level 0 |
+| `auth.loa.insufficient` | Refused below the required level: `level`, `required`, `method`, `uvm`, `hw`, `reason` |
+| `auth.origin_mismatch` | Refused: the HEM login came from another site (`org`) |
 | `auth.logout` | RP-initiated logout |
 | `enrollment.ok` | HSM key enrolled successfully |
 | `enrollment.fail` | Enrollment failure (invalid token, sig, duplicate key, …) |
