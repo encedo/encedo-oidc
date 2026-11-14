@@ -14,26 +14,13 @@
 import { Router } from 'express';
 import redis, { casSet, casDel } from '../services/redis.js';
 import { logSecurity, SEC } from '../services/securityLog.js';
-import { verifyKeyAttestation, newAttestChallenge } from '../services/attestation.js';
+import { verifyKeyAttestation, newAttestChallenge, hemPubkeyHex } from '../services/attestation.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 export const REATTEST_TTL = 86400;   // the link; the first open shortens it to 30 min (as enrollment)
 
-/**
- * The stored public key in the form the HEM attests it: Ed25519 raw 32 B as
- * stored; EC stored as uncompressed X||Y, attested as the compressed point.
- * Decided by length, so a record from before key_type existed works too.
- */
-export function hemPubkeyHex(stored) {
-  const hex = String(stored ?? '').toLowerCase();
-  if (hex.length === 64) return hex;                               // Ed25519
-  const b = Buffer.from(hex, 'hex');
-  if (![64, 96, 132].includes(b.length)) return null;              // P-256 / P-384 / P-521
-  const x = b.subarray(0, b.length / 2), y = b.subarray(b.length / 2);
-  return ((y[y.length - 1] & 1) ? '03' : '02') + x.toString('hex');
-}
 
 async function readSession(token) {
   if (!TOKEN_RE.test(token)) return { error: [400, 'invalid_token_format'] };

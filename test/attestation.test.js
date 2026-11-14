@@ -431,6 +431,11 @@ test('sign-in context: no attestation, another device, an unattested enrollment 
   assert.equal(r.status, 200); assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'not the device attested at enrollment');
 
   login = await loaLogin(sub);
+  const otherKey = { ...genKey(), kid: key.kid };   // the enrolled kid, another public key
+  r = await loaAttest(login, await loginAttestation(otherKey, login.body.attest, { mth: 'pwd', age: 1, org: BASE }));
+  assert.equal(r.status, 200); assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'the attested key is not the enrolled one');
+
+  login = await loaLogin(sub);
   r = await loaAttest(login, await loginAttestation(key, { ...login.body.attest, nonce: b64(crypto.randomBytes(32)) }, { mth: 'pwd', age: 1, org: BASE }));
   assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:0', 'another challenge');
 
@@ -445,6 +450,9 @@ test('sign-in context: no attestation, another device, an unattested enrollment 
   assert.equal(login.body.loa.required, 1);
   r = await loaAttest(login, null);
   assert.equal(r.status, 403); assert.equal(r.body.error, 'insufficient_assurance'); assert.equal(r.body.level, 0);
+  login = await loaLogin(sub);
+  r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 1, org: BASE }, { otherDevice: true }));
+  assert.equal(r.status, 403); assert.match(r.body.error_description, /re-attestation link/, 'another device: the page says what fixes it');
   login = await loaLogin(sub);
   r = await loaAttest(login, await loginAttestation(key, login.body.attest, { mth: 'pwd', age: 1 }));
   assert.equal(jwtBody(r.body.signing_input).acr, 'urn:encedo:loa:1', 'no Origin at the HEM login: at most level 1');

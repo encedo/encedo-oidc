@@ -119,3 +119,21 @@ export function levelHint(required, viaPhone) {
   if (required >= 2) return 'This sign-in needs you to confirm with your passphrase, or on a phone app protected with a PIN or fingerprint.';
   return 'This sign-in needs a HEM attested at enrollment.';
 }
+
+/**
+ * Text for the page when the login context itself was unusable, so the level
+ * hint ("confirm with your passphrase...") would point at the wrong cause.
+ * null: the context was usable, or the cause is not the user's to fix.
+ */
+export function contextHint(reason) {
+  if (reason === 'another_device' || reason === 'pubkey_mismatch') {
+    return 'This HEM does not match the one recorded when your key was enrolled. Ask your administrator for a re-attestation link.';
+  }
+  if (reason === 'no_enrolled_device') {
+    return 'Your key was enrolled without a hardware attestation. Ask your administrator for a re-attestation link.';
+  }
+  if (reason === 'no_attestation' || (reason && reason.includes('auth'))) {
+    return 'Your HEM did not confirm the sign-in context. Its firmware may need an update.';
+  }
+  return null;
+}

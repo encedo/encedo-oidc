@@ -151,3 +151,17 @@ function fail(out, reason) {
   out.reason = reason;
   return out;
 }
+
+/**
+ * The stored public key in the form the HEM attests it: Ed25519 raw 32 B as
+ * stored; EC stored as uncompressed X||Y, attested as the compressed point.
+ * Decided by length, so a record from before key_type existed works too.
+ */
+export function hemPubkeyHex(stored) {
+  const hex = String(stored ?? '').toLowerCase();
+  if (hex.length === 64) return hex;                               // Ed25519
+  const b = Buffer.from(hex, 'hex');
+  if (![64, 96, 132].includes(b.length)) return null;              // P-256 / P-384 / P-521
+  const x = b.subarray(0, b.length / 2), y = b.subarray(b.length / 2);
+  return ((y[y.length - 1] & 1) ? '03' : '02') + x.toString('hex');
+}

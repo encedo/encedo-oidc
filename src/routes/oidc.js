@@ -11,8 +11,8 @@ import { revokeUserTokens } from '../services/tokens.js';
 import { JWT_ALG, b64urlStr, verifySignature, buildJwk } from '../services/jwt.js';
 import { oidcIssuer } from '../services/issuer.js';
 import { Attest } from '../../hem-sdk-js/hem-sdk.js';
-import { newAttestChallenge } from '../services/attestation.js';
-import { requiredLevel, assessLogin, enrolledDevicePoint, loaUrn, levelHint, LOA_VALUES } from '../services/loa.js';
+import { newAttestChallenge, hemPubkeyHex } from '../services/attestation.js';
+import { requiredLevel, assessLogin, enrolledDevicePoint, loaUrn, levelHint, contextHint, LOA_VALUES } from '../services/loa.js';
 
 const router = Router();
 
@@ -463,6 +463,12 @@ router.post('/authorize/attest',
           const enrolled = enrolledDevicePoint(userRaw);
           deviceMatch = !!enrolled && Buffer.from(r.point).toString('hex') === enrolled;
           if (!deviceMatch) unusable = enrolled ? 'another_device' : 'no_enrolled_device';
+          // The kid alone is not the key: the attested public key must be the
+          // enrolled one (the key in the JWKS), as at enrollment.
+          const attestedPub = Buffer.from(String(r.claims?.key?.pubkey?.primary ?? ''), 'base64').toString('hex');
+          if (deviceMatch && attestedPub !== (hemPubkeyHex(userRaw.pubkey) ?? '')) {
+            deviceMatch = false; unusable = 'pubkey_mismatch';
+          }
         }
       } else {
         unusable = 'no_attestation';
@@ -501,8 +507,10 @@ router.post('/authorize/attest',
 
       if (level < pending.required) {
         await logSecurity(SEC.LOA_INSUFFICIENT, { ...log, level, required: pending.required, method: auth?.method ?? null,
-          uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null, reason: unusable });
-        return refuse(403, 'insufficient_assurance', levelHint(pending.required, auth?.method === 'ext'),
+          uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null, lock: auth?.actx?.lock ?? null, org: auth?.org ?? null,
+          reason: unusable });
+        return refuse(403, 'insufficient_assurance',
+          contextHint(unusable) ?? levelHint(pending.required, auth?.method === 'ext'),
           { level, required: pending.required });
       }
 
@@ -518,7 +526,8 @@ router.post('/authorize/attest',
       if (!ok) return res.status(400).json({ error: 'invalid_session', error_description: 'session expired or not found' });
 
       await logSecurity(SEC.LOGIN_CONTEXT, { ...log, level, required: pending.required, method: auth?.method ?? null,
-        age: usable ? auth.age : null, uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null, sso: pending.sso === true });
+        age: usable ? auth.age : null, uvm: auth?.actx?.uvm ?? null, hw: auth?.actx?.hw ?? null,
+        lock: auth?.actx?.lock ?? null, org: auth?.org ?? null, sso: pending.sso === true });
       res.json({ signing_input, acr: claims.acr });
 
     } catch (err) { next(err); }

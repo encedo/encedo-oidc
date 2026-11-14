@@ -1,6 +1,6 @@
 {
   "name": "encedo-oidc-provider",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "HSM-anchored OpenID Connect Identity Provider",
   "license": "MIT",
   "type": "module",
