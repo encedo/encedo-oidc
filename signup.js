@@ -118,7 +118,7 @@ async function doSubmit() {
   btn.disabled = true;
   show('s-enrolling');
 
-  const hem = new HEM(hsm_url, hemOptions());
+  const hem = new HEM(hsm_url, hemOptions(hsm_url));
   const authorize = scope => authorizeScope(hem, password, scope);
 
   try {

@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { startFakeHem, PKI } from './fake-hem.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -82,7 +83,10 @@ let appOut = '';
 const app = spawn('node', ['src/app.js'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env,
   REDIS_URL: `redis://127.0.0.1:${REDIS_PORT}`, PORT: String(APP_PORT), ISSUER: BASE, ADMIN_SECRET: SECRET,
   ADMIN_ALLOWED_IPS: '127.0.0.1,::1', CSP_CONNECT_EXTRA: hem.deviceUrl, SSO_SUGGEST_SECONDS: '28800',
-  ATTEST_URL: hem.attestUrl, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_POLICY: 'require_hard' } });
+  ATTEST_URL: hem.attestUrl, ATTEST_ROOT_SHA256: PKI.rootSha256,
+  // the test PKI's Custody CA stands for the real device CAs
+  ATTEST_DEVICE_CA_SHA256: crypto.createHash('sha256').update(Buffer.from(PKI.custody.replace(/-----[^-]+-----|\s/g, ''), 'base64')).digest('hex'),
+  ATTEST_POLICY: 'require_hard' } });
 for (const s of [app.stdout, app.stderr]) s.on('data', d => { appOut = (appOut + d).slice(-4000); });
 procs.push(app);
 await waitPort(APP_PORT);

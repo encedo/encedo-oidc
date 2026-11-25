@@ -53,7 +53,7 @@ async function doSubmit() {
   formErr.textContent = '';
   const reset = () => { btn.disabled = false; btn.textContent = 'Confirm →'; };
 
-  const hem = new HEM(hsm_url, hemOptions());
+  const hem = new HEM(hsm_url, hemOptions(hsm_url));
   try {
     btn.textContent = 'Connecting to HSM...';
     await ensureLocalNetwork(hsm_url);   // Chromium asks the user before a public page reaches a local device

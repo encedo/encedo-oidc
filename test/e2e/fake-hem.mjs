@@ -151,8 +151,8 @@ export async function startFakeHem({ keys }) {
       return json(res, 200, { crt: PKI.device.replace(/-----[^-]+-----|\s/g, ''), genuine: 'e2e' });
     }
     // attest.encedo.com (the OP's ATTEST_URL points here)
-    if (path === '/att/v1/pki') return json(res, 200, { certificates: ['root', 'attestation', 'custody'].map(k => ({ pem: PKI[k] })) });
-    if (path === '/att/v1/validate' && req.method === 'POST') { state.attestValidations = (state.attestValidations ?? 0) + 1; return json(res, 200, { status: 'valid', expired: false }); }
+    if (path === '/att/v1/device/pki') return json(res, 200, { certificates: ['root', 'attestation', 'custody'].map(k => ({ pem: PKI[k] })) });
+    if (path === '/att/v1/device/validate' && req.method === 'POST') { state.attestValidations = (state.attestValidations ?? 0) + 1; return json(res, 200, { status: 'valid', expired: false }); }
 
     if (path === '/api/crypto/exdsa/sign' && req.method === 'POST') {
       const key = state.keys.find(k => k.kid === body?.kid);

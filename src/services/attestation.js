@@ -31,7 +31,7 @@
  *   require_hard  refuse unless verified (hard, chained)
  */
 
-import { Attest, ENCEDO_ROOT_SHA256 } from '../../hem-sdk-js/hem-sdk.js';
+import { Attest, ENCEDO_ROOT_SHA256, ENCEDO_DEVICE_CA_SHA256 } from '../../hem-sdk-js/hem-sdk.js';
 import { randomBytes } from 'crypto';
 import { oidcIssuer, issuer } from './issuer.js';
 
@@ -42,6 +42,12 @@ export const ATTEST_POLICIES = ['advisory', 'require', 'require_hard'];
 const ATTEST_URL  = (process.env.ATTEST_URL ?? 'https://attest.encedo.com').trim();
 // The pinned root. Overridable for the test PKI only; production keeps the SDK pin.
 const ROOT_SHA256 = (process.env.ATTEST_ROOT_SHA256 || ENCEDO_ROOT_SHA256).toLowerCase();
+// The CAs allowed to issue a device certificate (Custody CA, EPA Custody CA): the root has a
+// second branch (Encedo Signer CA, firmware release keys) whose certificates are not devices.
+// Comma-separated SHA-256 list, overridable for the test PKI only, like the root.
+const DEVICE_CA_SHA256 = process.env.ATTEST_DEVICE_CA_SHA256
+  ? process.env.ATTEST_DEVICE_CA_SHA256.split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+  : ENCEDO_DEVICE_CA_SHA256;
 
 // One instance: it fetches the CA list once and keeps it.
 const attestClient = ATTEST_URL ? new Attest(ATTEST_URL) : null;
@@ -119,7 +125,7 @@ export async function verifyKeyAttestation({ attestation, crt, challenge, kid, p
   out.crt = crt;
   if (!attestClient) { out.status = 'token_only'; out.reason = 'offline_no_ca'; return out; }
   let chain;
-  try { chain = await withTimeout(attestClient.verifyDevice(r.point, crt, { rootSha256: ROOT_SHA256 })); }
+  try { chain = await withTimeout(attestClient.verifyDevice(r.point, crt, { rootSha256: ROOT_SHA256, deviceCaSha256: DEVICE_CA_SHA256 })); }
   catch (e) {
     console.warn('[Attestation] CA list unavailable:', e.message);
     out.status = 'token_only'; out.reason = 'ca_unavailable'; return out;

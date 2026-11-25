@@ -21,6 +21,9 @@ const APP_PORT   = 3397;
 const BASE       = `http://127.0.0.1:${APP_PORT}`;
 const SECRET     = 'test-secret';
 const PKI = JSON.parse(readFileSync(new URL('../hem-sdk-js/test/attest-test-pki.json', import.meta.url), 'utf8'));
+// The test PKI's Custody CA stands for the real device CAs (as in the SDK's own tests).
+const DEVICE_CA_SHA256 = crypto.createHash('sha256')
+  .update(Buffer.from(PKI.custody.replace(/-----[^-]+-----|\s/g, ''), 'base64')).digest('hex');
 
 let hasRedis = true;
 try { execSync('command -v redis-server', { stdio: 'ignore' }); } catch { hasRedis = false; }
@@ -54,10 +57,10 @@ function startFakeAttest() {
     req.on('data', c => { raw += c; });
     req.on('end', () => {
       const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
-      if (req.method === 'GET' && req.url === '/v1/pki') {
+      if (req.method === 'GET' && req.url === '/v1/device/pki') {
         return send(200, { certificates: ['root', 'attestation', 'custody'].map(k => ({ pem: PKI[k] })) });
       }
-      if (req.method === 'POST' && req.url === '/v1/validate') {
+      if (req.method === 'POST' && req.url === '/v1/device/validate') {
         fakeAttest.validateCalls.push(JSON.parse(raw));
         return send(200, { status: fakeAttest.verdict, expired: false });
       }
@@ -115,7 +118,7 @@ before(async () => {
     stdio: 'ignore',
     env: { ...process.env, REDIS_URL: `redis://127.0.0.1:${REDIS_PORT}`, PORT: String(APP_PORT), ISSUER: BASE,
       ADMIN_SECRET: SECRET, ADMIN_ALLOWED_IPS: '127.0.0.1,::1',
-      ATTEST_URL: `http://127.0.0.1:${attestPort}`, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_POLICY: '' },
+      ATTEST_URL: `http://127.0.0.1:${attestPort}`, ATTEST_ROOT_SHA256: PKI.rootSha256, ATTEST_DEVICE_CA_SHA256: DEVICE_CA_SHA256, ATTEST_POLICY: '' },
   });
   for (let i = 0; i < 50; i++) { try { if ((await fetch(BASE + '/health')).ok) break; } catch {} await sleep(100); }
 });

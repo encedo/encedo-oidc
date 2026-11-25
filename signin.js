@@ -3,7 +3,6 @@ import { ensureLocalNetwork } from '/local-network.js';
 import { exdsaAlg, checkP1363, keyTypeDisplay, bytesToBase64url, fetchJson, hemErrMsg, hemOptions } from '/hsm-common.js';
 
 // Test hook (?hem_broker=, localhost only) -- see hemOptions() in hsm-common.js.
-const HEM_OPTS = hemOptions();
 
 // --- OIDC params --------------------------------------
 const params = new URLSearchParams(window.location.search);
@@ -276,7 +275,7 @@ async function doSsoPick(key) {
   try {
     session = freshSession();
     session.hsm_url     = entry.hsm_url;
-    session.hem         = new HEM(entry.hsm_url, HEM_OPTS);
+    session.hem         = new HEM(entry.hsm_url, hemOptions(entry.hsm_url));
     session.ssoEntry    = entry;
     session.selectedKey = { kid: entry.kid, label: entry.label || '', sub: entry.sub };
     session.keys        = [{ kid: entry.kid, label: entry.label || '' }];
@@ -379,7 +378,7 @@ async function doLogin() {
     session.password = null;
     lsSaveHints(hsmUrl);
 
-    const hem = new HEM(hsmUrl, HEM_OPTS);
+    const hem = new HEM(hsmUrl, hemOptions(hsmUrl));
     session.hem = hem;
     btn.textContent = 'Connecting to HSM...';
     await ensureLocalNetwork(hsmUrl);   // Chromium asks the user before a public page reaches a local device

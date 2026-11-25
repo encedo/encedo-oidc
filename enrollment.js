@@ -91,7 +91,7 @@ async function doSubmit() {
   btn.disabled = true;
   formErr.textContent = '';
 
-  const hem = new HEM(hsm_url, hemOptions());
+  const hem = new HEM(hsm_url, hemOptions(hsm_url));
 
   // Helper: authorize for a given scope (passphrase or mobile)
   function authorize(scope, label) {

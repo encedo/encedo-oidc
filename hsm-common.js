@@ -16,12 +16,22 @@
  * Honoured only when the page itself is served from localhost, so no RP or
  * link can ever point a real deployment at a broker of its choosing.
  */
-export function hemOptions() {
+export function hemOptions(hsmUrl) {
   const loc = globalThis.location;
   if (!loc) return {};
-  const isLocal = ['localhost', '127.0.0.1'].includes(loc.hostname);
+  const LOOPBACK = ['localhost', '127.0.0.1'];
+  const isLocal = LOOPBACK.includes(loc.hostname);
+  if (!isLocal) return {};
+  const opts = {};
   const b = new URLSearchParams(loc.search).get('hem_broker');
-  return isLocal && b ? { broker: b } : {};
+  if (b) opts.broker = b;
+  // The SDK refuses a password over plain http (DEV-532). Only a page on localhost talking to
+  // a module on loopback (the E2E's fake HEM) may do it; a real page never gets this option.
+  try {
+    const u = new URL(hsmUrl);
+    if (u.protocol === 'http:' && LOOPBACK.includes(u.hostname)) opts.allowPlainHttpLogin = true;
+  } catch { /* no URL yet */ }
+  return opts;
 }
 
 // --- Key type maps --------------------------------------------------------------
